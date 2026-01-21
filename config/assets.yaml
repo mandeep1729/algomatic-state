@@ -1,0 +1,92 @@
+# Asset Universe Configuration
+# Define the symbols and asset groups for trading
+
+# Primary trading universe
+universe:
+  # Large cap tech
+  tech:
+    - AAPL
+    - MSFT
+    - GOOGL
+    - AMZN
+    - META
+    - NVDA
+    - TSLA
+
+  # Financials
+  financials:
+    - JPM
+    - BAC
+    - GS
+    - MS
+    - V
+    - MA
+
+  # Healthcare
+  healthcare:
+    - UNH
+    - JNJ
+    - PFE
+    - ABBV
+    - MRK
+
+  # Consumer
+  consumer:
+    - WMT
+    - HD
+    - NKE
+    - MCD
+    - SBUX
+
+  # ETFs
+  etfs:
+    - SPY
+    - QQQ
+    - IWM
+    - DIA
+
+# Default symbols for backtesting
+default_symbols:
+  - SPY
+  - QQQ
+  - AAPL
+  - MSFT
+  - NVDA
+
+# Benchmark for market context features
+benchmark: SPY
+
+# Asset-specific parameters
+asset_params:
+  SPY:
+    min_position_size: 1000
+    max_position_size: 50000
+    typical_spread_bps: 1
+
+  QQQ:
+    min_position_size: 1000
+    max_position_size: 50000
+    typical_spread_bps: 1
+
+  AAPL:
+    min_position_size: 500
+    max_position_size: 25000
+    typical_spread_bps: 2
+
+  MSFT:
+    min_position_size: 500
+    max_position_size: 25000
+    typical_spread_bps: 2
+
+  NVDA:
+    min_position_size: 500
+    max_position_size: 25000
+    typical_spread_bps: 3
+
+# Sector constraints for risk management
+sector_limits:
+  tech: 0.40        # Max 40% in tech
+  financials: 0.25
+  healthcare: 0.20
+  consumer: 0.20
+  etfs: 1.0         # No limit on ETFs

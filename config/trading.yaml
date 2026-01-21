@@ -1,0 +1,87 @@
+# Trading Configuration
+# This file contains the main configuration for the algomatic-state trading system.
+# Sensitive values (API keys) should be set via environment variables.
+
+environment: development
+
+# Data configuration
+data:
+  cache_dir: data/cache
+  raw_dir: data/raw
+  default_timeframe: 1Min
+  max_cache_age_hours: 24
+
+# Feature engineering configuration
+features:
+  default_features:
+    # Returns & Trend
+    - r1
+    - r5
+    - r15
+    - r60
+    - cumret_60
+    - ema_diff
+    - slope_60
+    - trend_strength
+    # Volatility
+    - rv_15
+    - rv_60
+    - range_1
+    - atr_60
+    - range_z_60
+    - vol_of_vol
+    # Volume
+    - vol_z_60
+    - dvol_z_60
+    - relvol_60
+    # Intrabar
+    - clv
+    - body_ratio
+    - upper_wick
+    - lower_wick
+    # Anchors
+    - dist_vwap_60
+    - dist_ema_48
+    - breakout_20
+    - pullback_depth
+    # Time
+    - tod_sin
+    - tod_cos
+    - is_open_window
+    - is_close_window
+  lookback_buffer: 100
+
+# State representation configuration
+state:
+  window_size: 60
+  stride: 1
+  latent_dim: 16
+  n_regimes: 5
+  normalization_method: zscore
+  clip_std: 3.0
+
+# Strategy configuration
+strategy:
+  momentum_feature: r5
+  long_threshold: 0.001
+  short_threshold: -0.001
+  min_regime_sharpe: 0.0
+  enable_regime_filter: true
+  enable_pattern_matching: true
+  enable_dynamic_sizing: true
+
+# Backtest configuration
+backtest:
+  initial_capital: 100000.0
+  commission_per_share: 0.005
+  slippage_bps: 5.0
+  walk_forward_train_days: 180
+  walk_forward_test_days: 30
+
+# Logging configuration
+logging:
+  level: INFO
+  format: json
+  file: null
+  rotate_size_mb: 10
+  retain_count: 5
