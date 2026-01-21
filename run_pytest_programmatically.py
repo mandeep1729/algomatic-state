@@ -1,37 +1,20 @@
 
-import pytest
+import subprocess
 import sys
-import os
 
-sys.path.append(os.getcwd())
+result = subprocess.run(
+    [r"c:\Users\mande\projects\algomatic-state\.venv\Scripts\python.exe", "-m", "pytest", "-v", "--tb=short", "tests/unit/state/"],
+    cwd=r"c:\Users\mande\projects\algomatic-state",
+    capture_output=True,
+    text=True
+)
 
-test_files = [
-    "tests/unit/features/test_returns.py",
-    "tests/unit/features/test_volatility.py",
-    "tests/unit/features/test_volume.py",
-    "tests/unit/features/test_anchor.py",
-    "tests/unit/features/test_time_of_day.py",
-    "tests/unit/features/test_market_context.py",
-    "tests/unit/features/test_registry.py",
-    "tests/unit/features/test_pipeline.py",
-    "tests/unit/features/test_intrabar.py"
-]
+with open("test_output.txt", "w") as f:
+    f.write("STDOUT:\n")
+    f.write(result.stdout)
+    f.write("\n\nSTDERR:\n")
+    f.write(result.stderr)
+    f.write(f"\n\nReturn code: {result.returncode}")
 
-failed_files = []
-
-for f in test_files:
-    print(f"Running {f}...")
-    # -q for quiet
-    retcode = pytest.main(["-v", "-q", f])
-    if retcode != 0:
-        print(f"FAIL: {f}")
-        failed_files.append(f)
-    else:
-        print(f"PASS: {f}")
-
-if failed_files:
-    print(f"Failed files: {failed_files}")
-    sys.exit(1)
-
-print("All files passed!")
-sys.exit(0)
+print("Output written to test_output.txt")
+print(f"Return code: {result.returncode}")
