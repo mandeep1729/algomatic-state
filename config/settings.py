@@ -179,6 +179,36 @@ class LoggingConfig(BaseSettings):
     )
 
 
+class DatabaseConfig(BaseSettings):
+    """PostgreSQL database configuration."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="DB_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    host: str = Field(default="localhost", description="Database host")
+    port: int = Field(default=5432, description="Database port")
+    name: str = Field(default="algomatic", description="Database name")
+    user: str = Field(default="algomatic", description="Database user")
+    password: str = Field(default="", description="Database password")
+    pool_size: int = Field(default=5, description="Connection pool size")
+    max_overflow: int = Field(default=10, description="Max pool overflow connections")
+    echo: bool = Field(default=False, description="Echo SQL statements for debugging")
+
+    @property
+    def url(self) -> str:
+        """Build PostgreSQL connection URL."""
+        return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+
+    @property
+    def async_url(self) -> str:
+        """Build async PostgreSQL connection URL."""
+        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+
+
 class Settings(BaseSettings):
     """Main settings class combining all configuration."""
 
@@ -200,6 +230,7 @@ class Settings(BaseSettings):
     strategy: StrategyConfig = Field(default_factory=StrategyConfig)
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    database: DatabaseConfig = Field(default_factory=DatabaseConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":

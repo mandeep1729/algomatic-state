@@ -1,5 +1,6 @@
 """FastAPI backend for regime state visualization UI."""
 
+import logging
 import os
 import sys
 from datetime import datetime, timedelta
@@ -16,11 +17,16 @@ from pydantic import BaseModel
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.data.loaders.csv_loader import CSVLoader
+from src.data.loaders.database_loader import DatabaseLoader
+from src.data.database.connection import get_db_manager
+from src.data.database.models import VALID_TIMEFRAMES
 from src.features.pipeline import FeaturePipeline, get_minimal_features
 from src.state.windows import WindowGenerator
 from src.state.normalization import FeatureNormalizer
 from src.state.pca import PCAStateExtractor
 from src.state.clustering import RegimeClusterer
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Regime State Visualization API", version="1.0.0")
 
@@ -76,6 +82,47 @@ class StatisticsResponse(BaseModel):
     regime_stats: dict
 
 
+class TickerInfo(BaseModel):
+    """Information about a ticker in the database."""
+    symbol: str
+    name: Optional[str] = None
+    exchange: Optional[str] = None
+    is_active: bool = True
+    timeframes: list[str] = []
+
+
+class SyncStatusResponse(BaseModel):
+    """Sync status for a symbol."""
+    symbol: str
+    timeframe: str
+    last_synced_timestamp: Optional[str] = None
+    first_synced_timestamp: Optional[str] = None
+    last_sync_at: Optional[str] = None
+    bars_fetched: int = 0
+    total_bars: int = 0
+    status: str = "unknown"
+    error_message: Optional[str] = None
+
+
+class DataSummaryResponse(BaseModel):
+    """Data summary for a symbol."""
+    symbol: str
+    timeframes: dict
+
+
+# Helper functions
+def get_database_loader() -> DatabaseLoader:
+    """Get database loader with optional Alpaca integration."""
+    alpaca_loader = None
+    if os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_SECRET_KEY"):
+        try:
+            from src.data.loaders.alpaca_loader import AlpacaLoader
+            alpaca_loader = AlpacaLoader(use_cache=False, validate=True)
+        except Exception as e:
+            logger.warning(f"Failed to initialize Alpaca loader: {e}")
+    return DatabaseLoader(alpaca_loader=alpaca_loader, validate=True, auto_fetch=True)
+
+
 # Cache for loaded data and computed states
 _cache = {}
 
@@ -95,6 +142,19 @@ async def get_data_sources():
     """Get list of available data sources."""
     sources = []
 
+    # List tickers from database
+    try:
+        db_loader = get_database_loader()
+        db_tickers = db_loader.get_available_tickers()
+        for ticker in db_tickers:
+            sources.append(DataSourceInfo(
+                name=ticker,
+                type="database",
+                path=None
+            ))
+    except Exception as e:
+        logger.warning(f"Failed to list database tickers: {e}")
+
     # List local CSV files
     if DATA_DIR.exists():
         for csv_file in DATA_DIR.glob("*.csv"):
@@ -104,15 +164,17 @@ async def get_data_sources():
                 path=str(csv_file)
             ))
 
-    # Check if Alpaca credentials are available
+    # Check if Alpaca credentials are available (for direct Alpaca queries)
     if os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_SECRET_KEY"):
-        # Add common tickers for Alpaca
+        # Add common tickers for Alpaca (these can be synced to database)
         for ticker in ["SPY", "AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "QQQ", "IWM"]:
-            sources.append(DataSourceInfo(
-                name=ticker,
-                type="alpaca",
-                path=None
-            ))
+            # Only add if not already in database
+            if ticker not in [s.name for s in sources]:
+                sources.append(DataSourceInfo(
+                    name=ticker,
+                    type="alpaca",
+                    path=None
+                ))
 
     return sources
 
@@ -120,18 +182,39 @@ async def get_data_sources():
 @app.get("/api/ohlcv/{source_name}")
 async def get_ohlcv_data(
     source_name: str,
-    source_type: str = Query("local", description="Data source type: local or alpaca"),
+    source_type: str = Query("database", description="Data source type: database, local, or alpaca"),
+    timeframe: str = Query("1Min", description="Bar timeframe (1Min, 5Min, 15Min, 1Hour, 1Day)"),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
 ):
-    """Load OHLCV data from specified source."""
-    cache_key = f"ohlcv_{source_type}_{source_name}_{start_date}_{end_date}"
+    """Load OHLCV data from specified source.
+
+    The 'database' source type (default) loads data from PostgreSQL with smart
+    incremental fetching from Alpaca. Data is automatically synced when requested.
+    """
+    cache_key = f"ohlcv_{source_type}_{source_name}_{timeframe}_{start_date}_{end_date}"
     cached = get_cached_data(cache_key)
     if cached is not None:
         return cached
 
     try:
-        if source_type == "local":
+        if source_type == "database":
+            # Database loader with smart Alpaca sync
+            if timeframe not in VALID_TIMEFRAMES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
+                )
+
+            loader = get_database_loader()
+
+            # Default to last 30 days if no dates specified
+            end = datetime.fromisoformat(end_date) if end_date else datetime.now()
+            start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=30)
+
+            df = loader.load(source_name, start=start, end=end, timeframe=timeframe)
+
+        elif source_type == "local":
             loader = CSVLoader(validate=True)
             file_path = DATA_DIR / f"{source_name}.csv"
             if not file_path.exists():
@@ -142,6 +225,7 @@ async def get_ohlcv_data(
             df = loader.load(file_path, start=start, end=end)
 
         elif source_type == "alpaca":
+            # Direct Alpaca query (bypasses database)
             try:
                 from src.data.loaders.alpaca_loader import AlpacaLoader
                 loader = AlpacaLoader(use_cache=True, validate=True)
@@ -177,6 +261,7 @@ async def get_ohlcv_data(
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception(f"Error loading OHLCV data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -395,6 +480,182 @@ async def clear_cache():
     global _cache
     _cache = {}
     return {"message": "Cache cleared"}
+
+
+# =============================================================================
+# Database-specific endpoints
+# =============================================================================
+
+
+@app.get("/api/tickers", response_model=list[TickerInfo])
+async def list_tickers():
+    """List all tickers stored in the database."""
+    try:
+        db_loader = get_database_loader()
+        tickers = db_loader.get_available_tickers()
+
+        result = []
+        for symbol in tickers:
+            summary = db_loader.get_data_summary(symbol)
+            result.append(TickerInfo(
+                symbol=symbol,
+                timeframes=list(summary.keys()),
+            ))
+        return result
+    except Exception as e:
+        logger.exception(f"Error listing tickers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/tickers/{symbol}/summary", response_model=DataSummaryResponse)
+async def get_ticker_summary(symbol: str):
+    """Get data summary for a specific ticker."""
+    try:
+        db_loader = get_database_loader()
+        summary = db_loader.get_data_summary(symbol.upper())
+
+        # Convert datetime objects to strings
+        formatted_summary = {}
+        for timeframe, data in summary.items():
+            formatted_summary[timeframe] = {
+                "earliest": data["earliest"].isoformat() if data.get("earliest") else None,
+                "latest": data["latest"].isoformat() if data.get("latest") else None,
+                "bar_count": data.get("bar_count", 0),
+            }
+
+        return DataSummaryResponse(
+            symbol=symbol.upper(),
+            timeframes=formatted_summary,
+        )
+    except Exception as e:
+        logger.exception(f"Error getting ticker summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/sync-status/{symbol}", response_model=list[SyncStatusResponse])
+async def get_sync_status(symbol: str):
+    """Get synchronization status for a symbol."""
+    try:
+        db_loader = get_database_loader()
+        statuses = db_loader.get_sync_status(symbol.upper())
+
+        if not statuses:
+            # Return empty list if no sync logs exist
+            return []
+
+        return [SyncStatusResponse(**status) for status in statuses]
+    except Exception as e:
+        logger.exception(f"Error getting sync status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/sync/{symbol}")
+async def trigger_sync(
+    symbol: str,
+    timeframe: str = Query("1Min", description="Timeframe to sync"),
+    start_date: Optional[str] = Query(None, description="Start date for historical sync"),
+    end_date: Optional[str] = Query(None, description="End date (defaults to now)"),
+):
+    """Trigger data synchronization for a symbol.
+
+    This will fetch data from Alpaca and store it in the database.
+    """
+    if timeframe not in VALID_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
+        )
+
+    try:
+        db_loader = get_database_loader()
+
+        if db_loader.alpaca_loader is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Alpaca credentials not configured. Cannot sync data."
+            )
+
+        # Parse dates
+        end = datetime.fromisoformat(end_date) if end_date else datetime.now()
+        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=30)
+
+        # Trigger sync by loading data (auto_fetch is enabled)
+        df = db_loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)
+
+        return {
+            "message": f"Sync completed for {symbol.upper()}/{timeframe}",
+            "bars_loaded": len(df),
+            "date_range": {
+                "start": df.index.min().isoformat() if not df.empty else None,
+                "end": df.index.max().isoformat() if not df.empty else None,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error syncing data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/import")
+async def import_data(
+    symbol: str = Query(..., description="Symbol to import as"),
+    file_path: str = Query(..., description="Path to CSV or Parquet file"),
+    timeframe: str = Query("1Min", description="Timeframe of the data"),
+):
+    """Import data from a local file into the database."""
+    if timeframe not in VALID_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
+        )
+
+    path = Path(file_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
+
+    try:
+        db_loader = get_database_loader()
+
+        if path.suffix.lower() == ".parquet":
+            rows = db_loader.import_parquet(path, symbol.upper(), timeframe)
+        else:
+            rows = db_loader.import_csv(path, symbol.upper(), timeframe)
+
+        return {
+            "message": f"Import completed for {symbol.upper()}/{timeframe}",
+            "rows_imported": rows,
+        }
+    except Exception as e:
+        logger.exception(f"Error importing data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint including database connectivity."""
+    health = {
+        "status": "healthy",
+        "api": True,
+        "database": False,
+        "alpaca": False,
+    }
+
+    # Check database
+    try:
+        db_manager = get_db_manager()
+        health["database"] = db_manager.health_check()
+    except Exception as e:
+        logger.warning(f"Database health check failed: {e}")
+
+    # Check Alpaca
+    if os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_SECRET_KEY"):
+        health["alpaca"] = True
+
+    if not health["database"]:
+        health["status"] = "degraded"
+
+    return health
 
 
 if __name__ == "__main__":

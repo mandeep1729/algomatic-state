@@ -5,6 +5,7 @@ from src.data.loaders import (
     AlpacaLoader,
     BaseDataLoader,
     CSVLoader,
+    DatabaseLoader,
     MultiAssetLoader,
     align_timestamps,
     load_and_combine,
@@ -19,12 +20,22 @@ from src.data.quality import (
     detect_outliers,
     generate_quality_report,
 )
+from src.data.database import (
+    DatabaseManager,
+    get_db_manager,
+    Base,
+    Ticker,
+    OHLCVBar,
+    DataSyncLog,
+    OHLCVRepository,
+)
 
 __all__ = [
     # Loaders
     "AlpacaLoader",
     "BaseDataLoader",
     "CSVLoader",
+    "DatabaseLoader",
     "MultiAssetLoader",
     "align_timestamps",
     "load_and_combine",
@@ -41,4 +52,12 @@ __all__ = [
     "detect_gaps",
     "detect_outliers",
     "generate_quality_report",
+    # Database
+    "DatabaseManager",
+    "get_db_manager",
+    "Base",
+    "Ticker",
+    "OHLCVBar",
+    "DataSyncLog",
+    "OHLCVRepository",
 ]
