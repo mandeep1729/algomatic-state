@@ -388,10 +388,15 @@ class OHLCVRepository:
 
         sync_log.last_sync_at = datetime.utcnow()
         sync_log.bars_fetched = bars_fetched
-        sync_log.total_bars = self.get_bar_count(
-            symbol=sync_log.ticker.symbol if hasattr(sync_log, 'ticker') else None,
-            timeframe=timeframe,
-        ) if sync_log.ticker_id else 0
+
+        # Get total bar count - need to look up ticker symbol
+        total_bars = 0
+        if ticker_id:
+            ticker = self.session.query(Ticker).filter(Ticker.id == ticker_id).first()
+            if ticker:
+                total_bars = self.get_bar_count(ticker.symbol, timeframe)
+        sync_log.total_bars = total_bars
+
         sync_log.status = status
         sync_log.error_message = error_message
 
