@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
 import * as Plotly from 'plotly.js';
@@ -50,9 +50,6 @@ function App() {
   const [timeframe, setTimeframe] = useState<string>('1Min');
   const [tickerSummary, setTickerSummary] = useState<TickerSummary | null>(null);
 
-  // Internal date range for API calls (from ticker summary)
-  const [startDate, setStartDate] = useState<string>('');
-  const [endDate, setEndDate] = useState<string>('');
 
   // Data
   const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
@@ -82,8 +79,6 @@ function App() {
     n_components: 8,
   });
 
-  // Ref to store loadData function for auto-loading
-  const loadDataRef = useRef<(() => void) | null>(null);
 
   // Compute total data points and constrained view range
   const totalPoints = ohlcvData?.timestamps.length || 0;
@@ -160,12 +155,51 @@ function App() {
       .catch((err) => setError(err.message));
   }, []);
 
+  // Load data with explicit parameters (avoids stale state issues)
+  const loadDataWithParams = useCallback(async (
+    ticker: string,
+    tf: string,
+    start: string,
+    end: string
+  ) => {
+    if (!ticker || !start || !end) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Load OHLCV data from database (auto-fetches from Alpaca if missing)
+      const ohlcv = await fetchOHLCVData(ticker, tf, start, end);
+      setOhlcvData(ohlcv);
+
+      // Load features
+      const features = await fetchFeatures(ticker, tf, start, end);
+      setFeatureData(features);
+
+      // Load regimes
+      const regimes = await fetchRegimes(
+        ticker, tf, start, end,
+        regimeParams.n_clusters,
+        regimeParams.window_size,
+        regimeParams.n_components
+      );
+      setRegimeData(regimes);
+
+      // Load statistics
+      const stats = await fetchStatistics(ticker, tf, start, end);
+      setStatistics(stats);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load data';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [regimeParams]);
+
   // Fetch ticker summary and auto-load data when ticker changes
   useEffect(() => {
     if (!selectedTicker) {
       setTickerSummary(null);
-      setStartDate('');
-      setEndDate('');
       setOhlcvData(null);
       setFeatureData(null);
       setRegimeData(null);
@@ -182,28 +216,28 @@ function App() {
           tf => summary.timeframes[tf].bar_count > 0
         );
 
-        let selectedTimeframe = timeframe;
+        let selectedTf = timeframe;
         if (availableTimeframes.length > 0 && !availableTimeframes.includes(timeframe)) {
-          selectedTimeframe = availableTimeframes[0];
-          setTimeframe(selectedTimeframe);
+          selectedTf = availableTimeframes[0];
+          setTimeframe(selectedTf);
         }
 
-        // Get date range for the selected timeframe
-        const tfData = summary.timeframes[selectedTimeframe];
+        // Get date range for the selected timeframe and load data
+        const tfData = summary.timeframes[selectedTf];
         if (tfData && tfData.earliest && tfData.latest) {
           const start = tfData.earliest.split('T')[0];
           const end = tfData.latest.split('T')[0];
-          setStartDate(start);
-          setEndDate(end);
+          // Load data immediately with known values
+          loadDataWithParams(selectedTicker, selectedTf, start, end);
         }
       })
       .catch((err) => {
         console.error('Failed to fetch ticker summary:', err);
         setTickerSummary(null);
       });
-  }, [selectedTicker]);
+  }, [selectedTicker, loadDataWithParams]);
 
-  // Load data when timeframe changes (and we have dates)
+  // Load data when timeframe changes
   useEffect(() => {
     if (!selectedTicker || !tickerSummary) return;
 
@@ -211,13 +245,10 @@ function App() {
     if (tfData && tfData.earliest && tfData.latest) {
       const start = tfData.earliest.split('T')[0];
       const end = tfData.latest.split('T')[0];
-      setStartDate(start);
-      setEndDate(end);
-    } else {
-      setStartDate('');
-      setEndDate('');
+      // Load data immediately with known values
+      loadDataWithParams(selectedTicker, timeframe, start, end);
     }
-  }, [timeframe, tickerSummary, selectedTicker]);
+  }, [timeframe, tickerSummary, selectedTicker, loadDataWithParams]);
 
   // Reset view range when new data is loaded
   useEffect(() => {
@@ -226,75 +257,6 @@ function App() {
       setViewRange([0, endIdx]);
     }
   }, [ohlcvData]);
-
-  // Auto-load data when dates are ready
-  useEffect(() => {
-    if (selectedTicker && startDate && endDate && tickerSummary) {
-      loadDataRef.current?.();
-    }
-  }, [selectedTicker, timeframe, startDate, endDate, tickerSummary]);
-
-  // Load data function
-  const loadData = useCallback(async () => {
-    if (!selectedTicker) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const start = startDate || undefined;
-      const end = endDate || undefined;
-
-      // Load OHLCV data from database (auto-fetches from Alpaca if missing)
-      const ohlcv = await fetchOHLCVData(
-        selectedTicker,
-        timeframe,
-        start,
-        end
-      );
-      setOhlcvData(ohlcv);
-
-      // Load features
-      const features = await fetchFeatures(
-        selectedTicker,
-        timeframe,
-        start,
-        end
-      );
-      setFeatureData(features);
-
-      // Load regimes
-      const regimes = await fetchRegimes(
-        selectedTicker,
-        timeframe,
-        start,
-        end,
-        regimeParams.n_clusters,
-        regimeParams.window_size,
-        regimeParams.n_components
-      );
-      setRegimeData(regimes);
-
-      // Load statistics
-      const stats = await fetchStatistics(
-        selectedTicker,
-        timeframe,
-        start,
-        end
-      );
-      setStatistics(stats);
-    } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load data';
-      setError(errorMessage);
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedTicker, timeframe, startDate, endDate, regimeParams]);
-
-  // Keep ref updated with latest loadData
-  useEffect(() => {
-    loadDataRef.current = loadData;
-  }, [loadData]);
 
   // Zoom step factor - how much to zoom in/out by
   const ZOOM_FACTOR = 0.5; // 50% zoom step
