@@ -15,6 +15,46 @@ from src.data.schemas import validate_ohlcv
 
 logger = logging.getLogger(__name__)
 
+# Timeframes that can be aggregated from 1Min data
+AGGREGATABLE_TIMEFRAMES = ["5Min", "15Min", "1Hour"]
+
+# Mapping of timeframe to pandas resample rule
+TIMEFRAME_RESAMPLE_MAP = {
+    "5Min": "5min",
+    "15Min": "15min",
+    "1Hour": "1h",
+}
+
+
+def aggregate_ohlcv(df: pd.DataFrame, target_timeframe: str) -> pd.DataFrame:
+    """Aggregate 1-minute OHLCV data to a higher timeframe.
+
+    Args:
+        df: DataFrame with 1-minute OHLCV data (datetime index)
+        target_timeframe: Target timeframe ('5Min', '15Min', '1Hour')
+
+    Returns:
+        Aggregated DataFrame with OHLCV columns
+    """
+    if target_timeframe not in TIMEFRAME_RESAMPLE_MAP:
+        raise ValueError(f"Cannot aggregate to {target_timeframe}")
+
+    resample_rule = TIMEFRAME_RESAMPLE_MAP[target_timeframe]
+
+    # Resample using standard OHLCV aggregation rules
+    agg_df = df.resample(resample_rule).agg({
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "sum",
+    })
+
+    # Drop rows with NaN (incomplete periods)
+    agg_df = agg_df.dropna()
+
+    return agg_df
+
 
 class DatabaseLoader(BaseDataLoader):
     """Load OHLCV data from PostgreSQL database with smart fetching.
@@ -137,6 +177,14 @@ class DatabaseLoader(BaseDataLoader):
     ) -> None:
         """Synchronize missing data from Alpaca.
 
+        For new symbols (no data in database):
+        1. Fetch 1Min data from Alpaca
+        2. Aggregate to 5Min, 15Min, 1Hour and insert all
+        3. Fetch 1Day data separately from Alpaca
+
+        For existing symbols:
+        - Incrementally fetch new data for the requested timeframe
+
         Args:
             repo: OHLCV repository instance
             symbol: Stock symbol
@@ -153,7 +201,222 @@ class DatabaseLoader(BaseDataLoader):
         # Get or create ticker
         ticker = repo.get_or_create_ticker(symbol)
 
-        # Get current data range in database
+        # Check if this is a new symbol (no 1Min data exists)
+        db_1min_latest = repo.get_latest_timestamp(symbol, "1Min")
+
+        if db_1min_latest is None:
+            # New symbol - fetch all timeframes
+            logger.info(f"New symbol {symbol} - fetching all timeframes")
+            self._fetch_all_timeframes_for_new_symbol(repo, ticker, symbol, start, end)
+            return
+
+        # Existing symbol - use incremental fetch for the requested timeframe
+        self._incremental_fetch(repo, ticker, symbol, timeframe, start, end)
+
+    def _fetch_all_timeframes_for_new_symbol(
+        self,
+        repo: OHLCVRepository,
+        ticker,
+        symbol: str,
+        start: Optional[datetime],
+        end: datetime,
+    ) -> None:
+        """Fetch and aggregate all timeframes for a new symbol.
+
+        1. Fetch 1Min data from Alpaca
+        2. Aggregate to 5Min, 15Min, 1Hour
+        3. Fetch 1Day data separately from Alpaca
+
+        Args:
+            repo: OHLCV repository instance
+            ticker: Ticker database object
+            symbol: Stock symbol
+            start: Start datetime
+            end: End datetime
+        """
+        try:
+            # Step 1: Fetch 1Min data from Alpaca
+            logger.info(f"Fetching 1Min data for {symbol} from {start} to {end}")
+            df_1min = self.alpaca_loader.load(symbol, start=start, end=end)
+            logger.info(f"Alpaca returned {len(df_1min)} 1Min bars for {symbol}")
+
+            if df_1min.empty:
+                logger.warning(f"No 1Min data available from Alpaca for {symbol}")
+                return
+
+            # Ensure timezone-naive timestamps
+            if df_1min.index.tz is not None:
+                df_1min.index = df_1min.index.tz_localize(None)
+
+            # Insert 1Min data
+            rows_1min = repo.bulk_insert_bars(
+                df=df_1min,
+                ticker_id=ticker.id,
+                timeframe="1Min",
+                source="alpaca",
+            )
+            logger.info(f"Inserted {rows_1min} 1Min bars for {symbol}")
+
+            repo.update_sync_log(
+                ticker_id=ticker.id,
+                timeframe="1Min",
+                last_synced_timestamp=df_1min.index.max(),
+                first_synced_timestamp=df_1min.index.min(),
+                bars_fetched=rows_1min,
+                status="success",
+            )
+
+            # Step 2: Aggregate to higher timeframes
+            for target_tf in AGGREGATABLE_TIMEFRAMES:
+                try:
+                    logger.info(f"Aggregating 1Min to {target_tf} for {symbol}")
+                    df_agg = aggregate_ohlcv(df_1min, target_tf)
+
+                    if not df_agg.empty:
+                        rows_agg = repo.bulk_insert_bars(
+                            df=df_agg,
+                            ticker_id=ticker.id,
+                            timeframe=target_tf,
+                            source="aggregated",
+                        )
+                        logger.info(f"Inserted {rows_agg} {target_tf} bars for {symbol}")
+
+                        repo.update_sync_log(
+                            ticker_id=ticker.id,
+                            timeframe=target_tf,
+                            last_synced_timestamp=df_agg.index.max(),
+                            first_synced_timestamp=df_agg.index.min(),
+                            bars_fetched=rows_agg,
+                            status="success",
+                        )
+                    else:
+                        logger.warning(f"No {target_tf} bars generated for {symbol}")
+
+                except Exception as e:
+                    logger.error(f"Failed to aggregate {target_tf} for {symbol}: {e}")
+
+            # Step 3: Fetch 1Day data separately from Alpaca
+            self._fetch_daily_data(repo, ticker, symbol, start, end)
+
+        except Exception as e:
+            logger.error(f"Failed to fetch data for new symbol {symbol}: {e}")
+            repo.update_sync_log(
+                ticker_id=ticker.id,
+                timeframe="1Min",
+                bars_fetched=0,
+                status="failed",
+                error_message=str(e),
+            )
+
+    def _fetch_daily_data(
+        self,
+        repo: OHLCVRepository,
+        ticker,
+        symbol: str,
+        start: Optional[datetime],
+        end: datetime,
+    ) -> None:
+        """Fetch 1Day data from Alpaca.
+
+        Daily data is fetched directly from Alpaca rather than aggregated
+        from 1Min data to ensure accuracy with market hours.
+
+        Args:
+            repo: OHLCV repository instance
+            ticker: Ticker database object
+            symbol: Stock symbol
+            start: Start datetime
+            end: End datetime
+        """
+        try:
+            # Import here to avoid circular imports
+            from alpaca.data.historical import StockHistoricalDataClient
+            from alpaca.data.requests import StockBarsRequest
+            from alpaca.data.timeframe import TimeFrame
+            import os
+
+            logger.info(f"Fetching 1Day data for {symbol} from {start} to {end}")
+
+            # Use Alpaca client directly for daily bars
+            api_key = os.environ.get("ALPACA_API_KEY")
+            secret_key = os.environ.get("ALPACA_SECRET_KEY")
+
+            if not api_key or not secret_key:
+                logger.warning("Alpaca credentials not available for daily data fetch")
+                return
+
+            client = StockHistoricalDataClient(api_key, secret_key)
+
+            request = StockBarsRequest(
+                symbol_or_symbols=symbol,
+                timeframe=TimeFrame.Day,
+                start=start,
+                end=end,
+            )
+
+            bars = client.get_stock_bars(request)
+
+            if symbol not in bars.data or not bars.data[symbol]:
+                logger.info(f"No 1Day data available from Alpaca for {symbol}")
+                return
+
+            df_daily = bars.df
+
+            # Handle multi-index if present
+            if isinstance(df_daily.index, pd.MultiIndex):
+                df_daily = df_daily.xs(symbol, level="symbol")
+
+            # Ensure timezone-naive
+            if df_daily.index.tz is not None:
+                df_daily.index = df_daily.index.tz_localize(None)
+
+            # Select only OHLCV columns
+            df_daily = df_daily[["open", "high", "low", "close", "volume"]]
+            df_daily.index.name = "timestamp"
+
+            logger.info(f"Alpaca returned {len(df_daily)} 1Day bars for {symbol}")
+
+            if not df_daily.empty:
+                rows_daily = repo.bulk_insert_bars(
+                    df=df_daily,
+                    ticker_id=ticker.id,
+                    timeframe="1Day",
+                    source="alpaca",
+                )
+                logger.info(f"Inserted {rows_daily} 1Day bars for {symbol}")
+
+                repo.update_sync_log(
+                    ticker_id=ticker.id,
+                    timeframe="1Day",
+                    last_synced_timestamp=df_daily.index.max(),
+                    first_synced_timestamp=df_daily.index.min(),
+                    bars_fetched=rows_daily,
+                    status="success",
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to fetch 1Day data for {symbol}: {e}")
+
+    def _incremental_fetch(
+        self,
+        repo: OHLCVRepository,
+        ticker,
+        symbol: str,
+        timeframe: str,
+        start: Optional[datetime],
+        end: datetime,
+    ) -> None:
+        """Incrementally fetch new data for an existing symbol.
+
+        Args:
+            repo: OHLCV repository instance
+            ticker: Ticker database object
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+            start: Requested start datetime
+            end: Requested end datetime
+        """
+        # Get current data range in database for this timeframe
         db_latest = repo.get_latest_timestamp(symbol, timeframe)
         db_earliest = repo.get_earliest_timestamp(symbol, timeframe)
         logger.info(f"Database range for {symbol}/{timeframe}: {db_earliest} to {db_latest}")
@@ -169,14 +432,21 @@ class DatabaseLoader(BaseDataLoader):
         fetch_end = None
 
         if db_latest is None:
-            # No data exists - fetch entire requested range
-            logger.info(f"No data in DB for {symbol}/{timeframe}, will fetch from Alpaca")
-            fetch_start = start
-            fetch_end = end
-            logger.info(f"No existing data for {symbol}/{timeframe}, fetching full range")
+            # No data for this timeframe - need to generate it
+            if timeframe in AGGREGATABLE_TIMEFRAMES:
+                # Aggregate from 1Min data
+                self._aggregate_from_1min(repo, ticker, symbol, timeframe, start, end)
+                return
+            elif timeframe == "1Day":
+                # Fetch daily data from Alpaca
+                self._fetch_daily_data(repo, ticker, symbol, start, end)
+                return
+            else:
+                # 1Min - fetch from Alpaca
+                fetch_start = start
+                fetch_end = end
         else:
             # Data exists - check if we need to fetch more recent data
-            # Add a small buffer (1 minute) to avoid gaps
             buffer = timedelta(minutes=1)
 
             if end > db_latest + buffer:
@@ -187,68 +457,135 @@ class DatabaseLoader(BaseDataLoader):
                     f"{fetch_start} to {fetch_end}"
                 )
 
-            # Optionally fetch older data if start is before our earliest data
-            if start and db_earliest and start < db_earliest - buffer:
-                # For now, we only fetch forward. Backfilling historical data
-                # would be a separate operation to avoid excessive API calls.
-                logger.debug(
-                    f"Requested start {start} is before earliest data {db_earliest}. "
-                    "Use backfill method to fetch historical data."
-                )
-
-        # Fetch from Alpaca if needed
+        # Fetch from Alpaca if needed (only for 1Min or 1Day)
         if fetch_start is not None and fetch_end is not None:
-            try:
-                # Map timeframe to Alpaca format
-                alpaca_timeframe = self._map_timeframe(timeframe)
-                logger.info(f"Fetching from Alpaca: {symbol} {alpaca_timeframe} from {fetch_start} to {fetch_end}")
+            if timeframe == "1Min":
+                self._fetch_and_insert_1min(repo, ticker, symbol, fetch_start, fetch_end)
+            elif timeframe == "1Day":
+                self._fetch_daily_data(repo, ticker, symbol, fetch_start, fetch_end)
+            elif timeframe in AGGREGATABLE_TIMEFRAMES:
+                # Need to fetch 1Min first, then aggregate
+                self._fetch_and_insert_1min(repo, ticker, symbol, fetch_start, fetch_end)
+                self._aggregate_from_1min(repo, ticker, symbol, timeframe, fetch_start, fetch_end)
 
-                # Note: AlpacaLoader only supports 1-minute bars
-                # Other timeframes should be aggregated from 1-minute data
-                df = self.alpaca_loader.load(
-                    symbol,
-                    start=fetch_start,
-                    end=fetch_end,
+    def _fetch_and_insert_1min(
+        self,
+        repo: OHLCVRepository,
+        ticker,
+        symbol: str,
+        start: datetime,
+        end: datetime,
+    ) -> pd.DataFrame:
+        """Fetch 1Min data from Alpaca and insert into database.
+
+        Args:
+            repo: OHLCV repository instance
+            ticker: Ticker database object
+            symbol: Stock symbol
+            start: Start datetime
+            end: End datetime
+
+        Returns:
+            DataFrame with fetched 1Min data
+        """
+        try:
+            logger.info(f"Fetching 1Min from Alpaca: {symbol} from {start} to {end}")
+
+            df = self.alpaca_loader.load(symbol, start=start, end=end)
+            logger.info(f"Alpaca returned {len(df)} 1Min rows for {symbol}")
+
+            if not df.empty:
+                # Ensure timezone-naive timestamps
+                if df.index.tz is not None:
+                    df.index = df.index.tz_localize(None)
+
+                # Insert into database
+                rows_inserted = repo.bulk_insert_bars(
+                    df=df,
+                    ticker_id=ticker.id,
+                    timeframe="1Min",
+                    source="alpaca",
                 )
-                logger.info(f"Alpaca returned {len(df)} rows for {symbol}")
 
-                if not df.empty:
-                    # Ensure timezone-naive timestamps for consistent storage
-                    if df.index.tz is not None:
-                        df.index = df.index.tz_localize(None)
-
-                    # Insert into database
-                    rows_inserted = repo.bulk_insert_bars(
-                        df=df,
-                        ticker_id=ticker.id,
-                        timeframe=timeframe,
-                        source="alpaca",
-                    )
-
-                    # Update sync log
-                    repo.update_sync_log(
-                        ticker_id=ticker.id,
-                        timeframe=timeframe,
-                        last_synced_timestamp=df.index.max(),
-                        first_synced_timestamp=df.index.min(),
-                        bars_fetched=rows_inserted,
-                        status="success",
-                    )
-
-                    logger.info(f"Inserted {rows_inserted} bars for {symbol}/{timeframe}")
-                else:
-                    logger.info(f"No new data available from Alpaca for {symbol}/{timeframe}")
-
-            except Exception as e:
-                logger.error(f"Failed to fetch data from Alpaca for {symbol}: {e}")
-                # Update sync log with error
                 repo.update_sync_log(
                     ticker_id=ticker.id,
-                    timeframe=timeframe,
-                    bars_fetched=0,
-                    status="failed",
-                    error_message=str(e),
+                    timeframe="1Min",
+                    last_synced_timestamp=df.index.max(),
+                    first_synced_timestamp=df.index.min(),
+                    bars_fetched=rows_inserted,
+                    status="success",
                 )
+
+                logger.info(f"Inserted {rows_inserted} 1Min bars for {symbol}")
+                return df
+
+        except Exception as e:
+            logger.error(f"Failed to fetch 1Min data from Alpaca for {symbol}: {e}")
+            repo.update_sync_log(
+                ticker_id=ticker.id,
+                timeframe="1Min",
+                bars_fetched=0,
+                status="failed",
+                error_message=str(e),
+            )
+
+        return pd.DataFrame()
+
+    def _aggregate_from_1min(
+        self,
+        repo: OHLCVRepository,
+        ticker,
+        symbol: str,
+        target_timeframe: str,
+        start: Optional[datetime],
+        end: datetime,
+    ) -> None:
+        """Aggregate existing 1Min data to a higher timeframe.
+
+        Args:
+            repo: OHLCV repository instance
+            ticker: Ticker database object
+            symbol: Stock symbol
+            target_timeframe: Target timeframe to aggregate to
+            start: Start datetime
+            end: End datetime
+        """
+        try:
+            logger.info(f"Aggregating 1Min to {target_timeframe} for {symbol}")
+
+            # Get 1Min data from database
+            df_1min = repo.get_bars(symbol, "1Min", start, end)
+
+            if df_1min.empty:
+                logger.warning(f"No 1Min data available to aggregate for {symbol}")
+                return
+
+            # Aggregate
+            df_agg = aggregate_ohlcv(df_1min, target_timeframe)
+
+            if not df_agg.empty:
+                rows_inserted = repo.bulk_insert_bars(
+                    df=df_agg,
+                    ticker_id=ticker.id,
+                    timeframe=target_timeframe,
+                    source="aggregated",
+                )
+
+                repo.update_sync_log(
+                    ticker_id=ticker.id,
+                    timeframe=target_timeframe,
+                    last_synced_timestamp=df_agg.index.max(),
+                    first_synced_timestamp=df_agg.index.min(),
+                    bars_fetched=rows_inserted,
+                    status="success",
+                )
+
+                logger.info(f"Inserted {rows_inserted} {target_timeframe} bars for {symbol}")
+            else:
+                logger.warning(f"No {target_timeframe} bars generated for {symbol}")
+
+        except Exception as e:
+            logger.error(f"Failed to aggregate {target_timeframe} for {symbol}: {e}")
 
     def _map_timeframe(self, timeframe: str) -> str:
         """Map internal timeframe to Alpaca timeframe format.

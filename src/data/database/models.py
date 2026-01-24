@@ -237,4 +237,4 @@ class DataSyncLog(Base):
 VALID_TIMEFRAMES = frozenset({"1Min", "5Min", "15Min", "1Hour", "1Day"})
 
 # Valid data sources
-VALID_SOURCES = frozenset({"alpaca", "csv_import", "manual"})
+VALID_SOURCES = frozenset({"alpaca", "csv_import", "manual", "aggregated"})
