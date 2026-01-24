@@ -101,19 +101,34 @@ The React frontend provides an interactive visualization for regime state analys
 ### Ticker Selection
 1. Select a **Ticker** from the dropdown (populated from the database)
 2. Select a **Timeframe** (1Min, 5Min, 15Min, 1Hour, 1Day)
-3. **Start/End dates are auto-populated** based on available data in the database
+3. Click **Load Data** to fetch all available data for the ticker
 
 ### Data Loading Behavior
 - When you click **Load Data**, the system:
-  1. Checks if data exists in the database for the selected range
+  1. Checks if data exists in the database for the full available range
   2. If data is missing and Alpaca API is configured, fetches from Alpaca
   3. Stores fetched data in the `ohlcv_bars` table
   4. Displays chart from database
 
 - All chart data **always comes from the database** - never directly from Alpaca
 
+### Time Range Slider
+After loading data, a **Time Range Selection** slider appears at the top of the charts:
+
+- **Dual sliders** control the start and end of the visible range
+- **7,200 point limit** - Charts never display more than 7,200 data points for performance
+- **Quick range buttons** - Select preset ranges (1K, 2K, 5K, 7.2K points)
+- **Reset button** - Return to the initial view (first 7,200 points)
+- Shows current time range and point count
+
+### Chart Interaction
+- **Drag to select** on the price chart to zoom into a time range
+- Selected range updates the slider and re-renders all charts
+- All charts (price, volume, features) stay synchronized to the same time range
+
 ### Visual Indicators
 - **"Available: X bars"** - Shows how many bars exist in the database for the selected ticker/timeframe
+- **"Showing X of Y points"** - Current view vs total available data
 - **"No data in DB"** - Indicates data will be fetched from Alpaca on load (if configured)
 
 ## Command Line Tools

@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Plot from 'react-plotly.js';
-import type { Data, Layout } from 'plotly.js';
+import type { Data, Layout, PlotRelayoutEvent } from 'plotly.js';
 import {
   fetchTickers,
   fetchTickerSummary,
@@ -19,6 +19,9 @@ import type {
   ChartSettings,
   RegimeParams,
 } from './types';
+
+// Constants
+const MAX_DISPLAY_POINTS = 7200;
 
 // Regime colors
 const REGIME_COLORS = [
@@ -46,7 +49,7 @@ function App() {
   const [timeframe, setTimeframe] = useState<string>('1Min');
   const [tickerSummary, setTickerSummary] = useState<TickerSummary | null>(null);
 
-  // Date range
+  // Internal date range for API calls (from ticker summary)
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
 
@@ -55,6 +58,9 @@ function App() {
   const [featureData, setFeatureData] = useState<FeatureData | null>(null);
   const [regimeData, setRegimeData] = useState<RegimeData | null>(null);
   const [statistics, setStatistics] = useState<Statistics | null>(null);
+
+  // View range for the slider (indices into the data arrays)
+  const [viewRange, setViewRange] = useState<[number, number]>([0, MAX_DISPLAY_POINTS]);
 
   // UI state
   const [loading, setLoading] = useState(false);
@@ -74,6 +80,74 @@ function App() {
     window_size: 60,
     n_components: 8,
   });
+
+  // Compute total data points and constrained view range
+  const totalPoints = ohlcvData?.timestamps.length || 0;
+
+  // Ensure view range is valid and within limits
+  const constrainedViewRange = useMemo((): [number, number] => {
+    if (totalPoints === 0) return [0, 0];
+
+    let [start, end] = viewRange;
+
+    // Clamp to valid range
+    start = Math.max(0, Math.min(start, totalPoints - 1));
+    end = Math.max(start + 1, Math.min(end, totalPoints));
+
+    // Enforce max points limit
+    if (end - start > MAX_DISPLAY_POINTS) {
+      end = start + MAX_DISPLAY_POINTS;
+    }
+
+    return [start, end];
+  }, [viewRange, totalPoints]);
+
+  // Slice data based on view range
+  const visibleOhlcvData = useMemo((): OHLCVData | null => {
+    if (!ohlcvData) return null;
+    const [start, end] = constrainedViewRange;
+    return {
+      timestamps: ohlcvData.timestamps.slice(start, end),
+      open: ohlcvData.open.slice(start, end),
+      high: ohlcvData.high.slice(start, end),
+      low: ohlcvData.low.slice(start, end),
+      close: ohlcvData.close.slice(start, end),
+      volume: ohlcvData.volume.slice(start, end),
+    };
+  }, [ohlcvData, constrainedViewRange]);
+
+  const visibleFeatureData = useMemo((): FeatureData | null => {
+    if (!featureData) return null;
+    const [start, end] = constrainedViewRange;
+    const slicedFeatures: Record<string, number[]> = {};
+    for (const [key, values] of Object.entries(featureData.features)) {
+      slicedFeatures[key] = values.slice(start, end);
+    }
+    return {
+      timestamps: featureData.timestamps.slice(start, end),
+      features: slicedFeatures,
+      feature_names: featureData.feature_names,
+    };
+  }, [featureData, constrainedViewRange]);
+
+  const visibleRegimeData = useMemo((): RegimeData | null => {
+    if (!regimeData) return null;
+    const [start, end] = constrainedViewRange;
+    // Regime data may have different length due to windowing, find overlap
+    const regimeStart = Math.max(0, start);
+    const regimeEnd = Math.min(regimeData.timestamps.length, end);
+
+    if (regimeEnd <= regimeStart) return null;
+
+    return {
+      timestamps: regimeData.timestamps.slice(regimeStart, regimeEnd),
+      regime_labels: regimeData.regime_labels.slice(regimeStart, regimeEnd),
+      regime_info: regimeData.regime_info,
+      transition_matrix: regimeData.transition_matrix,
+      explained_variance: regimeData.explained_variance,
+      n_samples: regimeEnd - regimeStart,
+    };
+  }, [regimeData, constrainedViewRange]);
 
   // Load tickers from database on mount
   useEffect(() => {
@@ -98,11 +172,9 @@ function App() {
         // Get date range for the selected timeframe
         const tfData = summary.timeframes[timeframe];
         if (tfData && tfData.earliest && tfData.latest) {
-          // Extract just the date part (YYYY-MM-DD) from ISO string
           setStartDate(tfData.earliest.split('T')[0]);
           setEndDate(tfData.latest.split('T')[0]);
         } else {
-          // No data for this timeframe, clear dates
           setStartDate('');
           setEndDate('');
         }
@@ -112,6 +184,14 @@ function App() {
         setTickerSummary(null);
       });
   }, [selectedTicker, timeframe]);
+
+  // Reset view range when new data is loaded
+  useEffect(() => {
+    if (ohlcvData) {
+      const endIdx = Math.min(ohlcvData.timestamps.length, MAX_DISPLAY_POINTS);
+      setViewRange([0, endIdx]);
+    }
+  }, [ohlcvData]);
 
   // Load data when ticker is selected
   const loadData = useCallback(async () => {
@@ -170,9 +250,57 @@ function App() {
     }
   }, [selectedTicker, timeframe, startDate, endDate, regimeParams]);
 
+  // Handle chart selection/zoom
+  const handleChartRelayout = useCallback((event: PlotRelayoutEvent) => {
+    if (!ohlcvData) return;
+
+    // Check if this is a range selection
+    if (event['xaxis.range[0]'] && event['xaxis.range[1]']) {
+      const startTime = new Date(event['xaxis.range[0]'] as string).getTime();
+      const endTime = new Date(event['xaxis.range[1]'] as string).getTime();
+
+      // Find indices that correspond to the selected time range
+      let newStart = 0;
+      let newEnd = ohlcvData.timestamps.length;
+
+      for (let i = 0; i < ohlcvData.timestamps.length; i++) {
+        const ts = new Date(ohlcvData.timestamps[i]).getTime();
+        if (ts >= startTime && newStart === 0) {
+          newStart = i;
+        }
+        if (ts <= endTime) {
+          newEnd = i + 1;
+        }
+      }
+
+      // Enforce max points limit
+      if (newEnd - newStart > MAX_DISPLAY_POINTS) {
+        newEnd = newStart + MAX_DISPLAY_POINTS;
+      }
+
+      setViewRange([newStart, newEnd]);
+    }
+
+    // Handle autorange/reset
+    if (event['xaxis.autorange']) {
+      const endIdx = Math.min(ohlcvData.timestamps.length, MAX_DISPLAY_POINTS);
+      setViewRange([0, endIdx]);
+    }
+  }, [ohlcvData]);
+
+  // Handle range slider change
+  const handleRangeChange = (newStart: number, newEnd: number) => {
+    // Enforce max points
+    if (newEnd - newStart > MAX_DISPLAY_POINTS) {
+      // Adjust end to respect max points from start
+      newEnd = newStart + MAX_DISPLAY_POINTS;
+    }
+    setViewRange([newStart, newEnd]);
+  };
+
   // Create candlestick chart data
   const createCandlestickChart = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!ohlcvData) {
+    if (!visibleOhlcvData) {
       return { data: [], layout: {} };
     }
 
@@ -181,30 +309,30 @@ function App() {
     // Candlestick trace
     traces.push({
       type: 'candlestick',
-      x: ohlcvData.timestamps,
-      open: ohlcvData.open,
-      high: ohlcvData.high,
-      low: ohlcvData.low,
-      close: ohlcvData.close,
+      x: visibleOhlcvData.timestamps,
+      open: visibleOhlcvData.open,
+      high: visibleOhlcvData.high,
+      low: visibleOhlcvData.low,
+      close: visibleOhlcvData.close,
       name: 'Price',
       increasing: { line: { color: '#3fb950' } },
       decreasing: { line: { color: '#f85149' } },
     });
 
     // Add regime backgrounds if enabled
-    if (chartSettings.showRegimes && regimeData) {
+    if (chartSettings.showRegimes && visibleRegimeData && visibleRegimeData.timestamps.length > 0) {
       const shapes: Partial<Plotly.Shape>[] = [];
-      let currentRegime = regimeData.regime_labels[0];
+      let currentRegime = visibleRegimeData.regime_labels[0];
       let startIdx = 0;
 
-      for (let i = 1; i <= regimeData.regime_labels.length; i++) {
-        if (i === regimeData.regime_labels.length || regimeData.regime_labels[i] !== currentRegime) {
+      for (let i = 1; i <= visibleRegimeData.regime_labels.length; i++) {
+        if (i === visibleRegimeData.regime_labels.length || visibleRegimeData.regime_labels[i] !== currentRegime) {
           shapes.push({
             type: 'rect',
             xref: 'x',
             yref: 'paper',
-            x0: regimeData.timestamps[startIdx],
-            x1: regimeData.timestamps[Math.min(i, regimeData.regime_labels.length - 1)],
+            x0: visibleRegimeData.timestamps[startIdx],
+            x1: visibleRegimeData.timestamps[Math.min(i, visibleRegimeData.regime_labels.length - 1)],
             y0: 0,
             y1: 1,
             fillcolor: REGIME_COLORS[currentRegime % REGIME_COLORS.length],
@@ -212,8 +340,8 @@ function App() {
             layer: 'below',
           });
 
-          if (i < regimeData.regime_labels.length) {
-            currentRegime = regimeData.regime_labels[i];
+          if (i < visibleRegimeData.regime_labels.length) {
+            currentRegime = visibleRegimeData.regime_labels[i];
             startIdx = i;
           }
         }
@@ -225,7 +353,7 @@ function App() {
           title: { text: 'Price Chart with Regime States' },
           xaxis: {
             title: { text: 'Time' },
-            rangeslider: { visible: true },
+            rangeslider: { visible: false },
             type: 'date',
           },
           yaxis: { title: { text: 'Price' } },
@@ -235,6 +363,7 @@ function App() {
           font: { color: '#e6edf3' },
           showlegend: true,
           legend: { x: 0, y: 1.1, orientation: 'h' },
+          dragmode: 'select',
         },
       };
     }
@@ -245,33 +374,34 @@ function App() {
         title: { text: 'Price Chart' },
         xaxis: {
           title: { text: 'Time' },
-          rangeslider: { visible: true },
+          rangeslider: { visible: false },
           type: 'date',
         },
         yaxis: { title: { text: 'Price' } },
         paper_bgcolor: '#161b22',
         plot_bgcolor: '#0d1117',
         font: { color: '#e6edf3' },
+        dragmode: 'select',
       },
     };
   };
 
   // Create volume chart
   const createVolumeChart = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!ohlcvData) {
+    if (!visibleOhlcvData) {
       return { data: [], layout: {} };
     }
 
-    const colors = ohlcvData.close.map((close, i) =>
-      i === 0 || close >= ohlcvData.open[i] ? '#3fb950' : '#f85149'
+    const colors = visibleOhlcvData.close.map((close, i) =>
+      i === 0 || close >= visibleOhlcvData.open[i] ? '#3fb950' : '#f85149'
     );
 
     return {
       data: [
         {
           type: 'bar',
-          x: ohlcvData.timestamps,
-          y: ohlcvData.volume,
+          x: visibleOhlcvData.timestamps,
+          y: visibleOhlcvData.volume,
           marker: { color: colors },
           name: 'Volume',
         },
@@ -290,13 +420,13 @@ function App() {
 
   // Create regime distribution chart
   const createRegimeDistribution = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!regimeData) {
+    if (!visibleRegimeData) {
       return { data: [], layout: {} };
     }
 
-    const labels = regimeData.regime_info.map((r) => `Regime ${r.label}`);
-    const values = regimeData.regime_info.map((r) => r.size);
-    const colors = regimeData.regime_info.map((r) => REGIME_COLORS_SOLID[r.label % REGIME_COLORS_SOLID.length]);
+    const labels = visibleRegimeData.regime_info.map((r) => `Regime ${r.label}`);
+    const values = visibleRegimeData.regime_info.map((r) => r.size);
+    const colors = visibleRegimeData.regime_info.map((r) => REGIME_COLORS_SOLID[r.label % REGIME_COLORS_SOLID.length]);
 
     return {
       data: [
@@ -323,11 +453,11 @@ function App() {
 
   // Create regime performance chart
   const createRegimePerformance = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!regimeData) {
+    if (!visibleRegimeData) {
       return { data: [], layout: {} };
     }
 
-    const sortedRegimes = [...regimeData.regime_info].sort((a, b) => b.sharpe - a.sharpe);
+    const sortedRegimes = [...visibleRegimeData.regime_info].sort((a, b) => b.sharpe - a.sharpe);
 
     return {
       data: [
@@ -357,7 +487,7 @@ function App() {
 
   // Create feature chart
   const createFeatureChart = (featureName: string): { data: Data[]; layout: Partial<Layout> } => {
-    if (!featureData || !featureData.features[featureName]) {
+    if (!visibleFeatureData || !visibleFeatureData.features[featureName]) {
       return { data: [], layout: {} };
     }
 
@@ -366,8 +496,8 @@ function App() {
         {
           type: 'scatter',
           mode: 'lines',
-          x: featureData.timestamps,
-          y: featureData.features[featureName],
+          x: visibleFeatureData.timestamps,
+          y: visibleFeatureData.features[featureName],
           name: featureName,
           line: { color: '#58a6ff' },
         },
@@ -386,17 +516,17 @@ function App() {
 
   // Create transition matrix heatmap
   const createTransitionMatrix = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!regimeData || !regimeData.transition_matrix.length) {
+    if (!visibleRegimeData || !visibleRegimeData.transition_matrix.length) {
       return { data: [], layout: {} };
     }
 
-    const labels = regimeData.regime_info.map((r) => `R${r.label}`);
+    const labels = visibleRegimeData.regime_info.map((r) => `R${r.label}`);
 
     return {
       data: [
         {
           type: 'heatmap',
-          z: regimeData.transition_matrix,
+          z: visibleRegimeData.transition_matrix,
           x: labels,
           y: labels,
           colorscale: 'Blues',
@@ -423,6 +553,12 @@ function App() {
         ? prev.selectedFeatures.filter((f) => f !== feature)
         : [...prev.selectedFeatures, feature],
     }));
+  };
+
+  // Format timestamp for display
+  const formatTimestamp = (ts: string) => {
+    const date = new Date(ts);
+    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   return (
@@ -468,37 +604,17 @@ function App() {
                 <option value="1Day">1 Day</option>
               </select>
             </div>
-          </div>
 
-          {/* Date Range */}
-          <div className="section">
-            <h3 className="section-title">Date Range</h3>
             {tickerSummary && tickerSummary.timeframes[timeframe] && (
-              <div style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: '0.5rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#8b949e', marginTop: '0.5rem' }}>
                 Available: {tickerSummary.timeframes[timeframe].bar_count.toLocaleString()} bars
               </div>
             )}
             {selectedTicker && (!tickerSummary?.timeframes[timeframe]?.bar_count) && (
-              <div style={{ fontSize: '0.75rem', color: '#d29922', marginBottom: '0.5rem' }}>
+              <div style={{ fontSize: '0.75rem', color: '#d29922', marginTop: '0.5rem' }}>
                 No data in DB. Will fetch from Alpaca on load.
               </div>
             )}
-            <div className="form-group">
-              <label>Start Date</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>End Date</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-              />
-            </div>
           </div>
 
           {/* Regime Parameters */}
@@ -643,10 +759,89 @@ function App() {
             </button>
           </div>
 
+          {/* Range Slider - shown when data is loaded */}
+          {ohlcvData && ohlcvData.timestamps.length > 0 && (
+            <div className="range-slider-container" style={{
+              background: '#161b22',
+              padding: '1rem',
+              borderRadius: '8px',
+              marginBottom: '1rem',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <span style={{ fontSize: '0.875rem', color: '#8b949e' }}>
+                  Time Range Selection
+                </span>
+                <span style={{ fontSize: '0.75rem', color: '#58a6ff' }}>
+                  Showing {constrainedViewRange[1] - constrainedViewRange[0]} of {totalPoints.toLocaleString()} points (max {MAX_DISPLAY_POINTS.toLocaleString()})
+                </span>
+              </div>
+
+              {/* Current range display */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', fontSize: '0.8rem', color: '#e6edf3' }}>
+                <span>{ohlcvData.timestamps[constrainedViewRange[0]] ? formatTimestamp(ohlcvData.timestamps[constrainedViewRange[0]]) : '-'}</span>
+                <span>{ohlcvData.timestamps[constrainedViewRange[1] - 1] ? formatTimestamp(ohlcvData.timestamps[constrainedViewRange[1] - 1]) : '-'}</span>
+              </div>
+
+              {/* Dual-thumb range slider */}
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, totalPoints - 1)}
+                  value={constrainedViewRange[0]}
+                  onChange={(e) => {
+                    const newStart = parseInt(e.target.value);
+                    handleRangeChange(newStart, Math.max(newStart + 1, constrainedViewRange[1]));
+                  }}
+                  style={{ flex: 1 }}
+                />
+                <input
+                  type="range"
+                  min={1}
+                  max={totalPoints}
+                  value={constrainedViewRange[1]}
+                  onChange={(e) => {
+                    const newEnd = parseInt(e.target.value);
+                    handleRangeChange(Math.min(constrainedViewRange[0], newEnd - 1), newEnd);
+                  }}
+                  style={{ flex: 1 }}
+                />
+                <button
+                  className="btn"
+                  style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}
+                  onClick={() => {
+                    const endIdx = Math.min(totalPoints, MAX_DISPLAY_POINTS);
+                    setViewRange([0, endIdx]);
+                  }}
+                >
+                  Reset
+                </button>
+              </div>
+
+              {/* Quick range buttons */}
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                {[1000, 2000, 5000, 7200].map((points) => (
+                  <button
+                    key={points}
+                    className="btn"
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
+                    onClick={() => {
+                      const pts = Math.min(points, totalPoints);
+                      setViewRange([constrainedViewRange[0], constrainedViewRange[0] + pts]);
+                    }}
+                    disabled={points > totalPoints}
+                  >
+                    {points.toLocaleString()} pts
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Charts Tab */}
           {activeTab === 'charts' && (
             <>
-              {ohlcvData && (
+              {visibleOhlcvData && (
                 <>
                   <div className="chart-container">
                     <Plot
@@ -654,6 +849,7 @@ function App() {
                       layout={createCandlestickChart().layout}
                       config={{ responsive: true, displayModeBar: true }}
                       style={{ width: '100%', height: '500px' }}
+                      onRelayout={handleChartRelayout}
                     />
                   </div>
 
@@ -670,7 +866,7 @@ function App() {
                 </>
               )}
 
-              {regimeData && (
+              {visibleRegimeData && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="chart-container">
                     <Plot
@@ -699,9 +895,9 @@ function App() {
                 </div>
               )}
 
-              {!ohlcvData && !loading && (
+              {!visibleOhlcvData && !loading && (
                 <div className="loading">
-                  Select a data source and click "Load Data" to begin
+                  Select a ticker and click "Load Data" to begin
                 </div>
               )}
             </>
@@ -710,12 +906,12 @@ function App() {
           {/* Features Tab */}
           {activeTab === 'features' && (
             <>
-              {featureData && (
+              {visibleFeatureData && (
                 <>
                   <div className="section">
                     <h3 className="section-title">Select Features to Display</h3>
                     <div className="toggle-group">
-                      {featureData.feature_names.map((feature) => (
+                      {visibleFeatureData.feature_names.map((feature) => (
                         <button
                           key={feature}
                           className={`toggle-btn ${
@@ -748,7 +944,7 @@ function App() {
                 </>
               )}
 
-              {!featureData && !loading && (
+              {!visibleFeatureData && !loading && (
                 <div className="loading">Load data to view features</div>
               )}
             </>
