@@ -196,6 +196,20 @@ Ensure file path is correct and file exists:
 ls -la data/raw/AAPL_1Min.parquet
 ```
 
+### Timezone Errors
+
+```
+TypeError: can't compare offset-naive and offset-aware datetimes
+```
+
+This error occurred in earlier versions when importing CSV/Parquet files with timezone-naive timestamps. The issue has been fixed - the loader now automatically converts naive timestamps to UTC.
+
+If you encounter this error:
+1. Update to the latest version of the codebase
+2. Ensure you're using `DatabaseLoader.import_csv()` or `import_parquet()` methods
+
+See [DATABASE.md](DATABASE.md#timezone-handling) for details on timestamp handling.
+
 ### Alpaca Sync Failures
 
 ```

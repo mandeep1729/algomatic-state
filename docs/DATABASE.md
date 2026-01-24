@@ -188,6 +188,52 @@ Default pool settings:
 
 Data imports use PostgreSQL's `INSERT ... ON CONFLICT DO NOTHING` for efficient upserts without duplicates.
 
+## Timezone Handling
+
+### Storage Format
+
+All timestamps in the database are stored as **timezone-aware UTC** using PostgreSQL's `TIMESTAMPTZ` type. This ensures consistent time handling across different data sources and client applications.
+
+### Import Behavior
+
+When importing data from CSV or Parquet files:
+
+1. **Timezone-naive timestamps** (common in most CSV/Parquet files) are automatically converted to UTC
+2. **Timezone-aware timestamps** are normalized to UTC before storage
+3. The `DatabaseLoader.import_csv()` and `import_parquet()` methods handle this conversion automatically
+
+### Code Example
+
+```python
+# The loader automatically handles timezone conversion
+from src.data.loaders import DatabaseLoader
+
+loader = DatabaseLoader()
+
+# CSV files with naive timestamps work correctly
+rows = loader.import_csv("data/raw/AAPL.csv", "AAPL", timeframe="1Min")
+
+# Parquet files are also handled
+rows = loader.import_parquet("data/raw/WTI.parquet", "WTI", timeframe="1Day")
+```
+
+### Technical Details
+
+The import methods convert pandas timestamps to timezone-aware UTC:
+
+```python
+import pytz
+
+# Convert naive timestamp to UTC
+if timestamp.tzinfo is None:
+    timestamp = pytz.UTC.localize(timestamp)
+```
+
+This ensures compatibility between:
+- Pandas DataFrames (often timezone-naive)
+- PostgreSQL TIMESTAMPTZ columns (always timezone-aware)
+- The sync log tracking (requires timezone-aware comparisons)
+
 ## Data Integrity
 
 ### Constraints
