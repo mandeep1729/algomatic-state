@@ -252,28 +252,36 @@ function App() {
 
   // Handle chart selection/zoom
   const handleChartRelayout = useCallback((event: PlotRelayoutEvent) => {
-    if (!ohlcvData) return;
+    if (!ohlcvData || !visibleOhlcvData) return;
 
     // Check if this is a range selection
     if (event['xaxis.range[0]'] && event['xaxis.range[1]']) {
       const startTime = new Date(event['xaxis.range[0]'] as string).getTime();
       const endTime = new Date(event['xaxis.range[1]'] as string).getTime();
 
-      // Find indices that correspond to the selected time range
-      let newStart = 0;
-      let newEnd = ohlcvData.timestamps.length;
+      // Find indices within the VISIBLE data that match the selection
+      let visibleStart = -1;
+      let visibleEnd = visibleOhlcvData.timestamps.length;
 
-      for (let i = 0; i < ohlcvData.timestamps.length; i++) {
-        const ts = new Date(ohlcvData.timestamps[i]).getTime();
-        if (ts >= startTime && newStart === 0) {
-          newStart = i;
+      for (let i = 0; i < visibleOhlcvData.timestamps.length; i++) {
+        const ts = new Date(visibleOhlcvData.timestamps[i]).getTime();
+        if (ts >= startTime && visibleStart === -1) {
+          visibleStart = i;
         }
         if (ts <= endTime) {
-          newEnd = i + 1;
+          visibleEnd = i + 1;
         }
       }
 
+      if (visibleStart === -1) visibleStart = 0;
+
+      // Convert visible indices to absolute indices in full data
+      const absoluteStart = constrainedViewRange[0] + visibleStart;
+      const absoluteEnd = constrainedViewRange[0] + visibleEnd;
+
       // Enforce max points limit
+      const newStart = absoluteStart;
+      let newEnd = absoluteEnd;
       if (newEnd - newStart > MAX_DISPLAY_POINTS) {
         newEnd = newStart + MAX_DISPLAY_POINTS;
       }
@@ -286,7 +294,7 @@ function App() {
       const endIdx = Math.min(ohlcvData.timestamps.length, MAX_DISPLAY_POINTS);
       setViewRange([0, endIdx]);
     }
-  }, [ohlcvData]);
+  }, [ohlcvData, visibleOhlcvData, constrainedViewRange]);
 
   // Handle range slider change
   const handleRangeChange = (newStart: number, newEnd: number) => {
