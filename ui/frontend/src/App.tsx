@@ -514,17 +514,17 @@ function App() {
         },
       ],
       layout: {
-        title: { text: 'Volume' },
         xaxis: {
-          title: { text: 'Time' },
           type: 'date',
           range: [visibleOhlcvData.timestamps[0], visibleOhlcvData.timestamps[visibleOhlcvData.timestamps.length - 1]],
+          showticklabels: false,
         },
         yaxis: { title: { text: 'Volume' }, autorange: true },
         paper_bgcolor: '#161b22',
         plot_bgcolor: '#0d1117',
         font: { color: '#e6edf3' },
-        height: 200,
+        height: 150,
+        margin: { t: 10, b: 20 },
       },
     };
   };
@@ -1034,7 +1034,7 @@ function App() {
                       <Plot
                         data={createVolumeChart().data}
                         layout={createVolumeChart().layout}
-                        config={{ responsive: true }}
+                        config={{ responsive: true, displayModeBar: false }}
                         style={{ width: '100%' }}
                       />
                     </div>
