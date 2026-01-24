@@ -158,6 +158,12 @@ class DatabaseLoader(BaseDataLoader):
         db_earliest = repo.get_earliest_timestamp(symbol, timeframe)
         logger.info(f"Database range for {symbol}/{timeframe}: {db_earliest} to {db_latest}")
 
+        # Normalize timezone-aware timestamps to naive for comparison
+        if db_latest is not None and db_latest.tzinfo is not None:
+            db_latest = db_latest.replace(tzinfo=None)
+        if db_earliest is not None and db_earliest.tzinfo is not None:
+            db_earliest = db_earliest.replace(tzinfo=None)
+
         # Determine what data to fetch
         fetch_start = None
         fetch_end = None
@@ -197,11 +203,12 @@ class DatabaseLoader(BaseDataLoader):
                 alpaca_timeframe = self._map_timeframe(timeframe)
                 logger.info(f"Fetching from Alpaca: {symbol} {alpaca_timeframe} from {fetch_start} to {fetch_end}")
 
+                # Note: AlpacaLoader only supports 1-minute bars
+                # Other timeframes should be aggregated from 1-minute data
                 df = self.alpaca_loader.load(
                     symbol,
                     start=fetch_start,
                     end=fetch_end,
-                    timeframe=alpaca_timeframe,
                 )
                 logger.info(f"Alpaca returned {len(df)} rows for {symbol}")
 
