@@ -94,6 +94,28 @@ npm run dev
 # UI available at http://localhost:5173
 ```
 
+## Using the UI
+
+The React frontend provides an interactive visualization for regime state analysis.
+
+### Ticker Selection
+1. Select a **Ticker** from the dropdown (populated from the database)
+2. Select a **Timeframe** (1Min, 5Min, 15Min, 1Hour, 1Day)
+3. **Start/End dates are auto-populated** based on available data in the database
+
+### Data Loading Behavior
+- When you click **Load Data**, the system:
+  1. Checks if data exists in the database for the selected range
+  2. If data is missing and Alpaca API is configured, fetches from Alpaca
+  3. Stores fetched data in the `ohlcv_bars` table
+  4. Displays chart from database
+
+- All chart data **always comes from the database** - never directly from Alpaca
+
+### Visual Indicators
+- **"Available: X bars"** - Shows how many bars exist in the database for the selected ticker/timeframe
+- **"No data in DB"** - Indicates data will be fetched from Alpaca on load (if configured)
+
 ## Command Line Tools
 
 ### Database Initialization

@@ -179,69 +179,51 @@ async def get_data_sources():
     return sources
 
 
-@app.get("/api/ohlcv/{source_name}")
+@app.get("/api/ohlcv/{symbol}")
 async def get_ohlcv_data(
-    source_name: str,
-    source_type: str = Query("database", description="Data source type: database, local, or alpaca"),
+    symbol: str,
     timeframe: str = Query("1Min", description="Bar timeframe (1Min, 5Min, 15Min, 1Hour, 1Day)"),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
 ):
-    """Load OHLCV data from specified source.
+    """Load OHLCV data for a ticker symbol.
 
-    The 'database' source type (default) loads data from PostgreSQL with smart
-    incremental fetching from Alpaca. Data is automatically synced when requested.
+    Data is loaded from the PostgreSQL database. If data is not available for the
+    requested range, it will be automatically fetched from Alpaca API (if configured)
+    and stored in the database before returning.
+
+    All chart data always comes from the ohlcv_bars table.
     """
-    cache_key = f"ohlcv_{source_type}_{source_name}_{timeframe}_{start_date}_{end_date}"
+    cache_key = f"ohlcv_{symbol}_{timeframe}_{start_date}_{end_date}"
     cached = get_cached_data(cache_key)
     if cached is not None:
         return cached
 
     try:
-        if source_type == "database":
-            # Database loader with smart Alpaca sync
-            if timeframe not in VALID_TIMEFRAMES:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
-                )
+        if timeframe not in VALID_TIMEFRAMES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
+            )
 
-            loader = get_database_loader()
+        # Always use database loader with auto-fetch from Alpaca
+        loader = get_database_loader()
 
-            # Default to last 30 days if no dates specified
-            end = datetime.fromisoformat(end_date) if end_date else datetime.now()
-            start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=30)
+        # Default to last 30 days if no dates specified
+        end = datetime.fromisoformat(end_date) if end_date else datetime.now()
+        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=30)
 
-            df = loader.load(source_name, start=start, end=end, timeframe=timeframe)
-
-        elif source_type == "local":
-            loader = CSVLoader(validate=True)
-            file_path = DATA_DIR / f"{source_name}.csv"
-            if not file_path.exists():
-                raise HTTPException(status_code=404, detail=f"File not found: {source_name}.csv")
-
-            start = datetime.fromisoformat(start_date) if start_date else None
-            end = datetime.fromisoformat(end_date) if end_date else None
-            df = loader.load(file_path, start=start, end=end)
-
-        elif source_type == "alpaca":
-            # Direct Alpaca query (bypasses database)
-            try:
-                from src.data.loaders.alpaca_loader import AlpacaLoader
-                loader = AlpacaLoader(use_cache=True, validate=True)
-
-                # Default to last 30 days if no dates specified
-                end = datetime.fromisoformat(end_date) if end_date else datetime.now()
-                start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=30)
-
-                df = loader.load(source_name, start=start, end=end)
-            except ValueError as e:
-                raise HTTPException(status_code=401, detail=str(e))
-        else:
-            raise HTTPException(status_code=400, detail=f"Unknown source type: {source_type}")
+        # This will:
+        # 1. Check if data exists in database for the requested range
+        # 2. If not, fetch from Alpaca (if configured) and store in ohlcv_bars
+        # 3. Return data from database
+        df = loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)
 
         if df.empty:
-            raise HTTPException(status_code=404, detail="No data found for the specified parameters")
+            raise HTTPException(
+                status_code=404,
+                detail=f"No data found for {symbol}. Ensure Alpaca API is configured or import data manually."
+            )
 
         response = {
             "timestamps": df.index.strftime("%Y-%m-%d %H:%M:%S").tolist(),
@@ -253,7 +235,7 @@ async def get_ohlcv_data(
         }
 
         # Store raw dataframe in cache for feature computation
-        set_cached_data(f"df_{source_type}_{source_name}", df)
+        set_cached_data(f"df_{symbol}", df)
         set_cached_data(cache_key, response)
 
         return response
@@ -265,24 +247,24 @@ async def get_ohlcv_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/features/{source_name}")
+@app.get("/api/features/{symbol}")
 async def get_features(
-    source_name: str,
-    source_type: str = Query("local", description="Data source type"),
+    symbol: str,
+    timeframe: str = Query("1Min", description="Bar timeframe"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
 ):
     """Compute and return features for the data."""
     # First ensure OHLCV data is loaded
-    await get_ohlcv_data(source_name, source_type, start_date, end_date)
+    await get_ohlcv_data(symbol, timeframe, start_date, end_date)
 
-    cache_key = f"features_{source_type}_{source_name}_{start_date}_{end_date}"
+    cache_key = f"features_{symbol}_{timeframe}_{start_date}_{end_date}"
     cached = get_cached_data(cache_key)
     if cached is not None:
         return cached
 
     try:
-        df = get_cached_data(f"df_{source_type}_{source_name}")
+        df = get_cached_data(f"df_{symbol.upper()}")
         if df is None:
             raise HTTPException(status_code=400, detail="OHLCV data not loaded")
 
@@ -291,7 +273,7 @@ async def get_features(
         features_df = pipeline.compute(df)
 
         # Store for regime computation
-        set_cached_data(f"features_df_{source_type}_{source_name}", features_df)
+        set_cached_data(f"features_df_{symbol.upper()}", features_df)
 
         # Convert to response format
         response = {
@@ -308,10 +290,10 @@ async def get_features(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/regimes/{source_name}")
+@app.get("/api/regimes/{symbol}")
 async def get_regimes(
-    source_name: str,
-    source_type: str = Query("local"),
+    symbol: str,
+    timeframe: str = Query("1Min", description="Bar timeframe"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
     n_clusters: int = Query(5, ge=2, le=10),
@@ -320,15 +302,15 @@ async def get_regimes(
 ):
     """Compute and return regime states."""
     # Ensure features are computed
-    await get_features(source_name, source_type, start_date, end_date)
+    await get_features(symbol, timeframe, start_date, end_date)
 
-    cache_key = f"regimes_{source_type}_{source_name}_{start_date}_{end_date}_{n_clusters}_{window_size}_{n_components}"
+    cache_key = f"regimes_{symbol}_{timeframe}_{start_date}_{end_date}_{n_clusters}_{window_size}_{n_components}"
     cached = get_cached_data(cache_key)
     if cached is not None:
         return cached
 
     try:
-        features_df = get_cached_data(f"features_df_{source_type}_{source_name}")
+        features_df = get_cached_data(f"features_df_{symbol.upper()}")
         if features_df is None:
             raise HTTPException(status_code=400, detail="Features not computed")
 
@@ -359,7 +341,7 @@ async def get_regimes(
         states = pca.fit_transform(normalized_windows)
 
         # Compute forward returns for regime labeling
-        df = get_cached_data(f"df_{source_type}_{source_name}")
+        df = get_cached_data(f"df_{symbol.upper()}")
         aligned_df = df.loc[timestamps]
         forward_returns = aligned_df["close"].pct_change(5).shift(-5).fillna(0).values
 
@@ -392,20 +374,20 @@ async def get_regimes(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/statistics/{source_name}")
+@app.get("/api/statistics/{symbol}")
 async def get_statistics(
-    source_name: str,
-    source_type: str = Query("local"),
+    symbol: str,
+    timeframe: str = Query("1Min", description="Bar timeframe"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
 ):
     """Get comprehensive statistics summary."""
     # Load data first
-    await get_ohlcv_data(source_name, source_type, start_date, end_date)
+    await get_ohlcv_data(symbol, timeframe, start_date, end_date)
 
     try:
-        df = get_cached_data(f"df_{source_type}_{source_name}")
-        features_df = get_cached_data(f"features_df_{source_type}_{source_name}")
+        df = get_cached_data(f"df_{symbol.upper()}")
+        features_df = get_cached_data(f"features_df_{symbol.upper()}")
 
         # OHLCV statistics
         ohlcv_stats = {
@@ -451,7 +433,7 @@ async def get_statistics(
         regime_stats = {}
         regime_cache_key = None
         for key in _cache.keys():
-            if key.startswith(f"regimes_{source_type}_{source_name}"):
+            if key.startswith(f"regimes_{symbol.upper()}"):
                 regime_cache_key = key
                 break
 

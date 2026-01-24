@@ -2,14 +2,16 @@ import { useState, useEffect, useCallback } from 'react';
 import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
 import {
-  fetchDataSources,
+  fetchTickers,
+  fetchTickerSummary,
   fetchOHLCVData,
   fetchFeatures,
   fetchRegimes,
   fetchStatistics,
 } from './api';
+import type { TickerSummary } from './api';
 import type {
-  DataSource,
+  Ticker,
   OHLCVData,
   FeatureData,
   RegimeData,
@@ -38,9 +40,11 @@ const REGIME_COLORS_SOLID = [
 ];
 
 function App() {
-  // Data sources
-  const [sources, setSources] = useState<DataSource[]>([]);
-  const [selectedSource, setSelectedSource] = useState<DataSource | null>(null);
+  // Tickers from database
+  const [tickers, setTickers] = useState<Ticker[]>([]);
+  const [selectedTicker, setSelectedTicker] = useState<string>('');
+  const [timeframe, setTimeframe] = useState<string>('1Min');
+  const [tickerSummary, setTickerSummary] = useState<TickerSummary | null>(null);
 
   // Date range
   const [startDate, setStartDate] = useState<string>('');
@@ -71,16 +75,47 @@ function App() {
     n_components: 8,
   });
 
-  // Load data sources on mount
+  // Load tickers from database on mount
   useEffect(() => {
-    fetchDataSources()
-      .then(setSources)
+    fetchTickers()
+      .then(setTickers)
       .catch((err) => setError(err.message));
   }, []);
 
-  // Load data when source changes
+  // Fetch ticker summary and populate dates when ticker or timeframe changes
+  useEffect(() => {
+    if (!selectedTicker) {
+      setTickerSummary(null);
+      setStartDate('');
+      setEndDate('');
+      return;
+    }
+
+    fetchTickerSummary(selectedTicker)
+      .then((summary) => {
+        setTickerSummary(summary);
+
+        // Get date range for the selected timeframe
+        const tfData = summary.timeframes[timeframe];
+        if (tfData && tfData.earliest && tfData.latest) {
+          // Extract just the date part (YYYY-MM-DD) from ISO string
+          setStartDate(tfData.earliest.split('T')[0]);
+          setEndDate(tfData.latest.split('T')[0]);
+        } else {
+          // No data for this timeframe, clear dates
+          setStartDate('');
+          setEndDate('');
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to fetch ticker summary:', err);
+        setTickerSummary(null);
+      });
+  }, [selectedTicker, timeframe]);
+
+  // Load data when ticker is selected
   const loadData = useCallback(async () => {
-    if (!selectedSource) return;
+    if (!selectedTicker) return;
 
     setLoading(true);
     setError(null);
@@ -89,10 +124,10 @@ function App() {
       const start = startDate || undefined;
       const end = endDate || undefined;
 
-      // Load OHLCV data
+      // Load OHLCV data from database (auto-fetches from Alpaca if missing)
       const ohlcv = await fetchOHLCVData(
-        selectedSource.name,
-        selectedSource.type,
+        selectedTicker,
+        timeframe,
         start,
         end
       );
@@ -100,8 +135,8 @@ function App() {
 
       // Load features
       const features = await fetchFeatures(
-        selectedSource.name,
-        selectedSource.type,
+        selectedTicker,
+        timeframe,
         start,
         end
       );
@@ -109,8 +144,8 @@ function App() {
 
       // Load regimes
       const regimes = await fetchRegimes(
-        selectedSource.name,
-        selectedSource.type,
+        selectedTicker,
+        timeframe,
         start,
         end,
         regimeParams.n_clusters,
@@ -121,8 +156,8 @@ function App() {
 
       // Load statistics
       const stats = await fetchStatistics(
-        selectedSource.name,
-        selectedSource.type,
+        selectedTicker,
+        timeframe,
         start,
         end
       );
@@ -133,7 +168,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [selectedSource, startDate, endDate, regimeParams]);
+  }, [selectedTicker, timeframe, startDate, endDate, regimeParams]);
 
   // Create candlestick chart data
   const createCandlestickChart = (): { data: Data[]; layout: Partial<Layout> } => {
@@ -402,45 +437,35 @@ function App() {
       <div className="main-content">
         {/* Sidebar */}
         <aside className="sidebar">
-          {/* Data Source Selection */}
+          {/* Ticker Selection */}
           <div className="section">
-            <h3 className="section-title">Data Source</h3>
+            <h3 className="section-title">Ticker</h3>
             <div className="form-group">
-              <label>Source Type</label>
+              <label>Symbol</label>
               <select
-                value={selectedSource?.type || ''}
-                onChange={(e) => {
-                  const type = e.target.value;
-                  const firstOfType = sources.find((s) => s.type === type);
-                  setSelectedSource(firstOfType || null);
-                }}
+                value={selectedTicker}
+                onChange={(e) => setSelectedTicker(e.target.value)}
               >
-                <option value="">Select type...</option>
-                <option value="local">Local Files</option>
-                <option value="alpaca">Alpaca API</option>
+                <option value="">Select ticker...</option>
+                {tickers.map((t) => (
+                  <option key={t.symbol} value={t.symbol}>
+                    {t.symbol} {t.timeframes.length > 0 ? `(${t.timeframes.join(', ')})` : ''}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="form-group">
-              <label>
-                {selectedSource?.type === 'local' ? 'File' : 'Ticker'}
-              </label>
+              <label>Timeframe</label>
               <select
-                value={selectedSource?.name || ''}
-                onChange={(e) => {
-                  const source = sources.find((s) => s.name === e.target.value);
-                  setSelectedSource(source || null);
-                }}
-                disabled={!selectedSource?.type}
+                value={timeframe}
+                onChange={(e) => setTimeframe(e.target.value)}
               >
-                <option value="">Select...</option>
-                {sources
-                  .filter((s) => s.type === selectedSource?.type)
-                  .map((s) => (
-                    <option key={s.name} value={s.name}>
-                      {s.name}
-                    </option>
-                  ))}
+                <option value="1Min">1 Minute</option>
+                <option value="5Min">5 Minutes</option>
+                <option value="15Min">15 Minutes</option>
+                <option value="1Hour">1 Hour</option>
+                <option value="1Day">1 Day</option>
               </select>
             </div>
           </div>
@@ -448,6 +473,16 @@ function App() {
           {/* Date Range */}
           <div className="section">
             <h3 className="section-title">Date Range</h3>
+            {tickerSummary && tickerSummary.timeframes[timeframe] && (
+              <div style={{ fontSize: '0.75rem', color: '#8b949e', marginBottom: '0.5rem' }}>
+                Available: {tickerSummary.timeframes[timeframe].bar_count.toLocaleString()} bars
+              </div>
+            )}
+            {selectedTicker && (!tickerSummary?.timeframes[timeframe]?.bar_count) && (
+              <div style={{ fontSize: '0.75rem', color: '#d29922', marginBottom: '0.5rem' }}>
+                No data in DB. Will fetch from Alpaca on load.
+              </div>
+            )}
             <div className="form-group">
               <label>Start Date</label>
               <input
@@ -531,7 +566,7 @@ function App() {
             className="btn btn-primary"
             style={{ width: '100%', marginBottom: '1rem' }}
             onClick={loadData}
-            disabled={!selectedSource || loading}
+            disabled={!selectedTicker || loading}
           >
             {loading ? 'Loading...' : 'Load Data'}
           </button>

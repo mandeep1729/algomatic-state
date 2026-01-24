@@ -1,50 +1,50 @@
 import axios from 'axios';
-import type { DataSource, OHLCVData, FeatureData, RegimeData, Statistics } from './types';
+import type { Ticker, OHLCVData, FeatureData, RegimeData, Statistics } from './types';
 
 const API_BASE = '/api';
 
-export async function fetchDataSources(): Promise<DataSource[]> {
-  const response = await axios.get<DataSource[]>(`${API_BASE}/sources`);
+export async function fetchTickers(): Promise<Ticker[]> {
+  const response = await axios.get<Ticker[]>(`${API_BASE}/tickers`);
   return response.data;
 }
 
 export async function fetchOHLCVData(
-  sourceName: string,
-  sourceType: string,
+  symbol: string,
+  timeframe: string = '1Min',
   startDate?: string,
   endDate?: string
 ): Promise<OHLCVData> {
   const params = new URLSearchParams();
-  params.append('source_type', sourceType);
+  params.append('timeframe', timeframe);
   if (startDate) params.append('start_date', startDate);
   if (endDate) params.append('end_date', endDate);
 
   const response = await axios.get<OHLCVData>(
-    `${API_BASE}/ohlcv/${sourceName}?${params.toString()}`
+    `${API_BASE}/ohlcv/${symbol}?${params.toString()}`
   );
   return response.data;
 }
 
 export async function fetchFeatures(
-  sourceName: string,
-  sourceType: string,
+  symbol: string,
+  timeframe: string = '1Min',
   startDate?: string,
   endDate?: string
 ): Promise<FeatureData> {
   const params = new URLSearchParams();
-  params.append('source_type', sourceType);
+  params.append('timeframe', timeframe);
   if (startDate) params.append('start_date', startDate);
   if (endDate) params.append('end_date', endDate);
 
   const response = await axios.get<FeatureData>(
-    `${API_BASE}/features/${sourceName}?${params.toString()}`
+    `${API_BASE}/features/${symbol}?${params.toString()}`
   );
   return response.data;
 }
 
 export async function fetchRegimes(
-  sourceName: string,
-  sourceType: string,
+  symbol: string,
+  timeframe: string = '1Min',
   startDate?: string,
   endDate?: string,
   nClusters: number = 5,
@@ -52,7 +52,7 @@ export async function fetchRegimes(
   nComponents: number = 8
 ): Promise<RegimeData> {
   const params = new URLSearchParams();
-  params.append('source_type', sourceType);
+  params.append('timeframe', timeframe);
   if (startDate) params.append('start_date', startDate);
   if (endDate) params.append('end_date', endDate);
   params.append('n_clusters', nClusters.toString());
@@ -60,28 +60,44 @@ export async function fetchRegimes(
   params.append('n_components', nComponents.toString());
 
   const response = await axios.get<RegimeData>(
-    `${API_BASE}/regimes/${sourceName}?${params.toString()}`
+    `${API_BASE}/regimes/${symbol}?${params.toString()}`
   );
   return response.data;
 }
 
 export async function fetchStatistics(
-  sourceName: string,
-  sourceType: string,
+  symbol: string,
+  timeframe: string = '1Min',
   startDate?: string,
   endDate?: string
 ): Promise<Statistics> {
   const params = new URLSearchParams();
-  params.append('source_type', sourceType);
+  params.append('timeframe', timeframe);
   if (startDate) params.append('start_date', startDate);
   if (endDate) params.append('end_date', endDate);
 
   const response = await axios.get<Statistics>(
-    `${API_BASE}/statistics/${sourceName}?${params.toString()}`
+    `${API_BASE}/statistics/${symbol}?${params.toString()}`
   );
   return response.data;
 }
 
 export async function clearCache(): Promise<void> {
   await axios.delete(`${API_BASE}/cache`);
+}
+
+export interface TickerSummary {
+  symbol: string;
+  timeframes: {
+    [key: string]: {
+      earliest: string | null;
+      latest: string | null;
+      bar_count: number;
+    };
+  };
+}
+
+export async function fetchTickerSummary(symbol: string): Promise<TickerSummary> {
+  const response = await axios.get<TickerSummary>(`${API_BASE}/tickers/${symbol}/summary`);
+  return response.data;
 }

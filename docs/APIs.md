@@ -5,19 +5,7 @@ FastAPI backend endpoints for market data access and visualization.
 **Base URL:** `http://localhost:8000`
 **Swagger Docs:** `http://localhost:8000/docs`
 
-## Data Sources
-
-### `GET /api/sources`
-List all available data sources (database tickers, local files, Alpaca).
-
-**Response:**
-```json
-[
-  {"name": "AAPL", "type": "database", "path": null},
-  {"name": "sample_data", "type": "local", "path": "/data/sample_data.csv"},
-  {"name": "SPY", "type": "alpaca", "path": null}
-]
-```
+## Tickers
 
 ### `GET /api/tickers`
 List all tickers stored in the database.
@@ -55,14 +43,15 @@ Get data summary for a ticker (available timeframes and date ranges).
 ## OHLCV Data
 
 ### `GET /api/ohlcv/{symbol}`
-Load OHLCV data for a symbol.
+Load OHLCV data for a symbol from the database.
+
+Data is always loaded from the PostgreSQL database. If data is not available for the requested range and Alpaca API is configured, it will be automatically fetched from Alpaca and stored in the database before returning.
 
 **Query Parameters:**
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| source_type | string | "database" | "database", "local", or "alpaca" |
-| timeframe | string | "1Min" | Bar timeframe |
+| timeframe | string | "1Min" | Bar timeframe (1Min, 5Min, 15Min, 1Hour, 1Day) |
 | start_date | string | -30 days | Start date (YYYY-MM-DD) |
 | end_date | string | now | End date (YYYY-MM-DD) |
 
@@ -83,6 +72,11 @@ curl "http://localhost:8000/api/ohlcv/AAPL?timeframe=1Min&start_date=2024-01-01"
 }
 ```
 
+**Data Flow:**
+1. Check if data exists in database for the requested range
+2. If missing and Alpaca configured → Fetch from Alpaca → Store in `ohlcv_bars` table
+3. Return data from database
+
 ## Features & Regimes
 
 ### `GET /api/features/{symbol}`
@@ -92,7 +86,7 @@ Compute and return technical features for the data.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| source_type | string | "local" | Data source type |
+| timeframe | string | "1Min" | Bar timeframe |
 | start_date | string | null | Start date (YYYY-MM-DD) |
 | end_date | string | null | End date (YYYY-MM-DD) |
 
@@ -116,7 +110,7 @@ Compute and return regime states (clustering analysis).
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| source_type | string | "local" | Data source type |
+| timeframe | string | "1Min" | Bar timeframe |
 | start_date | string | null | Start date |
 | end_date | string | null | End date |
 | n_clusters | int | 5 | Number of regimes (2-10) |

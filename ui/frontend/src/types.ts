@@ -1,7 +1,9 @@
-export interface DataSource {
-  name: string;
-  type: 'local' | 'alpaca';
-  path: string | null;
+export interface Ticker {
+  symbol: string;
+  name: string | null;
+  exchange: string | null;
+  is_active: boolean;
+  timeframes: string[];
 }
 
 export interface OHLCVData {
