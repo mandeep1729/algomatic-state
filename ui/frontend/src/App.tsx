@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
 import * as Plotly from 'plotly.js';
@@ -81,6 +81,9 @@ function App() {
     window_size: 60,
     n_components: 8,
   });
+
+  // Ref to store loadData function for auto-loading
+  const loadDataRef = useRef<(() => void) | null>(null);
 
   // Compute total data points and constrained view range
   const totalPoints = ohlcvData?.timestamps.length || 0;
@@ -194,7 +197,15 @@ function App() {
     }
   }, [ohlcvData]);
 
-  // Load data when ticker is selected
+  // Auto-load data when ticker/timeframe changes and dates are populated
+  useEffect(() => {
+    if (selectedTicker && startDate && endDate) {
+      // Trigger data load
+      loadDataRef.current?.();
+    }
+  }, [selectedTicker, timeframe, startDate, endDate]);
+
+  // Load data function
   const loadData = useCallback(async () => {
     if (!selectedTicker) return;
 
@@ -250,6 +261,11 @@ function App() {
       setLoading(false);
     }
   }, [selectedTicker, timeframe, startDate, endDate, regimeParams]);
+
+  // Keep ref updated with latest loadData
+  useEffect(() => {
+    loadDataRef.current = loadData;
+  }, [loadData]);
 
   // Zoom step factor - how much to zoom in/out by
   const ZOOM_FACTOR = 0.5; // 50% zoom step
