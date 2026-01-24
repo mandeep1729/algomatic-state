@@ -760,83 +760,145 @@ function App() {
           </div>
 
           {/* Range Slider - shown when data is loaded */}
-          {ohlcvData && ohlcvData.timestamps.length > 0 && (
-            <div className="range-slider-container" style={{
-              background: '#161b22',
-              padding: '1rem',
-              borderRadius: '8px',
-              marginBottom: '1rem',
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.875rem', color: '#8b949e' }}>
-                  Time Range Selection
-                </span>
-                <span style={{ fontSize: '0.75rem', color: '#58a6ff' }}>
-                  Showing {constrainedViewRange[1] - constrainedViewRange[0]} of {totalPoints.toLocaleString()} points (max {MAX_DISPLAY_POINTS.toLocaleString()})
-                </span>
-              </div>
+          {ohlcvData && ohlcvData.timestamps.length > 0 && (() => {
+            const windowSize = constrainedViewRange[1] - constrainedViewRange[0];
+            const windowWidthPercent = (windowSize / totalPoints) * 100;
+            const windowPositionPercent = (constrainedViewRange[0] / totalPoints) * 100;
 
-              {/* Current range display */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.75rem', fontSize: '0.8rem', color: '#e6edf3' }}>
-                <span>{ohlcvData.timestamps[constrainedViewRange[0]] ? formatTimestamp(ohlcvData.timestamps[constrainedViewRange[0]]) : '-'}</span>
-                <span>{ohlcvData.timestamps[constrainedViewRange[1] - 1] ? formatTimestamp(ohlcvData.timestamps[constrainedViewRange[1] - 1]) : '-'}</span>
-              </div>
+            return (
+              <div className="range-slider-container" style={{
+                background: '#161b22',
+                padding: '1rem',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+              }}>
+                {/* Header with info */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.875rem', color: '#8b949e' }}>
+                    Time Range Selection
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: '#58a6ff' }}>
+                    Showing {windowSize.toLocaleString()} of {totalPoints.toLocaleString()} points
+                  </span>
+                </div>
 
-              {/* Dual-thumb range slider */}
-              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(0, totalPoints - 1)}
-                  value={constrainedViewRange[0]}
-                  onChange={(e) => {
-                    const newStart = parseInt(e.target.value);
-                    handleRangeChange(newStart, Math.max(newStart + 1, constrainedViewRange[1]));
+                {/* Min/Max date labels */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.7rem', color: '#6e7681' }}>
+                  <span>{formatTimestamp(ohlcvData.timestamps[0])}</span>
+                  <span>{formatTimestamp(ohlcvData.timestamps[totalPoints - 1])}</span>
+                </div>
+
+                {/* Window slider track */}
+                <div
+                  style={{
+                    position: 'relative',
+                    height: '40px',
+                    background: '#21262d',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    border: '1px solid #30363d',
                   }}
-                  style={{ flex: 1 }}
-                />
-                <input
-                  type="range"
-                  min={1}
-                  max={totalPoints}
-                  value={constrainedViewRange[1]}
-                  onChange={(e) => {
-                    const newEnd = parseInt(e.target.value);
-                    handleRangeChange(Math.min(constrainedViewRange[0], newEnd - 1), newEnd);
-                  }}
-                  style={{ flex: 1 }}
-                />
-                <button
-                  className="btn"
-                  style={{ padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}
-                  onClick={() => {
-                    const endIdx = Math.min(totalPoints, MAX_DISPLAY_POINTS);
-                    setViewRange([0, endIdx]);
+                  onClick={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const clickPercent = (e.clientX - rect.left) / rect.width;
+                    const clickIndex = Math.floor(clickPercent * totalPoints);
+                    const halfWindow = Math.floor(windowSize / 2);
+                    const newStart = Math.max(0, Math.min(clickIndex - halfWindow, totalPoints - windowSize));
+                    setViewRange([newStart, newStart + windowSize]);
                   }}
                 >
-                  Reset
-                </button>
-              </div>
-
-              {/* Quick range buttons */}
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
-                {[1000, 2000, 5000, 7200].map((points) => (
-                  <button
-                    key={points}
-                    className="btn"
-                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}
-                    onClick={() => {
-                      const pts = Math.min(points, totalPoints);
-                      setViewRange([constrainedViewRange[0], constrainedViewRange[0] + pts]);
+                  {/* Draggable window */}
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${windowPositionPercent}%`,
+                      width: `${Math.max(windowWidthPercent, 2)}%`,
+                      height: '100%',
+                      background: 'linear-gradient(180deg, #388bfd 0%, #1f6feb 100%)',
+                      borderRadius: '4px',
+                      cursor: 'grab',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minWidth: '20px',
                     }}
-                    disabled={points > totalPoints}
+                    draggable={false}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      const startX = e.clientX;
+                      const startPosition = constrainedViewRange[0];
+                      const track = e.currentTarget.parentElement;
+                      if (!track) return;
+                      const trackWidth = track.getBoundingClientRect().width;
+
+                      const onMouseMove = (moveEvent: MouseEvent) => {
+                        const deltaX = moveEvent.clientX - startX;
+                        const deltaIndex = Math.round((deltaX / trackWidth) * totalPoints);
+                        const newStart = Math.max(0, Math.min(startPosition + deltaIndex, totalPoints - windowSize));
+                        setViewRange([newStart, newStart + windowSize]);
+                      };
+
+                      const onMouseUp = () => {
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onMouseUp);
+                      };
+
+                      document.addEventListener('mousemove', onMouseMove);
+                      document.addEventListener('mouseup', onMouseUp);
+                    }}
                   >
-                    {points.toLocaleString()} pts
+                    <span style={{ fontSize: '0.65rem', color: '#fff', fontWeight: 500, pointerEvents: 'none' }}>
+                      ⋮⋮
+                    </span>
+                  </div>
+                </div>
+
+                {/* Current view range display */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.8rem', color: '#e6edf3' }}>
+                  <span>{formatTimestamp(ohlcvData.timestamps[constrainedViewRange[0]])}</span>
+                  <span style={{ color: '#8b949e', fontSize: '0.7rem' }}>
+                    {windowSize.toLocaleString()} points
+                  </span>
+                  <span>{formatTimestamp(ohlcvData.timestamps[constrainedViewRange[1] - 1])}</span>
+                </div>
+
+                {/* Window size buttons */}
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Window:</span>
+                  {[1000, 2000, 3600, 7200].map((points) => (
+                    <button
+                      key={points}
+                      className="btn"
+                      style={{
+                        padding: '0.2rem 0.5rem',
+                        fontSize: '0.7rem',
+                        background: windowSize === points ? '#388bfd' : undefined,
+                      }}
+                      onClick={() => {
+                        const pts = Math.min(points, totalPoints);
+                        const currentCenter = constrainedViewRange[0] + Math.floor(windowSize / 2);
+                        const newStart = Math.max(0, Math.min(currentCenter - Math.floor(pts / 2), totalPoints - pts));
+                        setViewRange([newStart, newStart + pts]);
+                      }}
+                      disabled={points > totalPoints}
+                    >
+                      {points.toLocaleString()}
+                    </button>
+                  ))}
+                  <button
+                    className="btn"
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', marginLeft: 'auto' }}
+                    onClick={() => {
+                      const endIdx = Math.min(totalPoints, MAX_DISPLAY_POINTS);
+                      setViewRange([0, endIdx]);
+                    }}
+                  >
+                    Reset
                   </button>
-                ))}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Charts Tab */}
           {activeTab === 'charts' && (
