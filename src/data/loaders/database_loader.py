@@ -298,6 +298,9 @@ class DatabaseLoader(BaseDataLoader):
             # Step 3: Fetch 1Day data separately from Alpaca
             self._fetch_daily_data(repo, ticker, symbol, start, end)
 
+            # Step 4: Compute technical indicators for all timeframes
+            self._compute_technical_indicators(repo, ticker, symbol)
+
         except Exception as e:
             logger.error(f"Failed to fetch data for new symbol {symbol}: {e}")
             repo.update_sync_log(
@@ -813,3 +816,72 @@ class DatabaseLoader(BaseDataLoader):
                 }
                 for log in logs
             ]
+
+    def _compute_technical_indicators(
+        self,
+        repo: OHLCVRepository,
+        ticker,
+        symbol: str,
+        version: str = "v1.0",
+    ) -> None:
+        """Compute and store TA-Lib technical indicators for all timeframes.
+
+        This method computes comprehensive technical indicators using TA-Lib
+        and stores them in the computed_features table.
+
+        Args:
+            repo: OHLCV repository instance
+            ticker: Ticker database object
+            symbol: Stock symbol
+            version: Feature version string for tracking
+        """
+        # Check if TA-Lib is available
+        try:
+            from src.features import TALibIndicatorCalculator, TALIB_AVAILABLE
+        except ImportError:
+            logger.warning("Features module not available, skipping indicator computation")
+            return
+
+        if not TALIB_AVAILABLE:
+            logger.warning("TA-Lib not installed, skipping indicator computation")
+            return
+
+        logger.info(f"Computing technical indicators for {symbol}")
+
+        try:
+            calculator = TALibIndicatorCalculator()
+
+            for timeframe in VALID_TIMEFRAMES:
+                try:
+                    # Get OHLCV data for this timeframe
+                    df = repo.get_bars(symbol, timeframe)
+
+                    if df.empty:
+                        logger.debug(f"No {timeframe} data for {symbol}, skipping indicators")
+                        continue
+
+                    # Compute indicators
+                    features_df = calculator.compute(df)
+
+                    if features_df.empty:
+                        logger.warning(f"No features computed for {symbol}/{timeframe}")
+                        continue
+
+                    # Store features
+                    rows_stored = repo.store_features(
+                        features_df=features_df,
+                        ticker_id=ticker.id,
+                        timeframe=timeframe,
+                        version=version,
+                    )
+
+                    logger.info(
+                        f"Stored {rows_stored} feature rows for {symbol}/{timeframe} "
+                        f"({len(features_df.columns)} indicators)"
+                    )
+
+                except Exception as e:
+                    logger.error(f"Failed to compute indicators for {symbol}/{timeframe}: {e}")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize indicator calculator for {symbol}: {e}")

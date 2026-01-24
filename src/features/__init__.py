@@ -43,6 +43,13 @@ from .time_of_day import TimeOfDayFeatureCalculator
 from .volatility import VolatilityFeatureCalculator
 from .volume import VolumeFeatureCalculator
 
+# Optional TA-Lib calculator (requires TA-Lib installation)
+try:
+    from .talib_indicators import TALibIndicatorCalculator, TALIB_AVAILABLE
+except ImportError:
+    TALibIndicatorCalculator = None  # type: ignore
+    TALIB_AVAILABLE = False
+
 __all__ = [
     # Constants
     "EPS",
@@ -75,4 +82,7 @@ __all__ = [
     "load_feature_config",
     "create_calculators_from_config",
     "get_default_calculators",
+    # TA-Lib (optional)
+    "TALibIndicatorCalculator",
+    "TALIB_AVAILABLE",
 ]

@@ -73,6 +73,13 @@ register_calculator("anchor")(AnchorFeatureCalculator)
 register_calculator("time_of_day")(TimeOfDayFeatureCalculator)
 register_calculator("market_context")(MarketContextFeatureCalculator)
 
+# TA-Lib indicators (optional, requires TA-Lib installation)
+try:
+    from .talib_indicators import TALibIndicatorCalculator
+    register_calculator("talib_indicators")(TALibIndicatorCalculator)
+except ImportError:
+    pass  # TA-Lib not available
+
 
 def load_feature_config(config_path: str | Path) -> dict[str, Any]:
     """Load feature configuration from YAML file.
