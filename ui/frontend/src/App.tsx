@@ -188,6 +188,10 @@ function App() {
       // Load statistics
       const stats = await fetchStatistics(ticker, tf, start, end);
       setStatistics(stats);
+
+      // Refresh ticker summary to get updated bar counts after fetch
+      const updatedSummary = await fetchTickerSummary(ticker);
+      setTickerSummary(updatedSummary);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to load data';
       setError(errorMessage);
@@ -707,14 +711,14 @@ function App() {
               <select
                 value={timeframe}
                 onChange={(e) => setTimeframe(e.target.value)}
-                disabled={!selectedTicker}
+                disabled={!selectedTicker || loading || !tickerSummary || Object.keys(tickerSummary.timeframes).length === 0}
               >
                 {['1Min', '5Min', '15Min', '1Hour', '1Day'].map((tf) => {
                   const tfData = tickerSummary?.timeframes[tf];
                   const barCount = tfData?.bar_count || 0;
                   return (
                     <option key={tf} value={tf}>
-                      {tf} {barCount > 0 ? `(${barCount.toLocaleString()} bars)` : '(fetch from Alpaca)'}
+                      {tf}{barCount > 0 ? ` (${barCount.toLocaleString()} bars)` : ''}
                     </option>
                   );
                 })}
@@ -723,7 +727,9 @@ function App() {
 
             {loading && (
               <div style={{ fontSize: '0.75rem', color: '#58a6ff', marginTop: '0.5rem' }}>
-                Loading data...
+                {tickerSummary && Object.keys(tickerSummary.timeframes).length === 0
+                  ? 'Fetching data from Alpaca...'
+                  : 'Loading data...'}
               </div>
             )}
             {error && (
