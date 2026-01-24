@@ -13,6 +13,13 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+# Configure logging to show application logs
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
+
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -208,18 +215,22 @@ async def get_ohlcv_data(
 
         # Always use database loader with auto-fetch from Alpaca
         loader = get_database_loader()
+        logger.info(f"Loading OHLCV for {symbol}, timeframe={timeframe}, alpaca_loader={loader.alpaca_loader is not None}")
 
         # Default to last 30 days if no dates specified
         end = datetime.fromisoformat(end_date) if end_date else datetime.now()
         start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=30)
+        logger.info(f"Date range: {start} to {end}")
 
         # This will:
         # 1. Check if data exists in database for the requested range
         # 2. If not, fetch from Alpaca (if configured) and store in ohlcv_bars
         # 3. Return data from database
         df = loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)
+        logger.info(f"Loaded {len(df)} rows for {symbol}")
 
         if df.empty:
+            logger.warning(f"No data found for {symbol} in range {start} to {end}")
             raise HTTPException(
                 status_code=404,
                 detail=f"No data found for {symbol}. Ensure Alpaca API is configured or import data manually."

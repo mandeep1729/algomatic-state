@@ -145,7 +145,10 @@ class DatabaseLoader(BaseDataLoader):
             end: Requested end datetime
         """
         if self.alpaca_loader is None:
+            logger.info(f"No Alpaca loader configured, skipping sync for {symbol}")
             return
+
+        logger.info(f"Checking missing data for {symbol}/{timeframe} from {start} to {end}")
 
         # Get or create ticker
         ticker = repo.get_or_create_ticker(symbol)
@@ -153,6 +156,7 @@ class DatabaseLoader(BaseDataLoader):
         # Get current data range in database
         db_latest = repo.get_latest_timestamp(symbol, timeframe)
         db_earliest = repo.get_earliest_timestamp(symbol, timeframe)
+        logger.info(f"Database range for {symbol}/{timeframe}: {db_earliest} to {db_latest}")
 
         # Determine what data to fetch
         fetch_start = None
@@ -160,6 +164,7 @@ class DatabaseLoader(BaseDataLoader):
 
         if db_latest is None:
             # No data exists - fetch entire requested range
+            logger.info(f"No data in DB for {symbol}/{timeframe}, will fetch from Alpaca")
             fetch_start = start
             fetch_end = end
             logger.info(f"No existing data for {symbol}/{timeframe}, fetching full range")
@@ -190,6 +195,7 @@ class DatabaseLoader(BaseDataLoader):
             try:
                 # Map timeframe to Alpaca format
                 alpaca_timeframe = self._map_timeframe(timeframe)
+                logger.info(f"Fetching from Alpaca: {symbol} {alpaca_timeframe} from {fetch_start} to {fetch_end}")
 
                 df = self.alpaca_loader.load(
                     symbol,
@@ -197,6 +203,7 @@ class DatabaseLoader(BaseDataLoader):
                     end=fetch_end,
                     timeframe=alpaca_timeframe,
                 )
+                logger.info(f"Alpaca returned {len(df)} rows for {symbol}")
 
                 if not df.empty:
                     # Ensure timezone-naive timestamps for consistent storage
