@@ -529,6 +529,37 @@ class OHLCVRepository:
         result = self.session.execute(stmt)
         return result.rowcount
 
+    def get_existing_feature_timestamps(
+        self,
+        ticker_id: int,
+        timeframe: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> set[datetime]:
+        """Get timestamps that already have computed features.
+
+        Args:
+            ticker_id: Ticker ID
+            timeframe: Bar timeframe
+            start: Optional start datetime filter
+            end: Optional end datetime filter
+
+        Returns:
+            Set of timestamps that have features computed
+        """
+        query = self.session.query(ComputedFeature.timestamp).filter(
+            ComputedFeature.ticker_id == ticker_id,
+            ComputedFeature.timeframe == timeframe,
+        )
+
+        if start:
+            query = query.filter(ComputedFeature.timestamp >= start)
+        if end:
+            query = query.filter(ComputedFeature.timestamp <= end)
+
+        results = query.all()
+        return {r.timestamp.replace(tzinfo=None) if r.timestamp.tzinfo else r.timestamp for r in results}
+
     def get_features(
         self,
         symbol: str,

@@ -62,6 +62,7 @@ def compute_all_features(version: str = "v1.0") -> dict:
     stats = {
         "tickers_processed": 0,
         "timeframes_processed": 0,
+        "timeframes_skipped": 0,
         "features_stored": 0,
         "errors": [],
     }
@@ -88,18 +89,56 @@ def compute_all_features(version: str = "v1.0") -> dict:
                         logger.debug(f"  {timeframe}: No data, skipping")
                         continue
 
-                    logger.info(f"  {timeframe}: {len(df)} bars")
+                    # Check which bars already have features computed
+                    existing_timestamps = repo.get_existing_feature_timestamps(
+                        ticker_id=ticker.id,
+                        timeframe=timeframe,
+                    )
 
-                    # Compute indicators
+                    # Normalize df index for comparison (ensure timezone-naive)
+                    df_timestamps = set(
+                        ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                        for ts in df.index
+                    )
+
+                    # Find bars that need features computed
+                    missing_timestamps = df_timestamps - existing_timestamps
+
+                    if not missing_timestamps:
+                        logger.info(
+                            f"  {timeframe}: All {len(df)} bars already have features, skipping"
+                        )
+                        stats["timeframes_skipped"] += 1
+                        continue
+
+                    logger.info(
+                        f"  {timeframe}: {len(df)} bars total, "
+                        f"{len(existing_timestamps)} have features, "
+                        f"{len(missing_timestamps)} need computation"
+                    )
+
+                    # Compute indicators on full dataframe (needed for lookback periods)
                     features_df = calculator.compute(df)
 
                     if features_df.empty:
                         logger.warning(f"  {timeframe}: No features computed")
                         continue
 
-                    # Store features
+                    # Filter to only store features for bars that don't have them yet
+                    features_df_filtered = features_df[
+                        features_df.index.map(
+                            lambda ts: (ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts)
+                            in missing_timestamps
+                        )
+                    ]
+
+                    if features_df_filtered.empty:
+                        logger.debug(f"  {timeframe}: No new features to store")
+                        continue
+
+                    # Store only the new features
                     rows_stored = repo.store_features(
-                        features_df=features_df,
+                        features_df=features_df_filtered,
                         ticker_id=ticker.id,
                         timeframe=timeframe,
                         version=version,
@@ -109,7 +148,7 @@ def compute_all_features(version: str = "v1.0") -> dict:
                     stats["features_stored"] += rows_stored
 
                     logger.info(
-                        f"  {timeframe}: Stored {rows_stored} rows "
+                        f"  {timeframe}: Stored {rows_stored} new rows "
                         f"({len(features_df.columns)} indicators)"
                     )
 
@@ -135,6 +174,7 @@ def main():
     logger.info("="*50)
     logger.info(f"Tickers processed: {stats.get('tickers_processed', 0)}")
     logger.info(f"Timeframes processed: {stats.get('timeframes_processed', 0)}")
+    logger.info(f"Timeframes skipped (already computed): {stats.get('timeframes_skipped', 0)}")
     logger.info(f"Feature rows stored: {stats.get('features_stored', 0)}")
 
     if stats.get("errors"):

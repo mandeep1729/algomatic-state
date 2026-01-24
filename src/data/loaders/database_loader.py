@@ -885,6 +885,9 @@ class DatabaseLoader(BaseDataLoader):
     ) -> None:
         """Compute and store technical indicators for specific timeframes.
 
+        Only computes indicators for bars that don't already have features
+        in the computed_features table.
+
         Args:
             repo: OHLCV repository instance
             ticker: Ticker database object
@@ -911,16 +914,54 @@ class DatabaseLoader(BaseDataLoader):
                     logger.debug(f"No {timeframe} data for {symbol}, skipping indicators")
                     continue
 
-                # Compute indicators
+                # Get existing feature timestamps to avoid recomputation
+                existing_timestamps = repo.get_existing_feature_timestamps(
+                    ticker_id=ticker.id,
+                    timeframe=timeframe,
+                )
+
+                # Normalize df index for comparison (ensure timezone-naive)
+                df_timestamps = set(
+                    ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                    for ts in df.index
+                )
+
+                # Find bars that need features computed
+                missing_timestamps = df_timestamps - existing_timestamps
+
+                if not missing_timestamps:
+                    logger.debug(
+                        f"All {len(df)} bars for {symbol}/{timeframe} already have features"
+                    )
+                    continue
+
+                logger.info(
+                    f"{symbol}/{timeframe}: {len(missing_timestamps)} bars need features "
+                    f"(out of {len(df)} total, {len(existing_timestamps)} existing)"
+                )
+
+                # Compute indicators on full dataframe (needed for lookback periods)
                 features_df = calculator.compute(df)
 
                 if features_df.empty:
                     logger.warning(f"No features computed for {symbol}/{timeframe}")
                     continue
 
-                # Store features
+                # Filter to only store features for bars that don't have them yet
+                features_df_filtered = features_df[
+                    features_df.index.map(
+                        lambda ts: (ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts)
+                        in missing_timestamps
+                    )
+                ]
+
+                if features_df_filtered.empty:
+                    logger.debug(f"No new features to store for {symbol}/{timeframe}")
+                    continue
+
+                # Store only the new features
                 rows_stored = repo.store_features(
-                    features_df=features_df,
+                    features_df=features_df_filtered,
                     ticker_id=ticker.id,
                     timeframe=timeframe,
                     version=version,
