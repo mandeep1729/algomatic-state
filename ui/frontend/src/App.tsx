@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { Data, Layout } from 'plotly.js';
-import * as Plotly from 'plotly.js';
 import {
   fetchTickers,
   fetchTickerSummary,
@@ -20,24 +19,12 @@ import type {
   ChartSettings,
   RegimeParams,
 } from './types';
+import { OHLCVChart } from './components';
 
 // Constants
 const MAX_DISPLAY_POINTS = 7200;
 
-// Regime colors
-const REGIME_COLORS = [
-  'rgba(88, 166, 255, 0.3)',   // Blue
-  'rgba(63, 185, 80, 0.3)',    // Green
-  'rgba(248, 81, 73, 0.3)',    // Red
-  'rgba(210, 153, 34, 0.3)',   // Yellow
-  'rgba(163, 113, 247, 0.3)',  // Purple
-  'rgba(219, 109, 40, 0.3)',   // Orange
-  'rgba(56, 139, 253, 0.3)',   // Light Blue
-  'rgba(238, 75, 43, 0.3)',    // Coral
-  'rgba(121, 192, 255, 0.3)',  // Sky
-  'rgba(163, 190, 140, 0.3)',  // Sage
-];
-
+// Regime colors (solid)
 const REGIME_COLORS_SOLID = [
   '#58a6ff', '#3fb950', '#f85149', '#d29922', '#a371f7',
   '#db6d28', '#388bfd', '#ee4b2b', '#79c0ff', '#a3be8c',
@@ -296,242 +283,6 @@ function App() {
       setViewRange([0, endIdx]);
     }
   }, [ohlcvData]);
-
-  // Zoom step factor - how much to zoom in/out by
-  const ZOOM_FACTOR = 0.5; // 50% zoom step
-
-  // Handle chart zoom via relayout events
-  const handleChartRelayout = useCallback((event: Plotly.PlotRelayoutEvent) => {
-    if (!ohlcvData || !visibleOhlcvData) return;
-
-    const currentWindowSize = constrainedViewRange[1] - constrainedViewRange[0];
-    const currentCenter = constrainedViewRange[0] + Math.floor(currentWindowSize / 2);
-
-    // Detect zoom in (range narrowed)
-    if (event['xaxis.range[0]'] && event['xaxis.range[1]']) {
-      const rangeStart = event['xaxis.range[0]'];
-      const rangeEnd = event['xaxis.range[1]'];
-      const startTime = new Date(rangeStart as string | number).getTime();
-      const endTime = new Date(rangeEnd as string | number).getTime();
-
-      // Check if this is a zoom-in by comparing ranges
-      const visibleStartTime = new Date(visibleOhlcvData.timestamps[0]).getTime();
-      const visibleEndTime = new Date(visibleOhlcvData.timestamps[visibleOhlcvData.timestamps.length - 1]).getTime();
-
-      // Calculate new window size based on the zoom
-      const visibleDuration = visibleEndTime - visibleStartTime;
-      const newDuration = endTime - startTime;
-
-      if (visibleDuration > 0 && newDuration > 0) {
-        const zoomRatio = newDuration / visibleDuration;
-
-        // Calculate new window size
-        let newWindowSize = Math.round(currentWindowSize * zoomRatio);
-        newWindowSize = Math.max(100, Math.min(newWindowSize, MAX_DISPLAY_POINTS)); // Min 100 points
-
-        // If zooming in (ratio < 1), find the center of the zoomed area
-        if (zoomRatio < 1) {
-          const zoomCenterTime = (startTime + endTime) / 2;
-
-          // Find index in visible data closest to zoom center
-          let zoomCenterIdx = 0;
-          let minDiff = Infinity;
-          for (let i = 0; i < visibleOhlcvData.timestamps.length; i++) {
-            const ts = new Date(visibleOhlcvData.timestamps[i]).getTime();
-            const diff = Math.abs(ts - zoomCenterTime);
-            if (diff < minDiff) {
-              minDiff = diff;
-              zoomCenterIdx = i;
-            }
-          }
-
-          // Convert to absolute index
-          const absoluteCenter = constrainedViewRange[0] + zoomCenterIdx;
-          const halfWindow = Math.floor(newWindowSize / 2);
-          const newStart = Math.max(0, Math.min(absoluteCenter - halfWindow, totalPoints - newWindowSize));
-          setViewRange([newStart, newStart + newWindowSize]);
-        } else {
-          // Zooming out - expand around current center
-          const halfWindow = Math.floor(newWindowSize / 2);
-          const newStart = Math.max(0, Math.min(currentCenter - halfWindow, totalPoints - newWindowSize));
-          setViewRange([newStart, newStart + newWindowSize]);
-        }
-      }
-    }
-
-    // Handle autorange/reset (double-click or reset button)
-    if (event['xaxis.autorange']) {
-      // Zoom out: increase window by ZOOM_FACTOR, centered on current view
-      const newWindowSize = Math.min(
-        Math.round(currentWindowSize / ZOOM_FACTOR),
-        MAX_DISPLAY_POINTS,
-        totalPoints
-      );
-      const halfWindow = Math.floor(newWindowSize / 2);
-      const newStart = Math.max(0, Math.min(currentCenter - halfWindow, totalPoints - newWindowSize));
-      setViewRange([newStart, newStart + newWindowSize]);
-    }
-  }, [ohlcvData, visibleOhlcvData, constrainedViewRange, totalPoints]);
-
-  // Handle box selection on chart
-  const handleChartSelected = useCallback((event: Readonly<Plotly.PlotSelectionEvent>) => {
-    if (!event.range || !visibleOhlcvData) return;
-
-    const { x: xRange } = event.range;
-    if (!xRange || xRange.length < 2) return;
-
-    const startTime = new Date(xRange[0]).getTime();
-    const endTime = new Date(xRange[1]).getTime();
-
-    // Find indices within the visible data
-    let visibleStart = -1;
-    let visibleEnd = visibleOhlcvData.timestamps.length;
-
-    for (let i = 0; i < visibleOhlcvData.timestamps.length; i++) {
-      const ts = new Date(visibleOhlcvData.timestamps[i]).getTime();
-      if (ts >= startTime && visibleStart === -1) {
-        visibleStart = i;
-      }
-      if (ts <= endTime) {
-        visibleEnd = i + 1;
-      }
-    }
-
-    if (visibleStart === -1) visibleStart = 0;
-    if (visibleEnd <= visibleStart) return;
-
-    // Convert to absolute indices
-    const absoluteStart = constrainedViewRange[0] + visibleStart;
-    const absoluteEnd = constrainedViewRange[0] + visibleEnd;
-
-    setViewRange([absoluteStart, absoluteEnd]);
-  }, [visibleOhlcvData, constrainedViewRange]);
-
-  // Create candlestick chart data
-  const createCandlestickChart = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!visibleOhlcvData) {
-      return { data: [], layout: {} };
-    }
-
-    const traces: Data[] = [];
-
-    // Candlestick trace
-    traces.push({
-      type: 'candlestick',
-      x: visibleOhlcvData.timestamps,
-      open: visibleOhlcvData.open,
-      high: visibleOhlcvData.high,
-      low: visibleOhlcvData.low,
-      close: visibleOhlcvData.close,
-      name: 'Price',
-      increasing: { line: { color: '#3fb950' } },
-      decreasing: { line: { color: '#f85149' } },
-    });
-
-    // Add regime backgrounds if enabled
-    if (chartSettings.showRegimes && visibleRegimeData && visibleRegimeData.timestamps.length > 0) {
-      const shapes: Partial<Plotly.Shape>[] = [];
-      let currentRegime = visibleRegimeData.regime_labels[0];
-      let startIdx = 0;
-
-      for (let i = 1; i <= visibleRegimeData.regime_labels.length; i++) {
-        if (i === visibleRegimeData.regime_labels.length || visibleRegimeData.regime_labels[i] !== currentRegime) {
-          shapes.push({
-            type: 'rect',
-            xref: 'x',
-            yref: 'paper',
-            x0: visibleRegimeData.timestamps[startIdx],
-            x1: visibleRegimeData.timestamps[Math.min(i, visibleRegimeData.regime_labels.length - 1)],
-            y0: 0,
-            y1: 1,
-            fillcolor: REGIME_COLORS[currentRegime % REGIME_COLORS.length],
-            line: { width: 0 },
-            layer: 'below',
-          });
-
-          if (i < visibleRegimeData.regime_labels.length) {
-            currentRegime = visibleRegimeData.regime_labels[i];
-            startIdx = i;
-          }
-        }
-      }
-
-      return {
-        data: traces,
-        layout: {
-          title: { text: 'Price Chart with Regime States' },
-          xaxis: {
-            title: { text: 'Time' },
-            rangeslider: { visible: false },
-            type: 'date',
-            range: [visibleOhlcvData.timestamps[0], visibleOhlcvData.timestamps[visibleOhlcvData.timestamps.length - 1]],
-          },
-          yaxis: { title: { text: 'Price' }, autorange: true },
-          shapes,
-          paper_bgcolor: '#161b22',
-          plot_bgcolor: '#0d1117',
-          font: { color: '#e6edf3' },
-          showlegend: true,
-          legend: { x: 0, y: 1.1, orientation: 'h' },
-          dragmode: 'select',
-        },
-      };
-    }
-
-    return {
-      data: traces,
-      layout: {
-        title: { text: 'Price Chart' },
-        xaxis: {
-          title: { text: 'Time' },
-          rangeslider: { visible: false },
-          type: 'date',
-          range: [visibleOhlcvData.timestamps[0], visibleOhlcvData.timestamps[visibleOhlcvData.timestamps.length - 1]],
-        },
-        yaxis: { title: { text: 'Price' }, autorange: true },
-        paper_bgcolor: '#161b22',
-        plot_bgcolor: '#0d1117',
-        font: { color: '#e6edf3' },
-        dragmode: 'select',
-      },
-    };
-  };
-
-  // Create volume chart
-  const createVolumeChart = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!visibleOhlcvData) {
-      return { data: [], layout: {} };
-    }
-
-    const colors = visibleOhlcvData.close.map((close, i) =>
-      i === 0 || close >= visibleOhlcvData.open[i] ? '#3fb950' : '#f85149'
-    );
-
-    return {
-      data: [
-        {
-          type: 'bar',
-          x: visibleOhlcvData.timestamps,
-          y: visibleOhlcvData.volume,
-          marker: { color: colors },
-          name: 'Volume',
-        },
-      ],
-      layout: {
-        xaxis: {
-          type: 'date',
-          range: [visibleOhlcvData.timestamps[0], visibleOhlcvData.timestamps[visibleOhlcvData.timestamps.length - 1]],
-          showticklabels: false,
-        },
-        yaxis: { title: { text: 'Volume' }, autorange: true },
-        paper_bgcolor: '#161b22',
-        plot_bgcolor: '#0d1117',
-        font: { color: '#e6edf3' },
-        height: 150,
-        margin: { t: 10, b: 20 },
-      },
-    };
-  };
 
   // Create regime distribution chart
   const createRegimeDistribution = (): { data: Data[]; layout: Partial<Layout> } => {
@@ -1018,33 +769,14 @@ function App() {
               {visibleOhlcvData && (
                 <>
                   <div className="chart-container">
-                    <Plot
-                      data={createCandlestickChart().data}
-                      layout={createCandlestickChart().layout}
-                      config={{
-                        responsive: true,
-                        displayModeBar: true,
-                        modeBarButtonsToAdd: ['select2d', 'pan2d'],
-                        displaylogo: false,
-                      }}
-                      style={{ width: '100%', height: '500px' }}
-                      {...{
-                        onRelayout: handleChartRelayout,
-                        onSelected: handleChartSelected,
-                      } as object}
+                    <OHLCVChart
+                      data={visibleOhlcvData}
+                      regimeData={visibleRegimeData}
+                      showRegimes={chartSettings.showRegimes}
+                      showVolume={chartSettings.showVolume}
+                      height={500}
                     />
                   </div>
-
-                  {chartSettings.showVolume && (
-                    <div className="chart-container">
-                      <Plot
-                        data={createVolumeChart().data}
-                        layout={createVolumeChart().layout}
-                        config={{ responsive: true, displayModeBar: false }}
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                  )}
                 </>
               )}
 
