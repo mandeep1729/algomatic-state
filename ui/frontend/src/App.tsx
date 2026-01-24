@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Plot from 'react-plotly.js';
-import type { Data, Layout, PlotRelayoutEvent } from 'plotly.js';
+import type { Data, Layout } from 'plotly.js';
+import * as Plotly from 'plotly.js';
 import {
   fetchTickers,
   fetchTickerSummary,
@@ -250,61 +251,115 @@ function App() {
     }
   }, [selectedTicker, timeframe, startDate, endDate, regimeParams]);
 
-  // Handle chart selection/zoom
-  const handleChartRelayout = useCallback((event: PlotRelayoutEvent) => {
+  // Zoom step factor - how much to zoom in/out by
+  const ZOOM_FACTOR = 0.5; // 50% zoom step
+
+  // Handle chart zoom via relayout events
+  const handleChartRelayout = useCallback((event: Plotly.PlotRelayoutEvent) => {
     if (!ohlcvData || !visibleOhlcvData) return;
 
-    // Check if this is a range selection
+    const currentWindowSize = constrainedViewRange[1] - constrainedViewRange[0];
+    const currentCenter = constrainedViewRange[0] + Math.floor(currentWindowSize / 2);
+
+    // Detect zoom in (range narrowed)
     if (event['xaxis.range[0]'] && event['xaxis.range[1]']) {
-      const startTime = new Date(event['xaxis.range[0]'] as string).getTime();
-      const endTime = new Date(event['xaxis.range[1]'] as string).getTime();
+      const rangeStart = event['xaxis.range[0]'];
+      const rangeEnd = event['xaxis.range[1]'];
+      const startTime = new Date(rangeStart as string | number).getTime();
+      const endTime = new Date(rangeEnd as string | number).getTime();
 
-      // Find indices within the VISIBLE data that match the selection
-      let visibleStart = -1;
-      let visibleEnd = visibleOhlcvData.timestamps.length;
+      // Check if this is a zoom-in by comparing ranges
+      const visibleStartTime = new Date(visibleOhlcvData.timestamps[0]).getTime();
+      const visibleEndTime = new Date(visibleOhlcvData.timestamps[visibleOhlcvData.timestamps.length - 1]).getTime();
 
-      for (let i = 0; i < visibleOhlcvData.timestamps.length; i++) {
-        const ts = new Date(visibleOhlcvData.timestamps[i]).getTime();
-        if (ts >= startTime && visibleStart === -1) {
-          visibleStart = i;
-        }
-        if (ts <= endTime) {
-          visibleEnd = i + 1;
+      // Calculate new window size based on the zoom
+      const visibleDuration = visibleEndTime - visibleStartTime;
+      const newDuration = endTime - startTime;
+
+      if (visibleDuration > 0 && newDuration > 0) {
+        const zoomRatio = newDuration / visibleDuration;
+
+        // Calculate new window size
+        let newWindowSize = Math.round(currentWindowSize * zoomRatio);
+        newWindowSize = Math.max(100, Math.min(newWindowSize, MAX_DISPLAY_POINTS)); // Min 100 points
+
+        // If zooming in (ratio < 1), find the center of the zoomed area
+        if (zoomRatio < 1) {
+          const zoomCenterTime = (startTime + endTime) / 2;
+
+          // Find index in visible data closest to zoom center
+          let zoomCenterIdx = 0;
+          let minDiff = Infinity;
+          for (let i = 0; i < visibleOhlcvData.timestamps.length; i++) {
+            const ts = new Date(visibleOhlcvData.timestamps[i]).getTime();
+            const diff = Math.abs(ts - zoomCenterTime);
+            if (diff < minDiff) {
+              minDiff = diff;
+              zoomCenterIdx = i;
+            }
+          }
+
+          // Convert to absolute index
+          const absoluteCenter = constrainedViewRange[0] + zoomCenterIdx;
+          const halfWindow = Math.floor(newWindowSize / 2);
+          const newStart = Math.max(0, Math.min(absoluteCenter - halfWindow, totalPoints - newWindowSize));
+          setViewRange([newStart, newStart + newWindowSize]);
+        } else {
+          // Zooming out - expand around current center
+          const halfWindow = Math.floor(newWindowSize / 2);
+          const newStart = Math.max(0, Math.min(currentCenter - halfWindow, totalPoints - newWindowSize));
+          setViewRange([newStart, newStart + newWindowSize]);
         }
       }
-
-      if (visibleStart === -1) visibleStart = 0;
-
-      // Convert visible indices to absolute indices in full data
-      const absoluteStart = constrainedViewRange[0] + visibleStart;
-      const absoluteEnd = constrainedViewRange[0] + visibleEnd;
-
-      // Enforce max points limit
-      const newStart = absoluteStart;
-      let newEnd = absoluteEnd;
-      if (newEnd - newStart > MAX_DISPLAY_POINTS) {
-        newEnd = newStart + MAX_DISPLAY_POINTS;
-      }
-
-      setViewRange([newStart, newEnd]);
     }
 
-    // Handle autorange/reset
+    // Handle autorange/reset (double-click or reset button)
     if (event['xaxis.autorange']) {
-      const endIdx = Math.min(ohlcvData.timestamps.length, MAX_DISPLAY_POINTS);
-      setViewRange([0, endIdx]);
+      // Zoom out: increase window by ZOOM_FACTOR, centered on current view
+      const newWindowSize = Math.min(
+        Math.round(currentWindowSize / ZOOM_FACTOR),
+        MAX_DISPLAY_POINTS,
+        totalPoints
+      );
+      const halfWindow = Math.floor(newWindowSize / 2);
+      const newStart = Math.max(0, Math.min(currentCenter - halfWindow, totalPoints - newWindowSize));
+      setViewRange([newStart, newStart + newWindowSize]);
     }
-  }, [ohlcvData, visibleOhlcvData, constrainedViewRange]);
+  }, [ohlcvData, visibleOhlcvData, constrainedViewRange, totalPoints]);
 
-  // Handle range slider change
-  const handleRangeChange = (newStart: number, newEnd: number) => {
-    // Enforce max points
-    if (newEnd - newStart > MAX_DISPLAY_POINTS) {
-      // Adjust end to respect max points from start
-      newEnd = newStart + MAX_DISPLAY_POINTS;
+  // Handle box selection on chart
+  const handleChartSelected = useCallback((event: Readonly<Plotly.PlotSelectionEvent>) => {
+    if (!event.range || !visibleOhlcvData) return;
+
+    const { x: xRange } = event.range;
+    if (!xRange || xRange.length < 2) return;
+
+    const startTime = new Date(xRange[0]).getTime();
+    const endTime = new Date(xRange[1]).getTime();
+
+    // Find indices within the visible data
+    let visibleStart = -1;
+    let visibleEnd = visibleOhlcvData.timestamps.length;
+
+    for (let i = 0; i < visibleOhlcvData.timestamps.length; i++) {
+      const ts = new Date(visibleOhlcvData.timestamps[i]).getTime();
+      if (ts >= startTime && visibleStart === -1) {
+        visibleStart = i;
+      }
+      if (ts <= endTime) {
+        visibleEnd = i + 1;
+      }
     }
-    setViewRange([newStart, newEnd]);
-  };
+
+    if (visibleStart === -1) visibleStart = 0;
+    if (visibleEnd <= visibleStart) return;
+
+    // Convert to absolute indices
+    const absoluteStart = constrainedViewRange[0] + visibleStart;
+    const absoluteEnd = constrainedViewRange[0] + visibleEnd;
+
+    setViewRange([absoluteStart, absoluteEnd]);
+  }, [visibleOhlcvData, constrainedViewRange]);
 
   // Create candlestick chart data
   const createCandlestickChart = (): { data: Data[]; layout: Partial<Layout> } => {
@@ -917,9 +972,17 @@ function App() {
                     <Plot
                       data={createCandlestickChart().data}
                       layout={createCandlestickChart().layout}
-                      config={{ responsive: true, displayModeBar: true }}
+                      config={{
+                        responsive: true,
+                        displayModeBar: true,
+                        modeBarButtonsToAdd: ['select2d', 'pan2d'],
+                        displaylogo: false,
+                      }}
                       style={{ width: '100%', height: '500px' }}
-                      onRelayout={handleChartRelayout}
+                      {...{
+                        onRelayout: handleChartRelayout,
+                        onSelected: handleChartSelected,
+                      } as object}
                     />
                   </div>
 
