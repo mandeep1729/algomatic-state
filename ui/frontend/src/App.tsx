@@ -196,6 +196,17 @@ function App() {
     }
   }, [regimeParams]);
 
+  // Helper to get default date range (last 30 days)
+  const getDefaultDateRange = () => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 30);
+    return {
+      start: start.toISOString().split('T')[0],
+      end: end.toISOString().split('T')[0],
+    };
+  };
+
   // Fetch ticker summary and auto-load data when ticker changes
   useEffect(() => {
     if (!selectedTicker) {
@@ -207,48 +218,72 @@ function App() {
       return;
     }
 
+    // Clear previous data when switching tickers
+    setOhlcvData(null);
+    setFeatureData(null);
+    setRegimeData(null);
+    setStatistics(null);
+
     fetchTickerSummary(selectedTicker)
       .then((summary) => {
         setTickerSummary(summary);
 
-        // Auto-select first available timeframe if current isn't available
+        // Find available timeframes with data
         const availableTimeframes = Object.keys(summary.timeframes).filter(
           tf => summary.timeframes[tf].bar_count > 0
         );
 
         let selectedTf = timeframe;
-        if (availableTimeframes.length > 0 && !availableTimeframes.includes(timeframe)) {
-          selectedTf = availableTimeframes[0];
+        let start: string;
+        let end: string;
+
+        if (availableTimeframes.length > 0) {
+          // Data exists - use available timeframe and its date range
+          if (!availableTimeframes.includes(timeframe)) {
+            selectedTf = availableTimeframes[0];
+            setTimeframe(selectedTf);
+          }
+          const tfData = summary.timeframes[selectedTf];
+          start = tfData.earliest!.split('T')[0];
+          end = tfData.latest!.split('T')[0];
+        } else {
+          // No data exists - use default dates to trigger Alpaca fetch
+          selectedTf = '1Min';
           setTimeframe(selectedTf);
+          const defaults = getDefaultDateRange();
+          start = defaults.start;
+          end = defaults.end;
         }
 
-        // Get date range for the selected timeframe and load data
-        const tfData = summary.timeframes[selectedTf];
-        if (tfData && tfData.earliest && tfData.latest) {
-          const start = tfData.earliest.split('T')[0];
-          const end = tfData.latest.split('T')[0];
-          // Load data immediately with known values
-          loadDataWithParams(selectedTicker, selectedTf, start, end);
-        }
+        // Load data with determined values
+        loadDataWithParams(selectedTicker, selectedTf, start, end);
       })
       .catch((err) => {
         console.error('Failed to fetch ticker summary:', err);
         setTickerSummary(null);
+        // Still try to load with default dates
+        const defaults = getDefaultDateRange();
+        loadDataWithParams(selectedTicker, '1Min', defaults.start, defaults.end);
       });
   }, [selectedTicker, loadDataWithParams]);
 
-  // Load data when timeframe changes
+  // Load data when timeframe changes (only if we have summary data)
   useEffect(() => {
+    // Skip if no ticker selected or if this is initial mount
     if (!selectedTicker || !tickerSummary) return;
 
+    // Check if this timeframe has data
     const tfData = tickerSummary.timeframes[timeframe];
     if (tfData && tfData.earliest && tfData.latest) {
       const start = tfData.earliest.split('T')[0];
       const end = tfData.latest.split('T')[0];
-      // Load data immediately with known values
       loadDataWithParams(selectedTicker, timeframe, start, end);
+    } else {
+      // No data for this timeframe - use default dates to trigger fetch
+      const defaults = getDefaultDateRange();
+      loadDataWithParams(selectedTicker, timeframe, defaults.start, defaults.end);
     }
-  }, [timeframe, tickerSummary, selectedTicker, loadDataWithParams]);
+  }, [timeframe]); // Only depend on timeframe changes, not tickerSummary
 
   // Reset view range when new data is loaded
   useEffect(() => {
@@ -666,25 +701,28 @@ function App() {
               <select
                 value={timeframe}
                 onChange={(e) => setTimeframe(e.target.value)}
-                disabled={!tickerSummary}
+                disabled={!selectedTicker}
               >
-                {tickerSummary ? (
-                  Object.entries(tickerSummary.timeframes)
-                    .filter(([, data]) => data.bar_count > 0)
-                    .map(([tf, data]) => (
-                      <option key={tf} value={tf}>
-                        {tf} ({data.bar_count.toLocaleString()} bars)
-                      </option>
-                    ))
-                ) : (
-                  <option value="">Select ticker first...</option>
-                )}
+                {['1Min', '5Min', '15Min', '1Hour', '1Day'].map((tf) => {
+                  const tfData = tickerSummary?.timeframes[tf];
+                  const barCount = tfData?.bar_count || 0;
+                  return (
+                    <option key={tf} value={tf}>
+                      {tf} {barCount > 0 ? `(${barCount.toLocaleString()} bars)` : '(fetch from Alpaca)'}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
             {loading && (
               <div style={{ fontSize: '0.75rem', color: '#58a6ff', marginTop: '0.5rem' }}>
                 Loading data...
+              </div>
+            )}
+            {error && (
+              <div style={{ fontSize: '0.75rem', color: '#f85149', marginTop: '0.5rem' }}>
+                {error}
               </div>
             )}
           </div>
