@@ -160,12 +160,16 @@ function App() {
       .catch((err) => setError(err.message));
   }, []);
 
-  // Fetch ticker summary and populate dates when ticker or timeframe changes
+  // Fetch ticker summary and auto-load data when ticker changes
   useEffect(() => {
     if (!selectedTicker) {
       setTickerSummary(null);
       setStartDate('');
       setEndDate('');
+      setOhlcvData(null);
+      setFeatureData(null);
+      setRegimeData(null);
+      setStatistics(null);
       return;
     }
 
@@ -173,21 +177,47 @@ function App() {
       .then((summary) => {
         setTickerSummary(summary);
 
+        // Auto-select first available timeframe if current isn't available
+        const availableTimeframes = Object.keys(summary.timeframes).filter(
+          tf => summary.timeframes[tf].bar_count > 0
+        );
+
+        let selectedTimeframe = timeframe;
+        if (availableTimeframes.length > 0 && !availableTimeframes.includes(timeframe)) {
+          selectedTimeframe = availableTimeframes[0];
+          setTimeframe(selectedTimeframe);
+        }
+
         // Get date range for the selected timeframe
-        const tfData = summary.timeframes[timeframe];
+        const tfData = summary.timeframes[selectedTimeframe];
         if (tfData && tfData.earliest && tfData.latest) {
-          setStartDate(tfData.earliest.split('T')[0]);
-          setEndDate(tfData.latest.split('T')[0]);
-        } else {
-          setStartDate('');
-          setEndDate('');
+          const start = tfData.earliest.split('T')[0];
+          const end = tfData.latest.split('T')[0];
+          setStartDate(start);
+          setEndDate(end);
         }
       })
       .catch((err) => {
         console.error('Failed to fetch ticker summary:', err);
         setTickerSummary(null);
       });
-  }, [selectedTicker, timeframe]);
+  }, [selectedTicker]);
+
+  // Load data when timeframe changes (and we have dates)
+  useEffect(() => {
+    if (!selectedTicker || !tickerSummary) return;
+
+    const tfData = tickerSummary.timeframes[timeframe];
+    if (tfData && tfData.earliest && tfData.latest) {
+      const start = tfData.earliest.split('T')[0];
+      const end = tfData.latest.split('T')[0];
+      setStartDate(start);
+      setEndDate(end);
+    } else {
+      setStartDate('');
+      setEndDate('');
+    }
+  }, [timeframe, tickerSummary, selectedTicker]);
 
   // Reset view range when new data is loaded
   useEffect(() => {
@@ -197,13 +227,12 @@ function App() {
     }
   }, [ohlcvData]);
 
-  // Auto-load data when ticker/timeframe changes and dates are populated
+  // Auto-load data when dates are ready
   useEffect(() => {
-    if (selectedTicker && startDate && endDate) {
-      // Trigger data load
+    if (selectedTicker && startDate && endDate && tickerSummary) {
       loadDataRef.current?.();
     }
-  }, [selectedTicker, timeframe, startDate, endDate]);
+  }, [selectedTicker, timeframe, startDate, endDate, tickerSummary]);
 
   // Load data function
   const loadData = useCallback(async () => {
@@ -654,9 +683,9 @@ function App() {
         <aside className="sidebar">
           {/* Ticker Selection */}
           <div className="section">
-            <h3 className="section-title">Ticker</h3>
+            <h3 className="section-title">Data Selection</h3>
             <div className="form-group">
-              <label>Symbol</label>
+              <label>Ticker</label>
               <select
                 value={selectedTicker}
                 onChange={(e) => setSelectedTicker(e.target.value)}
@@ -664,7 +693,7 @@ function App() {
                 <option value="">Select ticker...</option>
                 {tickers.map((t) => (
                   <option key={t.symbol} value={t.symbol}>
-                    {t.symbol} {t.timeframes.length > 0 ? `(${t.timeframes.join(', ')})` : ''}
+                    {t.symbol}
                   </option>
                 ))}
               </select>
@@ -675,23 +704,25 @@ function App() {
               <select
                 value={timeframe}
                 onChange={(e) => setTimeframe(e.target.value)}
+                disabled={!tickerSummary}
               >
-                <option value="1Min">1 Minute</option>
-                <option value="5Min">5 Minutes</option>
-                <option value="15Min">15 Minutes</option>
-                <option value="1Hour">1 Hour</option>
-                <option value="1Day">1 Day</option>
+                {tickerSummary ? (
+                  Object.entries(tickerSummary.timeframes)
+                    .filter(([, data]) => data.bar_count > 0)
+                    .map(([tf, data]) => (
+                      <option key={tf} value={tf}>
+                        {tf} ({data.bar_count.toLocaleString()} bars)
+                      </option>
+                    ))
+                ) : (
+                  <option value="">Select ticker first...</option>
+                )}
               </select>
             </div>
 
-            {tickerSummary && tickerSummary.timeframes[timeframe] && (
-              <div style={{ fontSize: '0.75rem', color: '#8b949e', marginTop: '0.5rem' }}>
-                Available: {tickerSummary.timeframes[timeframe].bar_count.toLocaleString()} bars
-              </div>
-            )}
-            {selectedTicker && (!tickerSummary?.timeframes[timeframe]?.bar_count) && (
-              <div style={{ fontSize: '0.75rem', color: '#d29922', marginTop: '0.5rem' }}>
-                No data in DB. Will fetch from Alpaca on load.
+            {loading && (
+              <div style={{ fontSize: '0.75rem', color: '#58a6ff', marginTop: '0.5rem' }}>
+                Loading data...
               </div>
             )}
           </div>
@@ -755,16 +786,6 @@ function App() {
               </div>
             </div>
           </div>
-
-          {/* Load Button */}
-          <button
-            className="btn btn-primary"
-            style={{ width: '100%', marginBottom: '1rem' }}
-            onClick={loadData}
-            disabled={!selectedTicker || loading}
-          >
-            {loading ? 'Loading...' : 'Load Data'}
-          </button>
 
           {/* Chart Settings */}
           <div className="section">
