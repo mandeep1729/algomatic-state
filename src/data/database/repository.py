@@ -1,6 +1,6 @@
 """Data access layer for OHLCV market data."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pandas as pd
@@ -34,6 +34,37 @@ class OHLCVRepository:
         self.session = session
 
     # -------------------------------------------------------------------------
+    # Helper Methods
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_symbol(symbol: str) -> str:
+        """Normalize symbol to uppercase.
+
+        Args:
+            symbol: Stock symbol (e.g., 'aapl', 'AAPL')
+
+        Returns:
+            Uppercase symbol string
+        """
+        return symbol.upper()
+
+    def _get_bars_base_query(self, symbol: str, timeframe: str):
+        """Get base query for OHLCV bars filtered by symbol and timeframe.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+
+        Returns:
+            SQLAlchemy query object with symbol/timeframe filters applied
+        """
+        return self.session.query(OHLCVBar).join(Ticker).filter(
+            Ticker.symbol == self._normalize_symbol(symbol),
+            OHLCVBar.timeframe == timeframe,
+        )
+
+    # -------------------------------------------------------------------------
     # Ticker Operations
     # -------------------------------------------------------------------------
 
@@ -47,7 +78,7 @@ class OHLCVRepository:
             Ticker object or None if not found
         """
         return self.session.query(Ticker).filter(
-            Ticker.symbol == symbol.upper()
+            Ticker.symbol == self._normalize_symbol(symbol)
         ).first()
 
     def get_or_create_ticker(
@@ -68,10 +99,11 @@ class OHLCVRepository:
         Returns:
             Ticker object (existing or newly created)
         """
-        ticker = self.get_ticker(symbol)
+        normalized_symbol = self._normalize_symbol(symbol)
+        ticker = self.get_ticker(normalized_symbol)
         if ticker is None:
             ticker = Ticker(
-                symbol=symbol.upper(),
+                symbol=normalized_symbol,
                 name=name,
                 exchange=exchange,
                 asset_type=asset_type,
@@ -112,13 +144,12 @@ class OHLCVRepository:
         Returns:
             Latest timestamp or None if no data exists
         """
-        result = self.session.query(
+        return self.session.query(
             func.max(OHLCVBar.timestamp)
         ).join(Ticker).filter(
-            Ticker.symbol == symbol.upper(),
+            Ticker.symbol == self._normalize_symbol(symbol),
             OHLCVBar.timeframe == timeframe,
         ).scalar()
-        return result
 
     def get_earliest_timestamp(
         self,
@@ -134,13 +165,12 @@ class OHLCVRepository:
         Returns:
             Earliest timestamp or None if no data exists
         """
-        result = self.session.query(
+        return self.session.query(
             func.min(OHLCVBar.timestamp)
         ).join(Ticker).filter(
-            Ticker.symbol == symbol.upper(),
+            Ticker.symbol == self._normalize_symbol(symbol),
             OHLCVBar.timeframe == timeframe,
         ).scalar()
-        return result
 
     def get_bar_count(
         self,
@@ -163,7 +193,7 @@ class OHLCVRepository:
         query = self.session.query(
             func.count(OHLCVBar.id)
         ).join(Ticker).filter(
-            Ticker.symbol == symbol.upper(),
+            Ticker.symbol == self._normalize_symbol(symbol),
             OHLCVBar.timeframe == timeframe,
         )
         if start:
@@ -200,7 +230,7 @@ class OHLCVRepository:
             OHLCVBar.close,
             OHLCVBar.volume,
         ).join(Ticker).filter(
-            Ticker.symbol == symbol.upper(),
+            Ticker.symbol == self._normalize_symbol(symbol),
             OHLCVBar.timeframe == timeframe,
         )
 
@@ -387,7 +417,7 @@ class OHLCVRepository:
                     first_synced_timestamp,
                 )
 
-        sync_log.last_sync_at = datetime.utcnow()
+        sync_log.last_sync_at = datetime.now(timezone.utc)
         sync_log.bars_fetched = bars_fetched
 
         # Get total bar count - need to look up ticker symbol
@@ -418,7 +448,7 @@ class OHLCVRepository:
         """
         query = self.session.query(DataSyncLog).join(Ticker)
         if symbol:
-            query = query.filter(Ticker.symbol == symbol.upper())
+            query = query.filter(Ticker.symbol == self._normalize_symbol(symbol))
         return query.order_by(Ticker.symbol, DataSyncLog.timeframe).all()
 
     # -------------------------------------------------------------------------
@@ -518,7 +548,7 @@ class OHLCVRepository:
             ComputedFeature.timestamp,
             ComputedFeature.features,
         ).join(Ticker).filter(
-            Ticker.symbol == symbol.upper(),
+            Ticker.symbol == self._normalize_symbol(symbol),
             ComputedFeature.timeframe == timeframe,
         )
 

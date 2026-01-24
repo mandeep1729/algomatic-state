@@ -1,7 +1,7 @@
 """Database-backed data loader with smart incremental fetching."""
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -122,7 +122,7 @@ class DatabaseLoader(BaseDataLoader):
 
         # Default end to now
         if end is None:
-            end = datetime.utcnow()
+            end = datetime.now(timezone.utc).replace(tzinfo=None)
 
         with self.db_manager.get_session() as session:
             repo = OHLCVRepository(session)
