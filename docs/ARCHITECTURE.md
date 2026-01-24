@@ -176,10 +176,17 @@ algomatic-state/
 │   └── e2e/                    # End-to-end tests
 │
 ├── scripts/                    # CLI scripts
+│   ├── helpers/                # Shared helper modules
+│   │   ├── data.py
+│   │   ├── logging_setup.py
+│   │   ├── output.py
+│   │   ├── state_models.py
+│   │   └── strategy_factory.py
 │   ├── download_data.py
 │   ├── train_autoencoder.py
 │   ├── run_backtest.py
-│   └── run_paper_trading.py
+│   ├── run_paper_trading.py
+│   └── run_live_trading.py
 │
 ├── notebooks/                  # Jupyter notebooks
 │   ├── 01_data_exploration.ipynb

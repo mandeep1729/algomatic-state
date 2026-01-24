@@ -283,12 +283,13 @@ class AlpacaLoader(BaseDataLoader):
             DataFrame with standardized columns
         """
         # Alpaca returns: open, high, low, close, volume, trade_count, vwap
+        # We explicitly drop 'vwap' and 'trade_count' here by not including them in ohlcv_cols
         df = df.copy()
 
         # Ensure index is named 'timestamp'
         df.index.name = "timestamp"
 
-        # Select only OHLCV columns
+        # Select only OHLCV columns (strict schema)
         ohlcv_cols = ["open", "high", "low", "close", "volume"]
         available_cols = [c for c in ohlcv_cols if c in df.columns]
 

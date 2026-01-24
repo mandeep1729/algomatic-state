@@ -34,8 +34,23 @@ Stores price and volume data.
 | low | FLOAT | Low price |
 | close | FLOAT | Closing price |
 | volume | BIGINT | Trading volume |
+| trade_count | INTEGER | Number of trades (optional) |
 | source | VARCHAR(20) | 'alpaca', 'csv_import' |
 | created_at | TIMESTAMPTZ | Record creation time |
+
+#### `computed_features`
+Stores derived technical indicators and features. Using JSONB for flexibility.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| bar_id | BIGINT | Foreign key to ohlcv_bars |
+| ticker_id | INTEGER | Foreign key to tickers (denormalized for query speed) |
+| timeframe | VARCHAR(10) | Timeframe |
+| timestamp | TIMESTAMPTZ | Timestamp |
+| features | JSONB | Dictionary of feature values |
+| feature_version | VARCHAR(20) | Version string for feature set |
+| created_at | TIMESTAMPTZ | Creation time |
 
 #### `data_sync_log`
 Tracks data synchronization status.

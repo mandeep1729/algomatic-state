@@ -14,6 +14,7 @@ from src.data.database.models import (
     Ticker,
     VALID_SOURCES,
     VALID_TIMEFRAMES,
+    ComputedFeature,
 )
 
 
@@ -421,6 +422,131 @@ class OHLCVRepository:
         return query.order_by(Ticker.symbol, DataSyncLog.timeframe).all()
 
     # -------------------------------------------------------------------------
+    # Feature Operations
+    # -------------------------------------------------------------------------
+
+    def store_features(
+        self,
+        features_df: pd.DataFrame,
+        ticker_id: int,
+        timeframe: str,
+        version: Optional[str] = None,
+    ) -> int:
+        """Store computed features for a ticker/timeframe.
+
+        Args:
+            features_df: DataFrame with datetime index and feature columns
+            ticker_id: Ticker ID
+            timeframe: Bar timeframe
+            version: Optional feature version string
+
+        Returns:
+            Number of features stored
+        """
+        if features_df.empty:
+            return 0
+
+        # 1. Get existing bars to map timestamp -> bar_id
+        start_date = features_df.index.min()
+        end_date = features_df.index.max()
+
+        bars = self.session.query(OHLCVBar.timestamp, OHLCVBar.id).filter(
+            OHLCVBar.ticker_id == ticker_id,
+            OHLCVBar.timeframe == timeframe,
+            OHLCVBar.timestamp >= start_date,
+            OHLCVBar.timestamp <= end_date,
+        ).all()
+
+        timestamp_map = {b.timestamp: b.id for b in bars}
+
+        # 2. Prepare records
+        records = []
+        for timestamp, row in features_df.iterrows():
+            if timestamp not in timestamp_map:
+                continue  # Skip features for missing bars
+
+            # Convert row to dict, handling NaN/Inf if necessary (JSON compliant)
+            feature_data = row.where(pd.notnull(row), None).to_dict()
+            # Remove None values to save space/cleanliness (optional)
+            feature_data = {k: v for k, v in feature_data.items() if v is not None}
+
+            records.append({
+                "bar_id": timestamp_map[timestamp],
+                "ticker_id": ticker_id,
+                "timeframe": timeframe,
+                "timestamp": timestamp,
+                "features": feature_data,
+                "feature_version": version,
+            })
+
+        if not records:
+            return 0
+
+        # 3. Bulk Upsert (Update existing features for this bar)
+        stmt = pg_insert(ComputedFeature).values(records)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["bar_id"],  # Unique constraint on bar_id
+            set_={
+                "features": stmt.excluded.features,
+                "feature_version": stmt.excluded.feature_version,
+                "timestamp": stmt.excluded.timestamp, # Update timestamp index just in case
+            }
+        )
+
+        result = self.session.execute(stmt)
+        return result.rowcount
+
+    def get_features(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> pd.DataFrame:
+        """Retrieve features as a pandas DataFrame.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+            start: Optional start datetime
+            end: Optional end datetime
+
+        Returns:
+            DataFrame with datetime index and feature columns (expanded from JSON)
+        """
+        query = self.session.query(
+            ComputedFeature.timestamp,
+            ComputedFeature.features,
+        ).join(Ticker).filter(
+            Ticker.symbol == symbol.upper(),
+            ComputedFeature.timeframe == timeframe,
+        )
+
+        if start:
+            query = query.filter(ComputedFeature.timestamp >= start)
+        if end:
+            query = query.filter(ComputedFeature.timestamp <= end)
+
+        query = query.order_by(ComputedFeature.timestamp)
+        results = query.all()
+
+        if not results:
+            return pd.DataFrame()
+
+        # Convert list of (timestamp, feature_dict) to DataFrame
+        data = []
+        for ts, feats in results:
+            row = feats.copy()
+            row["timestamp"] = ts
+            data.append(row)
+
+        df = pd.DataFrame(data)
+        df.set_index("timestamp", inplace=True)
+        df.sort_index(inplace=True)
+        
+        return df
+
+    # -------------------------------------------------------------------------
     # Utility Methods
     # -------------------------------------------------------------------------
 
@@ -442,12 +568,19 @@ class OHLCVRepository:
             earliest = self.get_earliest_timestamp(symbol, timeframe)
             latest = self.get_latest_timestamp(symbol, timeframe)
             count = self.get_bar_count(symbol, timeframe)
+            
+            # Check for features
+            feature_count = self.session.query(func.count(ComputedFeature.id)).filter(
+                ComputedFeature.ticker_id == ticker.id,
+                ComputedFeature.timeframe == timeframe
+            ).scalar() or 0
 
             if count > 0:
                 summary[timeframe] = {
                     "earliest": earliest,
                     "latest": latest,
                     "bar_count": count,
+                    "feature_count": feature_count,
                 }
 
         return summary

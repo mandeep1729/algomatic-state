@@ -19,6 +19,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
+from sqlalchemy.dialects.postgresql import JSONB
+
+
 class Base(DeclarativeBase):
     """Base class for all ORM models."""
     pass
@@ -89,7 +92,6 @@ class OHLCVBar(Base):
     close: Mapped[float] = mapped_column(Float, nullable=False)
     volume: Mapped[int] = mapped_column(BigInteger, nullable=False)
     trade_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    vwap: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(20), nullable=False, default="alpaca")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -99,6 +101,12 @@ class OHLCVBar(Base):
 
     # Relationships
     ticker: Mapped["Ticker"] = relationship("Ticker", back_populates="bars")
+    features: Mapped["ComputedFeature"] = relationship(
+        "ComputedFeature",
+        uselist=False,
+        back_populates="bar",
+        cascade="all, delete-orphan",
+    )
 
     # Table constraints
     __table_args__ = (
@@ -124,6 +132,55 @@ class OHLCVBar(Base):
             f"<OHLCVBar(ticker_id={self.ticker_id}, timeframe='{self.timeframe}', "
             f"timestamp={self.timestamp}, close={self.close})>"
         )
+
+
+class ComputedFeature(Base):
+    """Computed features for OHLCV bars.
+
+    Stores derived Technical Indicators and other features in a JSONB column
+    for flexibility.
+    """
+
+    __tablename__ = "computed_features"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    bar_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("ohlcv_bars.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    ticker_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("tickers.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    
+    # Feature storage: {"rsi_14": 45.3, "sma_200": 150.2, ...}
+    features: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    feature_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    # Relationships
+    bar: Mapped["OHLCVBar"] = relationship("OHLCVBar", back_populates="features")
+    ticker: Mapped["Ticker"] = relationship("Ticker")
+
+    # Constraints
+    __table_args__ = (
+        # Ensure we don't duplicate features for same bar (covered by unique bar_id, but good to be explicit about logical unique)
+        Index("ix_features_ticker_timeframe_ts", "ticker_id", "timeframe", "timestamp"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<ComputedFeature(ticker_id={self.ticker_id}, ts={self.timestamp})>"
 
 
 class DataSyncLog(Base):
