@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -495,10 +496,12 @@ class OHLCVRepository:
             if timestamp not in timestamp_map:
                 continue  # Skip features for missing bars
 
-            # Convert row to dict, handling NaN/Inf if necessary (JSON compliant)
-            feature_data = row.where(pd.notnull(row), None).to_dict()
-            # Remove None values to save space/cleanliness (optional)
-            feature_data = {k: v for k, v in feature_data.items() if v is not None}
+            # Convert row to dict, handling NaN/Inf (JSON doesn't support these)
+            feature_data = {}
+            for k, v in row.items():
+                if pd.isna(v) or (isinstance(v, float) and (np.isinf(v) or np.isnan(v))):
+                    continue  # Skip NaN/Inf values
+                feature_data[k] = float(v) if isinstance(v, (np.floating, np.integer)) else v
 
             records.append({
                 "bar_id": timestamp_map[timestamp],

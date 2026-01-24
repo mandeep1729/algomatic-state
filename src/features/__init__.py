@@ -50,6 +50,13 @@ except ImportError:
     TALibIndicatorCalculator = None  # type: ignore
     TALIB_AVAILABLE = False
 
+# Optional pandas-ta calculator (pure Python alternative)
+try:
+    from .pandas_ta_indicators import PandasTAIndicatorCalculator, PANDAS_TA_AVAILABLE
+except ImportError:
+    PandasTAIndicatorCalculator = None  # type: ignore
+    PANDAS_TA_AVAILABLE = False
+
 __all__ = [
     # Constants
     "EPS",
@@ -85,4 +92,7 @@ __all__ = [
     # TA-Lib (optional)
     "TALibIndicatorCalculator",
     "TALIB_AVAILABLE",
+    # pandas-ta (optional, pure Python alternative)
+    "PandasTAIndicatorCalculator",
+    "PANDAS_TA_AVAILABLE",
 ]
