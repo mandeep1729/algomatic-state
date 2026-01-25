@@ -1,0 +1,549 @@
+{
+  "version": "1.0",
+  "description": "Technical indicators and features configuration for Algomatic State",
+  "feature_categories": [
+    "returns",
+    "trend",
+    "volatility",
+    "volume",
+    "intrabar",
+    "anchor",
+    "time",
+    "market_context",
+    "momentum",
+    "support_resistance"
+  ],
+  "features": {
+    "returns": {
+      "r1": {
+        "name": "1-Bar Log Return",
+        "description": "Log return over 1 bar: log(C_t / C_{t-1})",
+        "category": "returns",
+        "lookback": 1,
+        "enabled": true
+      },
+      "r5": {
+        "name": "5-Bar Log Return",
+        "description": "Log return over 5 bars: log(C_t / C_{t-5})",
+        "category": "returns",
+        "lookback": 5,
+        "enabled": true
+      },
+      "r15": {
+        "name": "15-Bar Log Return",
+        "description": "Log return over 15 bars: log(C_t / C_{t-15})",
+        "category": "returns",
+        "lookback": 15,
+        "enabled": true
+      },
+      "r60": {
+        "name": "60-Bar Log Return",
+        "description": "Log return over 60 bars: log(C_t / C_{t-60})",
+        "category": "returns",
+        "lookback": 60,
+        "enabled": true
+      },
+      "cumret_60": {
+        "name": "Cumulative Return 60",
+        "description": "Cumulative log return over 60 bars",
+        "category": "returns",
+        "lookback": 60,
+        "enabled": true
+      },
+      "ema_diff": {
+        "name": "EMA Difference",
+        "description": "Normalized EMA difference: (EMA12 - EMA48) / price",
+        "category": "returns",
+        "lookback": 48,
+        "enabled": true
+      },
+      "slope_60": {
+        "name": "Price Slope 60",
+        "description": "Linear regression slope of log prices over 60 bars",
+        "category": "returns",
+        "lookback": 60,
+        "enabled": true
+      },
+      "trend_strength": {
+        "name": "Trend Strength",
+        "description": "Trend strength: |slope_60| / rv_60",
+        "category": "returns",
+        "lookback": 60,
+        "enabled": true
+      }
+    },
+    "volatility": {
+      "rv_15": {
+        "name": "Realized Volatility 15",
+        "description": "15-bar realized volatility (std of returns)",
+        "category": "volatility",
+        "lookback": 15,
+        "enabled": true
+      },
+      "rv_60": {
+        "name": "Realized Volatility 60",
+        "description": "60-bar realized volatility (std of returns)",
+        "category": "volatility",
+        "lookback": 60,
+        "enabled": true
+      },
+      "range_1": {
+        "name": "Normalized Range",
+        "description": "Normalized bar range: (H - L) / C",
+        "category": "volatility",
+        "lookback": 1,
+        "enabled": true
+      },
+      "atr_60": {
+        "name": "Average True Range 60",
+        "description": "Average range over 60 bars",
+        "category": "volatility",
+        "lookback": 60,
+        "enabled": true
+      },
+      "range_z_60": {
+        "name": "Range Z-Score",
+        "description": "Z-score of range over 60-bar window",
+        "category": "volatility",
+        "lookback": 60,
+        "enabled": true
+      },
+      "vol_of_vol": {
+        "name": "Volatility of Volatility",
+        "description": "Volatility of volatility: std(rv_15) over 60 bars",
+        "category": "volatility",
+        "lookback": 60,
+        "enabled": true
+      },
+      "atr_14": {
+        "name": "Average True Range 14",
+        "description": "Average True Range over 14 periods",
+        "category": "volatility",
+        "lookback": 14,
+        "enabled": true
+      },
+      "bb_upper": {
+        "name": "Bollinger Upper Band",
+        "description": "Bollinger Bands upper band (SMA + 2*std)",
+        "category": "volatility",
+        "lookback": 20,
+        "enabled": true
+      },
+      "bb_middle": {
+        "name": "Bollinger Middle Band",
+        "description": "Bollinger Bands middle band (20-period SMA)",
+        "category": "volatility",
+        "lookback": 20,
+        "enabled": true
+      },
+      "bb_lower": {
+        "name": "Bollinger Lower Band",
+        "description": "Bollinger Bands lower band (SMA - 2*std)",
+        "category": "volatility",
+        "lookback": 20,
+        "enabled": true
+      },
+      "bb_width": {
+        "name": "Bollinger Band Width",
+        "description": "Bollinger Band width: (upper - lower) / middle",
+        "category": "volatility",
+        "lookback": 20,
+        "enabled": true
+      },
+      "bb_pct": {
+        "name": "Bollinger %B",
+        "description": "Bollinger %B: (close - lower) / (upper - lower)",
+        "category": "volatility",
+        "lookback": 20,
+        "enabled": true
+      }
+    },
+    "volume": {
+      "vol1": {
+        "name": "Raw Volume",
+        "description": "Raw volume for the bar",
+        "category": "volume",
+        "lookback": 1,
+        "enabled": true
+      },
+      "dvol1": {
+        "name": "Dollar Volume",
+        "description": "Dollar volume: close * volume",
+        "category": "volume",
+        "lookback": 1,
+        "enabled": true
+      },
+      "relvol_60": {
+        "name": "Relative Volume",
+        "description": "Relative volume: V / mean(V, 60)",
+        "category": "volume",
+        "lookback": 60,
+        "enabled": true
+      },
+      "vol_z_60": {
+        "name": "Volume Z-Score",
+        "description": "Volume z-score over 60-bar window",
+        "category": "volume",
+        "lookback": 60,
+        "enabled": true
+      },
+      "dvol_z_60": {
+        "name": "Dollar Volume Z-Score",
+        "description": "Dollar volume z-score over 60-bar window",
+        "category": "volume",
+        "lookback": 60,
+        "enabled": true
+      },
+      "obv": {
+        "name": "On-Balance Volume",
+        "description": "Cumulative volume based on price direction",
+        "category": "volume",
+        "lookback": 1,
+        "enabled": true
+      },
+      "vwap": {
+        "name": "VWAP",
+        "description": "Volume Weighted Average Price",
+        "category": "volume",
+        "lookback": 60,
+        "enabled": true
+      }
+    },
+    "intrabar": {
+      "clv": {
+        "name": "Close Location Value",
+        "description": "Close location value: (C - L) / (H - L)",
+        "category": "intrabar",
+        "lookback": 1,
+        "enabled": true
+      },
+      "body_ratio": {
+        "name": "Candle Body Ratio",
+        "description": "Candle body ratio: |C - O| / (H - L)",
+        "category": "intrabar",
+        "lookback": 1,
+        "enabled": true
+      },
+      "upper_wick": {
+        "name": "Upper Wick Ratio",
+        "description": "Upper wick ratio: (H - max(O, C)) / (H - L)",
+        "category": "intrabar",
+        "lookback": 1,
+        "enabled": true
+      },
+      "lower_wick": {
+        "name": "Lower Wick Ratio",
+        "description": "Lower wick ratio: (min(O, C) - L) / (H - L)",
+        "category": "intrabar",
+        "lookback": 1,
+        "enabled": true
+      }
+    },
+    "anchor": {
+      "vwap_60": {
+        "name": "VWAP 60",
+        "description": "60-bar volume-weighted average price",
+        "category": "anchor",
+        "lookback": 60,
+        "enabled": true
+      },
+      "dist_vwap_60": {
+        "name": "Distance from VWAP",
+        "description": "Distance from VWAP: (C - VWAP) / C",
+        "category": "anchor",
+        "lookback": 60,
+        "enabled": true
+      },
+      "dist_ema_48": {
+        "name": "Distance from EMA48",
+        "description": "Distance from EMA48: (C - EMA48) / C",
+        "category": "anchor",
+        "lookback": 48,
+        "enabled": true
+      },
+      "breakout_20": {
+        "name": "Breakout 20",
+        "description": "Breakout from 20-bar high: (C - high_20) / C",
+        "category": "anchor",
+        "lookback": 20,
+        "enabled": true
+      },
+      "pullback_depth": {
+        "name": "Pullback Depth",
+        "description": "Pullback from 20-bar high: (high_20 - C) / high_20",
+        "category": "anchor",
+        "lookback": 20,
+        "enabled": true
+      }
+    },
+    "time": {
+      "tod_sin": {
+        "name": "Time-of-Day Sine",
+        "description": "Sine encoding of time-of-day (cyclical)",
+        "category": "time",
+        "lookback": 1,
+        "enabled": true
+      },
+      "tod_cos": {
+        "name": "Time-of-Day Cosine",
+        "description": "Cosine encoding of time-of-day (cyclical)",
+        "category": "time",
+        "lookback": 1,
+        "enabled": true
+      },
+      "is_open_window": {
+        "name": "Opening Window Flag",
+        "description": "Binary flag for first 30 minutes of trading",
+        "category": "time",
+        "lookback": 1,
+        "enabled": true
+      },
+      "is_close_window": {
+        "name": "Closing Window Flag",
+        "description": "Binary flag for last 60 minutes of trading",
+        "category": "time",
+        "lookback": 1,
+        "enabled": true
+      },
+      "is_midday": {
+        "name": "Midday Flag",
+        "description": "Binary flag for midday period (120-240 min from open)",
+        "category": "time",
+        "lookback": 1,
+        "enabled": true
+      }
+    },
+    "market_context": {
+      "mkt_r5": {
+        "name": "Market 5-Bar Return",
+        "description": "5-bar market (SPY) return",
+        "category": "market_context",
+        "lookback": 5,
+        "enabled": true
+      },
+      "mkt_r15": {
+        "name": "Market 15-Bar Return",
+        "description": "15-bar market (SPY) return",
+        "category": "market_context",
+        "lookback": 15,
+        "enabled": true
+      },
+      "mkt_rv_60": {
+        "name": "Market Volatility 60",
+        "description": "60-bar market realized volatility",
+        "category": "market_context",
+        "lookback": 60,
+        "enabled": true
+      },
+      "beta_60": {
+        "name": "Rolling Beta",
+        "description": "Rolling 60-bar beta vs market",
+        "category": "market_context",
+        "lookback": 60,
+        "enabled": true
+      },
+      "resid_rv_60": {
+        "name": "Residual Volatility",
+        "description": "Residual volatility after market exposure",
+        "category": "market_context",
+        "lookback": 60,
+        "enabled": true
+      }
+    },
+    "momentum": {
+      "rsi_14": {
+        "name": "RSI 14",
+        "description": "Relative Strength Index (14-period)",
+        "category": "momentum",
+        "lookback": 14,
+        "enabled": true
+      },
+      "macd": {
+        "name": "MACD Line",
+        "description": "MACD Line (12, 26)",
+        "category": "momentum",
+        "lookback": 26,
+        "enabled": true
+      },
+      "macd_signal": {
+        "name": "MACD Signal",
+        "description": "MACD Signal Line (9-period EMA of MACD)",
+        "category": "momentum",
+        "lookback": 35,
+        "enabled": true
+      },
+      "macd_hist": {
+        "name": "MACD Histogram",
+        "description": "MACD Histogram (MACD - Signal)",
+        "category": "momentum",
+        "lookback": 35,
+        "enabled": true
+      },
+      "stoch_k": {
+        "name": "Stochastic %K",
+        "description": "Stochastic %K (slow)",
+        "category": "momentum",
+        "lookback": 14,
+        "enabled": true
+      },
+      "stoch_d": {
+        "name": "Stochastic %D",
+        "description": "Stochastic %D (3-period SMA of %K)",
+        "category": "momentum",
+        "lookback": 14,
+        "enabled": true
+      },
+      "adx_14": {
+        "name": "ADX 14",
+        "description": "Average Directional Index (14-period)",
+        "category": "momentum",
+        "lookback": 14,
+        "enabled": true
+      },
+      "cci_20": {
+        "name": "CCI 20",
+        "description": "Commodity Channel Index (20-period)",
+        "category": "momentum",
+        "lookback": 20,
+        "enabled": true
+      },
+      "willr_14": {
+        "name": "Williams %R",
+        "description": "Williams %R (14-period)",
+        "category": "momentum",
+        "lookback": 14,
+        "enabled": true
+      },
+      "mfi_14": {
+        "name": "MFI 14",
+        "description": "Money Flow Index (14-period)",
+        "category": "momentum",
+        "lookback": 14,
+        "enabled": true
+      }
+    },
+    "trend": {
+      "sma_20": {
+        "name": "SMA 20",
+        "description": "Simple Moving Average (20-period)",
+        "category": "trend",
+        "lookback": 20,
+        "enabled": true
+      },
+      "sma_50": {
+        "name": "SMA 50",
+        "description": "Simple Moving Average (50-period)",
+        "category": "trend",
+        "lookback": 50,
+        "enabled": true
+      },
+      "sma_200": {
+        "name": "SMA 200",
+        "description": "Simple Moving Average (200-period)",
+        "category": "trend",
+        "lookback": 200,
+        "enabled": true
+      },
+      "ema_20": {
+        "name": "EMA 20",
+        "description": "Exponential Moving Average (20-period)",
+        "category": "trend",
+        "lookback": 20,
+        "enabled": true
+      },
+      "ema_50": {
+        "name": "EMA 50",
+        "description": "Exponential Moving Average (50-period)",
+        "category": "trend",
+        "lookback": 50,
+        "enabled": true
+      },
+      "ema_200": {
+        "name": "EMA 200",
+        "description": "Exponential Moving Average (200-period)",
+        "category": "trend",
+        "lookback": 200,
+        "enabled": true
+      },
+      "psar": {
+        "name": "Parabolic SAR",
+        "description": "Parabolic Stop and Reverse",
+        "category": "trend",
+        "lookback": 1,
+        "enabled": true
+      },
+      "ichi_tenkan": {
+        "name": "Ichimoku Tenkan-sen",
+        "description": "Ichimoku Conversion Line (9-period)",
+        "category": "trend",
+        "lookback": 9,
+        "enabled": true
+      },
+      "ichi_kijun": {
+        "name": "Ichimoku Kijun-sen",
+        "description": "Ichimoku Base Line (26-period)",
+        "category": "trend",
+        "lookback": 26,
+        "enabled": true
+      },
+      "ichi_senkou_a": {
+        "name": "Ichimoku Senkou Span A",
+        "description": "Ichimoku Leading Span A",
+        "category": "trend",
+        "lookback": 26,
+        "enabled": true
+      },
+      "ichi_senkou_b": {
+        "name": "Ichimoku Senkou Span B",
+        "description": "Ichimoku Leading Span B (52-period)",
+        "category": "trend",
+        "lookback": 52,
+        "enabled": true
+      },
+      "ichi_chikou": {
+        "name": "Ichimoku Chikou Span",
+        "description": "Ichimoku Lagging Span",
+        "category": "trend",
+        "lookback": 26,
+        "enabled": true
+      }
+    },
+    "support_resistance": {
+      "pivot_pp": {
+        "name": "Pivot Point",
+        "description": "Classic Pivot Point: (H + L + C) / 3",
+        "category": "support_resistance",
+        "lookback": 1,
+        "enabled": true
+      },
+      "pivot_r1": {
+        "name": "Resistance 1",
+        "description": "First Resistance Level: 2*PP - L",
+        "category": "support_resistance",
+        "lookback": 1,
+        "enabled": true
+      },
+      "pivot_r2": {
+        "name": "Resistance 2",
+        "description": "Second Resistance Level: PP + (H - L)",
+        "category": "support_resistance",
+        "lookback": 1,
+        "enabled": true
+      },
+      "pivot_s1": {
+        "name": "Support 1",
+        "description": "First Support Level: 2*PP - H",
+        "category": "support_resistance",
+        "lookback": 1,
+        "enabled": true
+      },
+      "pivot_s2": {
+        "name": "Support 2",
+        "description": "Second Support Level: PP - (H - L)",
+        "category": "support_resistance",
+        "lookback": 1,
+        "enabled": true
+      }
+    }
+  }
+}
