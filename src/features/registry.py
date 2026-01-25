@@ -75,10 +75,21 @@ register_calculator("market_context")(MarketContextFeatureCalculator)
 
 # TA-Lib indicators (optional, requires TA-Lib installation)
 try:
+    import talib  # Check if actual TA-Lib library is available
     from .talib_indicators import TALibIndicatorCalculator
     register_calculator("talib_indicators")(TALibIndicatorCalculator)
+    TALIB_AVAILABLE = True
 except ImportError:
-    pass  # TA-Lib not available
+    TALIB_AVAILABLE = False
+
+# Pandas-TA indicators (pure Python alternative)
+try:
+    import pandas_ta  # Check if pandas_ta is available
+    from .pandas_ta_indicators import PandasTAIndicatorCalculator
+    register_calculator("pandas_ta_indicators")(PandasTAIndicatorCalculator)
+    PANDAS_TA_AVAILABLE = True
+except ImportError:
+    PANDAS_TA_AVAILABLE = False
 
 
 def load_feature_config(config_path: str | Path) -> dict[str, Any]:
@@ -146,12 +157,16 @@ def create_calculators_from_config(
     return calculators
 
 
-def get_default_calculators(include_market_context: bool = False) -> list[BaseFeatureCalculator]:
+def get_default_calculators(
+    include_market_context: bool = False,
+    include_ta_indicators: bool = True,
+) -> list[BaseFeatureCalculator]:
     """Get default set of feature calculators.
 
     Args:
         include_market_context: Whether to include market context calculator
                                 (requires market_df)
+        include_ta_indicators: Whether to include TA-Lib/pandas-ta indicators
 
     Returns:
         List of default calculator instances
@@ -167,5 +182,14 @@ def get_default_calculators(include_market_context: bool = False) -> list[BaseFe
 
     if include_market_context:
         calculators.append(MarketContextFeatureCalculator())
+
+    # Add TA indicators (prefer TA-Lib, fallback to pandas-ta)
+    if include_ta_indicators:
+        if TALIB_AVAILABLE:
+            ta_calc_class = get_calculator("talib_indicators")
+            calculators.append(ta_calc_class())
+        elif PANDAS_TA_AVAILABLE:
+            ta_calc_class = get_calculator("pandas_ta_indicators")
+            calculators.append(ta_calc_class())
 
     return calculators

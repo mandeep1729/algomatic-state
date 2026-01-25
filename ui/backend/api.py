@@ -600,11 +600,15 @@ class ComputeFeaturesResponse(BaseModel):
 
 
 @app.post("/api/compute-features/{symbol}")
-async def compute_features(symbol: str):
+async def compute_features(symbol: str, force: bool = False):
     """Compute technical indicators for all timeframes of a ticker.
 
     This computes indicators like RSI, MACD, Bollinger Bands, etc.
     and stores them in the computed_features table.
+
+    Args:
+        symbol: Ticker symbol
+        force: If True, recompute features for all bars (overwrites existing)
     """
     try:
         from src.data.database.repository import OHLCVRepository
@@ -642,27 +646,34 @@ async def compute_features(symbol: str):
                 if df.empty:
                     continue
 
-                # Check existing features
-                existing_timestamps = repo.get_existing_feature_timestamps(
-                    ticker_id=ticker.id,
-                    timeframe=timeframe,
-                )
+                # Check existing features (skip if force=True)
+                if force:
+                    missing_timestamps = set(
+                        ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                        for ts in df.index
+                    )
+                    logger.info(f"  {timeframe}: Force recomputing features for {len(df)} bars")
+                else:
+                    existing_timestamps = repo.get_existing_feature_timestamps(
+                        ticker_id=ticker.id,
+                        timeframe=timeframe,
+                    )
 
-                df_timestamps = set(
-                    ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
-                    for ts in df.index
-                )
-                missing_timestamps = df_timestamps - existing_timestamps
+                    df_timestamps = set(
+                        ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                        for ts in df.index
+                    )
+                    missing_timestamps = df_timestamps - existing_timestamps
 
-                if not missing_timestamps:
-                    stats["timeframes_skipped"] += 1
-                    logger.info(f"  {timeframe}: All {len(df)} bars already have features")
-                    continue
+                    if not missing_timestamps:
+                        stats["timeframes_skipped"] += 1
+                        logger.info(f"  {timeframe}: All {len(df)} bars already have features")
+                        continue
 
-                logger.info(
-                    f"  {timeframe}: Computing features for {len(missing_timestamps)} bars "
-                    f"(out of {len(df)} total)"
-                )
+                    logger.info(
+                        f"  {timeframe}: Computing features for {len(missing_timestamps)} bars "
+                        f"(out of {len(df)} total)"
+                    )
 
                 # Compute indicators
                 features_df = calculator.compute(df)
