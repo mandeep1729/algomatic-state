@@ -16,7 +16,7 @@ import type {
   Statistics,
   ChartSettings,
 } from './types';
-import { OHLCVChart } from './components';
+import { OHLCVChart, FeatureFilter } from './components';
 
 // Constants
 const MAX_DISPLAY_POINTS = 7200;
@@ -340,6 +340,17 @@ function App() {
               </div>
             )}
           </div>
+
+          {/* Feature Filter */}
+          {featureData && (
+            <div className="section">
+              <FeatureFilter
+                selectedFeatures={chartSettings.selectedFeatures}
+                availableFeatures={featureData.feature_names}
+                onFeatureToggle={toggleFeature}
+              />
+            </div>
+          )}
         </aside>
 
         {/* Main Chart Area */}
@@ -482,6 +493,8 @@ function App() {
                 <div className="chart-container">
                   <OHLCVChart
                     data={visibleOhlcvData}
+                    featureData={visibleFeatureData}
+                    selectedFeatures={chartSettings.selectedFeatures}
                     showVolume={chartSettings.showVolume}
                     height={500}
                   />

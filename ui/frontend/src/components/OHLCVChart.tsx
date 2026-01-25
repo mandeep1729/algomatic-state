@@ -5,10 +5,12 @@ import {
   ISeriesApi,
   CandlestickData,
   HistogramData,
+  LineData,
   Time,
   ColorType,
   CrosshairMode,
 } from 'lightweight-charts';
+import { getFeatureCategory, FEATURE_CATEGORY_COLORS } from '../featureConfig';
 
 interface OHLCVData {
   timestamps: string[];
@@ -19,20 +21,47 @@ interface OHLCVData {
   volume: number[];
 }
 
+interface FeatureData {
+  timestamps: string[];
+  features: Record<string, number[]>;
+  feature_names: string[];
+}
+
 interface OHLCVChartProps {
   data: OHLCVData | null;
+  featureData?: FeatureData | null;
+  selectedFeatures?: string[];
   showVolume?: boolean;
   height?: number;
   onRangeChange?: (start: number, end: number) => void;
 }
+
+// Feature overlay colors - cycle through these
+const OVERLAY_COLORS = [
+  '#58a6ff', '#3fb950', '#f85149', '#d29922', '#a371f7',
+  '#db6d28', '#ff7b72', '#7ee787', '#79c0ff', '#cea5fb',
+];
 
 // Convert ISO timestamp to Unix timestamp (seconds)
 const toUnixTime = (isoString: string): Time => {
   return Math.floor(new Date(isoString).getTime() / 1000) as Time;
 };
 
+// Check if feature should use price scale (overlays on price chart)
+const isPriceScaleFeature = (featureKey: string): boolean => {
+  const priceFeatures = [
+    'sma_20', 'sma_50', 'sma_200', 'ema_20', 'ema_50', 'ema_200',
+    'bb_upper', 'bb_middle', 'bb_lower', 'vwap', 'vwap_60',
+    'psar', 'ichi_tenkan', 'ichi_kijun', 'ichi_senkou_a', 'ichi_senkou_b',
+    'pivot_pp', 'pivot_r1', 'pivot_r2', 'pivot_s1', 'pivot_s2',
+  ];
+  return priceFeatures.includes(featureKey);
+};
+
 export function OHLCVChart({
   data,
+  featureData,
+  selectedFeatures = [],
   showVolume = true,
   height = 500,
   onRangeChange,
@@ -41,6 +70,7 @@ export function OHLCVChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const featureSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
 
   // Initialize chart
   useEffect(() => {
@@ -89,7 +119,6 @@ export function OHLCVChart({
           const hours = date.getHours().toString().padStart(2, '0');
           const minutes = date.getMinutes().toString().padStart(2, '0');
           const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          // tickMarkType: 0=Year, 1=Month, 2=DayOfMonth, 3=Time, 4=TimeWithSeconds
           if (tickMarkType <= 2) {
             return `${months[date.getMonth()]} ${day}`;
           }
@@ -160,6 +189,7 @@ export function OHLCVChart({
       chartRef.current = null;
       candlestickSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      featureSeriesRef.current.clear();
     };
   }, []);
 
@@ -196,6 +226,80 @@ export function OHLCVChart({
       chartRef.current.timeScale().fitContent();
     }
   }, [data]);
+
+  // Update feature overlays
+  useEffect(() => {
+    if (!chartRef.current || !featureData) return;
+
+    const chart = chartRef.current;
+    const currentSeries = featureSeriesRef.current;
+
+    // Remove series that are no longer selected
+    for (const [key, series] of currentSeries.entries()) {
+      if (!selectedFeatures.includes(key)) {
+        chart.removeSeries(series);
+        currentSeries.delete(key);
+      }
+    }
+
+    // Add or update series for selected features
+    selectedFeatures.forEach((featureKey, index) => {
+      const featureValues = featureData.features[featureKey];
+      if (!featureValues) return;
+
+      // Get color based on category or fallback to cycle
+      const category = getFeatureCategory(featureKey);
+      const color = category
+        ? FEATURE_CATEGORY_COLORS[category]
+        : OVERLAY_COLORS[index % OVERLAY_COLORS.length];
+
+      // Prepare line data, filtering out NaN/null values
+      const lineData: LineData[] = [];
+      for (let i = 0; i < featureData.timestamps.length; i++) {
+        const value = featureValues[i];
+        if (value !== null && value !== undefined && !isNaN(value) && isFinite(value)) {
+          lineData.push({
+            time: toUnixTime(featureData.timestamps[i]),
+            value: value,
+          });
+        }
+      }
+
+      if (lineData.length === 0) return;
+
+      // Check if series already exists
+      let series = currentSeries.get(featureKey);
+
+      if (!series) {
+        // Determine price scale
+        const priceScaleId = isPriceScaleFeature(featureKey) ? 'right' : `feature_${featureKey}`;
+
+        // Create new series
+        series = chart.addLineSeries({
+          color: color,
+          lineWidth: 1,
+          priceScaleId: priceScaleId,
+          lastValueVisible: false,
+          priceLineVisible: false,
+        });
+
+        // Configure separate scale for non-price features
+        if (!isPriceScaleFeature(featureKey)) {
+          chart.priceScale(`feature_${featureKey}`).applyOptions({
+            scaleMargins: {
+              top: 0.7,
+              bottom: 0.05,
+            },
+            visible: false,
+          });
+        }
+
+        currentSeries.set(featureKey, series);
+      }
+
+      series.setData(lineData);
+    });
+  }, [featureData, selectedFeatures]);
 
   // Update volume visibility
   useEffect(() => {
@@ -279,6 +383,43 @@ export function OHLCVChart({
           Reset
         </button>
       </div>
+      {/* Feature legend */}
+      {selectedFeatures.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '8px',
+            left: '8px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '4px',
+            zIndex: 10,
+            maxWidth: '60%',
+          }}
+        >
+          {selectedFeatures.map((feature, index) => {
+            const category = getFeatureCategory(feature);
+            const color = category
+              ? FEATURE_CATEGORY_COLORS[category]
+              : OVERLAY_COLORS[index % OVERLAY_COLORS.length];
+            return (
+              <span
+                key={feature}
+                style={{
+                  padding: '2px 6px',
+                  fontSize: '10px',
+                  background: 'rgba(0,0,0,0.7)',
+                  color: color,
+                  borderRadius: '3px',
+                  border: `1px solid ${color}`,
+                }}
+              >
+                {feature}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
