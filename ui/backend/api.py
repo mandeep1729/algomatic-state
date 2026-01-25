@@ -590,6 +590,125 @@ async def trigger_sync(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class ComputeFeaturesResponse(BaseModel):
+    """Response for compute features endpoint."""
+    symbol: str
+    timeframes_processed: int
+    timeframes_skipped: int
+    features_stored: int
+    message: str
+
+
+@app.post("/api/compute-features/{symbol}")
+async def compute_features(symbol: str):
+    """Compute technical indicators for all timeframes of a ticker.
+
+    This computes indicators like RSI, MACD, Bollinger Bands, etc.
+    and stores them in the computed_features table.
+    """
+    try:
+        from src.data.database.repository import OHLCVRepository
+        from src.features import PandasTAIndicatorCalculator, PANDAS_TA_AVAILABLE
+        from src.features import TALibIndicatorCalculator, TALIB_AVAILABLE
+
+        # Get calculator (prefer TA-Lib, fall back to pandas-ta)
+        calculator = None
+        if TALIB_AVAILABLE:
+            calculator = TALibIndicatorCalculator()
+        elif PANDAS_TA_AVAILABLE:
+            calculator = PandasTAIndicatorCalculator()
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail="No indicator calculator available. Install TA-Lib or pandas-ta."
+            )
+
+        db_manager = get_db_manager()
+        stats = {
+            "timeframes_processed": 0,
+            "timeframes_skipped": 0,
+            "features_stored": 0,
+        }
+
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+
+            # Get ticker
+            ticker = repo.get_or_create_ticker(symbol.upper())
+
+            for timeframe in VALID_TIMEFRAMES:
+                # Get OHLCV data
+                df = repo.get_bars(symbol.upper(), timeframe)
+                if df.empty:
+                    continue
+
+                # Check existing features
+                existing_timestamps = repo.get_existing_feature_timestamps(
+                    ticker_id=ticker.id,
+                    timeframe=timeframe,
+                )
+
+                df_timestamps = set(
+                    ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                    for ts in df.index
+                )
+                missing_timestamps = df_timestamps - existing_timestamps
+
+                if not missing_timestamps:
+                    stats["timeframes_skipped"] += 1
+                    logger.info(f"  {timeframe}: All {len(df)} bars already have features")
+                    continue
+
+                logger.info(
+                    f"  {timeframe}: Computing features for {len(missing_timestamps)} bars "
+                    f"(out of {len(df)} total)"
+                )
+
+                # Compute indicators
+                features_df = calculator.compute(df)
+                if features_df.empty:
+                    continue
+
+                # Filter to only store new features
+                features_df_filtered = features_df[
+                    features_df.index.map(
+                        lambda ts: (ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts)
+                        in missing_timestamps
+                    )
+                ]
+
+                if features_df_filtered.empty:
+                    continue
+
+                # Store features
+                rows_stored = repo.store_features(
+                    features_df=features_df_filtered,
+                    ticker_id=ticker.id,
+                    timeframe=timeframe,
+                    version="v1.0",
+                )
+
+                stats["timeframes_processed"] += 1
+                stats["features_stored"] += rows_stored
+                logger.info(f"  {timeframe}: Stored {rows_stored} feature rows")
+
+            session.commit()
+
+        return ComputeFeaturesResponse(
+            symbol=symbol.upper(),
+            timeframes_processed=stats["timeframes_processed"],
+            timeframes_skipped=stats["timeframes_skipped"],
+            features_stored=stats["features_stored"],
+            message=f"Computed features for {symbol.upper()}: {stats['features_stored']} rows stored"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error computing features: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/import")
 async def import_data(
     symbol: str = Query(..., description="Symbol to import as"),

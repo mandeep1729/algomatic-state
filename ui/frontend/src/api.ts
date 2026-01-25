@@ -101,3 +101,18 @@ export async function fetchTickerSummary(symbol: string): Promise<TickerSummary>
   const response = await axios.get<TickerSummary>(`${API_BASE}/tickers/${symbol}/summary`);
   return response.data;
 }
+
+export interface ComputeFeaturesResponse {
+  symbol: string;
+  timeframes_processed: number;
+  timeframes_skipped: number;
+  features_stored: number;
+  message: string;
+}
+
+export async function computeFeatures(symbol: string): Promise<ComputeFeaturesResponse> {
+  const response = await axios.post<ComputeFeaturesResponse>(
+    `${API_BASE}/compute-features/${symbol}`
+  );
+  return response.data;
+}

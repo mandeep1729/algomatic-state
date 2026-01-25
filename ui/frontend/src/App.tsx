@@ -8,6 +8,7 @@ import {
   fetchFeatures,
   fetchRegimes,
   fetchStatistics,
+  computeFeatures,
 } from './api';
 import type { TickerSummary } from './api';
 import type {
@@ -51,6 +52,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'charts' | 'features' | 'stats'>('charts');
+  const [computingFeatures, setComputingFeatures] = useState(false);
+  const [featureComputeResult, setFeatureComputeResult] = useState<string | null>(null);
 
   // Chart settings
   const [chartSettings, setChartSettings] = useState<ChartSettings>({
@@ -486,6 +489,48 @@ function App() {
             {error && (
               <div style={{ fontSize: '0.75rem', color: '#f85149', marginTop: '0.5rem' }}>
                 {error}
+              </div>
+            )}
+
+            {/* Compute Features Button */}
+            {selectedTicker && (
+              <div style={{ marginTop: '1rem' }}>
+                <button
+                  className="btn"
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem',
+                    background: computingFeatures ? '#30363d' : '#238636',
+                    cursor: computingFeatures ? 'wait' : 'pointer',
+                  }}
+                  disabled={computingFeatures || loading}
+                  onClick={async () => {
+                    setComputingFeatures(true);
+                    setFeatureComputeResult(null);
+                    try {
+                      const result = await computeFeatures(selectedTicker);
+                      setFeatureComputeResult(
+                        `✓ ${result.features_stored} features stored (${result.timeframes_processed} timeframes processed, ${result.timeframes_skipped} skipped)`
+                      );
+                    } catch (err: unknown) {
+                      const errorMsg = err instanceof Error ? err.message : 'Failed to compute features';
+                      setFeatureComputeResult(`✗ Error: ${errorMsg}`);
+                    } finally {
+                      setComputingFeatures(false);
+                    }
+                  }}
+                >
+                  {computingFeatures ? 'Computing...' : 'Compute Technical Indicators'}
+                </button>
+                {featureComputeResult && (
+                  <div style={{
+                    fontSize: '0.75rem',
+                    marginTop: '0.5rem',
+                    color: featureComputeResult.startsWith('✓') ? '#3fb950' : '#f85149',
+                  }}>
+                    {featureComputeResult}
+                  </div>
+                )}
               </div>
             )}
           </div>
