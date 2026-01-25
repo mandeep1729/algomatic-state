@@ -21,23 +21,6 @@ export interface FeatureData {
   feature_names: string[];
 }
 
-export interface RegimeInfo {
-  label: number;
-  size: number;
-  mean_return: number;
-  std_return: number;
-  sharpe: number;
-}
-
-export interface RegimeData {
-  timestamps: string[];
-  regime_labels: number[];
-  regime_info: RegimeInfo[];
-  transition_matrix: number[][];
-  explained_variance: number;
-  n_samples: number;
-}
-
 export interface OHLCVStats {
   total_bars: number;
   date_range: {
@@ -76,21 +59,9 @@ export interface FeatureStats {
 export interface Statistics {
   ohlcv_stats: OHLCVStats;
   feature_stats: FeatureStats;
-  regime_stats: {
-    n_regimes?: number;
-    regimes?: RegimeInfo[];
-    explained_variance?: number;
-  };
 }
 
 export interface ChartSettings {
   showVolume: boolean;
-  showRegimes: boolean;
   selectedFeatures: string[];
-}
-
-export interface RegimeParams {
-  n_clusters: number;
-  window_size: number;
-  n_components: number;
 }

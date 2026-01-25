@@ -19,33 +19,12 @@ interface OHLCVData {
   volume: number[];
 }
 
-interface RegimeData {
-  timestamps: string[];
-  regime_labels: number[];
-}
-
 interface OHLCVChartProps {
   data: OHLCVData | null;
-  regimeData?: RegimeData | null;
-  showRegimes?: boolean;
   showVolume?: boolean;
   height?: number;
   onRangeChange?: (start: number, end: number) => void;
 }
-
-// Regime colors with transparency
-const REGIME_COLORS = [
-  'rgba(88, 166, 255, 0.25)',   // Blue
-  'rgba(63, 185, 80, 0.25)',    // Green
-  'rgba(248, 81, 73, 0.25)',    // Red
-  'rgba(210, 153, 34, 0.25)',   // Yellow
-  'rgba(163, 113, 247, 0.25)',  // Purple
-  'rgba(219, 109, 40, 0.25)',   // Orange
-  'rgba(56, 139, 253, 0.25)',   // Light Blue
-  'rgba(238, 75, 43, 0.25)',    // Coral
-  'rgba(121, 192, 255, 0.25)',  // Sky
-  'rgba(163, 190, 140, 0.25)',  // Sage
-];
 
 // Convert ISO timestamp to Unix timestamp (seconds)
 const toUnixTime = (isoString: string): Time => {
@@ -54,8 +33,6 @@ const toUnixTime = (isoString: string): Time => {
 
 export function OHLCVChart({
   data,
-  regimeData,
-  showRegimes = true,
   showVolume = true,
   height = 500,
   onRangeChange,
@@ -104,6 +81,20 @@ export function OHLCVChart({
         borderColor: '#30363d',
         timeVisible: true,
         secondsVisible: false,
+        fixLeftEdge: true,
+        fixRightEdge: true,
+        tickMarkFormatter: (time: number, tickMarkType: number) => {
+          const date = new Date(time * 1000);
+          const day = date.getDate();
+          const hours = date.getHours().toString().padStart(2, '0');
+          const minutes = date.getMinutes().toString().padStart(2, '0');
+          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          // tickMarkType: 0=Year, 1=Month, 2=DayOfMonth, 3=Time, 4=TimeWithSeconds
+          if (tickMarkType <= 2) {
+            return `${months[date.getMonth()]} ${day}`;
+          }
+          return `${hours}:${minutes}`;
+        },
       },
       handleScroll: {
         vertTouchDrag: false,
@@ -214,42 +205,6 @@ export function OHLCVChart({
       });
     }
   }, [showVolume]);
-
-  // Draw regime backgrounds using markers
-  useEffect(() => {
-    if (!candlestickSeriesRef.current || !data) return;
-
-    if (!showRegimes || !regimeData || regimeData.timestamps.length === 0) {
-      candlestickSeriesRef.current.setMarkers([]);
-      return;
-    }
-
-    // Create regime transition markers
-    const markers: Array<{
-      time: Time;
-      position: 'aboveBar' | 'belowBar';
-      color: string;
-      shape: 'circle';
-      text: string;
-    }> = [];
-
-    let prevRegime = -1;
-    for (let i = 0; i < regimeData.regime_labels.length; i++) {
-      const regime = regimeData.regime_labels[i];
-      if (regime !== prevRegime) {
-        markers.push({
-          time: toUnixTime(regimeData.timestamps[i]),
-          position: 'aboveBar',
-          color: REGIME_COLORS[regime % REGIME_COLORS.length].replace('0.25', '1'),
-          shape: 'circle',
-          text: `R${regime}`,
-        });
-        prevRegime = regime;
-      }
-    }
-
-    candlestickSeriesRef.current.setMarkers(markers);
-  }, [regimeData, showRegimes, data]);
 
   // Update chart height
   useEffect(() => {

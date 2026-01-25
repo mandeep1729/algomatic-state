@@ -6,30 +6,20 @@ import {
   fetchTickerSummary,
   fetchOHLCVData,
   fetchFeatures,
-  fetchRegimes,
   fetchStatistics,
-  computeFeatures,
 } from './api';
 import type { TickerSummary } from './api';
 import type {
   Ticker,
   OHLCVData,
   FeatureData,
-  RegimeData,
   Statistics,
   ChartSettings,
-  RegimeParams,
 } from './types';
 import { OHLCVChart } from './components';
 
 // Constants
 const MAX_DISPLAY_POINTS = 7200;
-
-// Regime colors (solid)
-const REGIME_COLORS_SOLID = [
-  '#58a6ff', '#3fb950', '#f85149', '#d29922', '#a371f7',
-  '#db6d28', '#388bfd', '#ee4b2b', '#79c0ff', '#a3be8c',
-];
 
 function App() {
   // Tickers from database
@@ -38,11 +28,9 @@ function App() {
   const [timeframe, setTimeframe] = useState<string>('1Min');
   const [tickerSummary, setTickerSummary] = useState<TickerSummary | null>(null);
 
-
   // Data
   const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
   const [featureData, setFeatureData] = useState<FeatureData | null>(null);
-  const [regimeData, setRegimeData] = useState<RegimeData | null>(null);
   const [statistics, setStatistics] = useState<Statistics | null>(null);
 
   // View range for the slider (indices into the data arrays)
@@ -52,23 +40,12 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'charts' | 'features' | 'stats'>('charts');
-  const [computingFeatures, setComputingFeatures] = useState(false);
-  const [featureComputeResult, setFeatureComputeResult] = useState<string | null>(null);
 
   // Chart settings
   const [chartSettings, setChartSettings] = useState<ChartSettings>({
     showVolume: true,
-    showRegimes: true,
     selectedFeatures: [],
   });
-
-  // Regime parameters
-  const [regimeParams, setRegimeParams] = useState<RegimeParams>({
-    n_clusters: 5,
-    window_size: 60,
-    n_components: 8,
-  });
-
 
   // Compute total data points and constrained view range
   const totalPoints = ohlcvData?.timestamps.length || 0;
@@ -119,25 +96,6 @@ function App() {
     };
   }, [featureData, constrainedViewRange]);
 
-  const visibleRegimeData = useMemo((): RegimeData | null => {
-    if (!regimeData) return null;
-    const [start, end] = constrainedViewRange;
-    // Regime data may have different length due to windowing, find overlap
-    const regimeStart = Math.max(0, start);
-    const regimeEnd = Math.min(regimeData.timestamps.length, end);
-
-    if (regimeEnd <= regimeStart) return null;
-
-    return {
-      timestamps: regimeData.timestamps.slice(regimeStart, regimeEnd),
-      regime_labels: regimeData.regime_labels.slice(regimeStart, regimeEnd),
-      regime_info: regimeData.regime_info,
-      transition_matrix: regimeData.transition_matrix,
-      explained_variance: regimeData.explained_variance,
-      n_samples: regimeEnd - regimeStart,
-    };
-  }, [regimeData, constrainedViewRange]);
-
   // Load tickers from database on mount
   useEffect(() => {
     fetchTickers()
@@ -166,15 +124,6 @@ function App() {
       const features = await fetchFeatures(ticker, tf, start, end);
       setFeatureData(features);
 
-      // Load regimes
-      const regimes = await fetchRegimes(
-        ticker, tf, start, end,
-        regimeParams.n_clusters,
-        regimeParams.window_size,
-        regimeParams.n_components
-      );
-      setRegimeData(regimes);
-
       // Load statistics
       const stats = await fetchStatistics(ticker, tf, start, end);
       setStatistics(stats);
@@ -188,7 +137,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [regimeParams]);
+  }, []);
 
   // Helper to get default date range (last 30 days)
   const getDefaultDateRange = () => {
@@ -207,7 +156,6 @@ function App() {
       setTickerSummary(null);
       setOhlcvData(null);
       setFeatureData(null);
-      setRegimeData(null);
       setStatistics(null);
       return;
     }
@@ -215,7 +163,6 @@ function App() {
     // Clear previous data when switching tickers
     setOhlcvData(null);
     setFeatureData(null);
-    setRegimeData(null);
     setStatistics(null);
 
     fetchTickerSummary(selectedTicker)
@@ -287,73 +234,6 @@ function App() {
     }
   }, [ohlcvData]);
 
-  // Create regime distribution chart
-  const createRegimeDistribution = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!visibleRegimeData) {
-      return { data: [], layout: {} };
-    }
-
-    const labels = visibleRegimeData.regime_info.map((r) => `Regime ${r.label}`);
-    const values = visibleRegimeData.regime_info.map((r) => r.size);
-    const colors = visibleRegimeData.regime_info.map((r) => REGIME_COLORS_SOLID[r.label % REGIME_COLORS_SOLID.length]);
-
-    return {
-      data: [
-        {
-          type: 'pie',
-          labels,
-          values,
-          marker: { colors },
-          hole: 0.4,
-          textinfo: 'label+percent',
-          textfont: { color: '#e6edf3' },
-        },
-      ],
-      layout: {
-        title: { text: 'Regime Distribution' },
-        paper_bgcolor: '#161b22',
-        plot_bgcolor: '#0d1117',
-        font: { color: '#e6edf3' },
-        height: 300,
-        showlegend: false,
-      },
-    };
-  };
-
-  // Create regime performance chart
-  const createRegimePerformance = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!visibleRegimeData) {
-      return { data: [], layout: {} };
-    }
-
-    const sortedRegimes = [...visibleRegimeData.regime_info].sort((a, b) => b.sharpe - a.sharpe);
-
-    return {
-      data: [
-        {
-          type: 'bar',
-          x: sortedRegimes.map((r) => `Regime ${r.label}`),
-          y: sortedRegimes.map((r) => r.sharpe),
-          marker: {
-            color: sortedRegimes.map((r) =>
-              r.sharpe > 0 ? '#3fb950' : '#f85149'
-            ),
-          },
-          name: 'Sharpe Ratio',
-        },
-      ],
-      layout: {
-        title: { text: 'Regime Performance (Sharpe Ratio)' },
-        xaxis: { title: { text: 'Regime' } },
-        yaxis: { title: { text: 'Sharpe Ratio' } },
-        paper_bgcolor: '#161b22',
-        plot_bgcolor: '#0d1117',
-        font: { color: '#e6edf3' },
-        height: 300,
-      },
-    };
-  };
-
   // Create feature chart
   const createFeatureChart = (featureName: string): { data: Data[]; layout: Partial<Layout> } => {
     if (!visibleFeatureData || !visibleFeatureData.features[featureName]) {
@@ -379,38 +259,6 @@ function App() {
         plot_bgcolor: '#0d1117',
         font: { color: '#e6edf3' },
         height: 200,
-      },
-    };
-  };
-
-  // Create transition matrix heatmap
-  const createTransitionMatrix = (): { data: Data[]; layout: Partial<Layout> } => {
-    if (!visibleRegimeData || !visibleRegimeData.transition_matrix.length) {
-      return { data: [], layout: {} };
-    }
-
-    const labels = visibleRegimeData.regime_info.map((r) => `R${r.label}`);
-
-    return {
-      data: [
-        {
-          type: 'heatmap',
-          z: visibleRegimeData.transition_matrix,
-          x: labels,
-          y: labels,
-          colorscale: 'Blues',
-          showscale: true,
-          hovertemplate: 'From %{y} to %{x}: %{z:.2%}<extra></extra>',
-        },
-      ],
-      layout: {
-        title: { text: 'Regime Transition Probabilities' },
-        xaxis: { title: { text: 'To Regime' } },
-        yaxis: { title: { text: 'From Regime' }, autorange: 'reversed' },
-        paper_bgcolor: '#161b22',
-        plot_bgcolor: '#0d1117',
-        font: { color: '#e6edf3' },
-        height: 350,
       },
     };
   };
@@ -491,154 +339,7 @@ function App() {
                 {error}
               </div>
             )}
-
-            {/* Compute Features Button */}
-            {selectedTicker && (
-              <div style={{ marginTop: '1rem' }}>
-                <button
-                  className="btn"
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    background: computingFeatures ? '#30363d' : '#238636',
-                    cursor: computingFeatures ? 'wait' : 'pointer',
-                  }}
-                  disabled={computingFeatures || loading}
-                  onClick={async () => {
-                    setComputingFeatures(true);
-                    setFeatureComputeResult(null);
-                    try {
-                      const result = await computeFeatures(selectedTicker);
-                      setFeatureComputeResult(
-                        `✓ ${result.features_stored} features stored (${result.timeframes_processed} timeframes processed, ${result.timeframes_skipped} skipped)`
-                      );
-                    } catch (err: unknown) {
-                      const errorMsg = err instanceof Error ? err.message : 'Failed to compute features';
-                      setFeatureComputeResult(`✗ Error: ${errorMsg}`);
-                    } finally {
-                      setComputingFeatures(false);
-                    }
-                  }}
-                >
-                  {computingFeatures ? 'Computing...' : 'Compute Technical Indicators'}
-                </button>
-                {featureComputeResult && (
-                  <div style={{
-                    fontSize: '0.75rem',
-                    marginTop: '0.5rem',
-                    color: featureComputeResult.startsWith('✓') ? '#3fb950' : '#f85149',
-                  }}>
-                    {featureComputeResult}
-                  </div>
-                )}
-              </div>
-            )}
           </div>
-
-          {/* Regime Parameters */}
-          <div className="section">
-            <h3 className="section-title">Regime Parameters</h3>
-            <div className="form-group">
-              <label>Number of Clusters</label>
-              <div className="slider-container">
-                <input
-                  type="range"
-                  min="2"
-                  max="10"
-                  value={regimeParams.n_clusters}
-                  onChange={(e) =>
-                    setRegimeParams((p) => ({
-                      ...p,
-                      n_clusters: parseInt(e.target.value),
-                    }))
-                  }
-                />
-                <div className="slider-value">{regimeParams.n_clusters}</div>
-              </div>
-            </div>
-            <div className="form-group">
-              <label>Window Size</label>
-              <div className="slider-container">
-                <input
-                  type="range"
-                  min="20"
-                  max="120"
-                  step="10"
-                  value={regimeParams.window_size}
-                  onChange={(e) =>
-                    setRegimeParams((p) => ({
-                      ...p,
-                      window_size: parseInt(e.target.value),
-                    }))
-                  }
-                />
-                <div className="slider-value">{regimeParams.window_size}</div>
-              </div>
-            </div>
-            <div className="form-group">
-              <label>PCA Components</label>
-              <div className="slider-container">
-                <input
-                  type="range"
-                  min="2"
-                  max="16"
-                  value={regimeParams.n_components}
-                  onChange={(e) =>
-                    setRegimeParams((p) => ({
-                      ...p,
-                      n_components: parseInt(e.target.value),
-                    }))
-                  }
-                />
-                <div className="slider-value">{regimeParams.n_components}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Chart Settings */}
-          <div className="section">
-            <h3 className="section-title">Display Options</h3>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem' }}>
-              <input
-                type="checkbox"
-                checked={chartSettings.showVolume}
-                onChange={(e) =>
-                  setChartSettings((s) => ({ ...s, showVolume: e.target.checked }))
-                }
-              />
-              Show Volume
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-              <input
-                type="checkbox"
-                checked={chartSettings.showRegimes}
-                onChange={(e) =>
-                  setChartSettings((s) => ({ ...s, showRegimes: e.target.checked }))
-                }
-              />
-              Show Regime Backgrounds
-            </label>
-          </div>
-
-          {/* Regime Legend */}
-          {regimeData && (
-            <div className="section">
-              <h3 className="section-title">Regime Legend</h3>
-              <div className="regime-legend">
-                {regimeData.regime_info.map((r) => (
-                  <div key={r.label} className="regime-item">
-                    <div
-                      className="regime-color"
-                      style={{
-                        backgroundColor: REGIME_COLORS_SOLID[r.label % REGIME_COLORS_SOLID.length],
-                      }}
-                    />
-                    <span>R{r.label}: {r.sharpe.toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </aside>
 
         {/* Main Chart Area */}
@@ -770,40 +471,6 @@ function App() {
                   <span>{formatTimestamp(ohlcvData.timestamps[constrainedViewRange[1] - 1])}</span>
                 </div>
 
-                {/* Window size buttons */}
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#8b949e' }}>Window:</span>
-                  {[1000, 2000, 3600, 7200].map((points) => (
-                    <button
-                      key={points}
-                      className="btn"
-                      style={{
-                        padding: '0.2rem 0.5rem',
-                        fontSize: '0.7rem',
-                        background: windowSize === points ? '#388bfd' : undefined,
-                      }}
-                      onClick={() => {
-                        const pts = Math.min(points, totalPoints);
-                        const currentCenter = constrainedViewRange[0] + Math.floor(windowSize / 2);
-                        const newStart = Math.max(0, Math.min(currentCenter - Math.floor(pts / 2), totalPoints - pts));
-                        setViewRange([newStart, newStart + pts]);
-                      }}
-                      disabled={points > totalPoints}
-                    >
-                      {points.toLocaleString()}
-                    </button>
-                  ))}
-                  <button
-                    className="btn"
-                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.7rem', marginLeft: 'auto' }}
-                    onClick={() => {
-                      const endIdx = Math.min(totalPoints, MAX_DISPLAY_POINTS);
-                      setViewRange([0, endIdx]);
-                    }}
-                  >
-                    Reset
-                  </button>
-                </div>
               </div>
             );
           })()}
@@ -812,45 +479,12 @@ function App() {
           {activeTab === 'charts' && (
             <>
               {visibleOhlcvData && (
-                <>
-                  <div className="chart-container">
-                    <OHLCVChart
-                      data={visibleOhlcvData}
-                      regimeData={visibleRegimeData}
-                      showRegimes={chartSettings.showRegimes}
-                      showVolume={chartSettings.showVolume}
-                      height={500}
-                    />
-                  </div>
-                </>
-              )}
-
-              {visibleRegimeData && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div className="chart-container">
-                    <Plot
-                      data={createRegimeDistribution().data}
-                      layout={createRegimeDistribution().layout}
-                      config={{ responsive: true }}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  <div className="chart-container">
-                    <Plot
-                      data={createRegimePerformance().data}
-                      layout={createRegimePerformance().layout}
-                      config={{ responsive: true }}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
-                  <div className="chart-container" style={{ gridColumn: 'span 2' }}>
-                    <Plot
-                      data={createTransitionMatrix().data}
-                      layout={createTransitionMatrix().layout}
-                      config={{ responsive: true }}
-                      style={{ width: '100%' }}
-                    />
-                  </div>
+                <div className="chart-container">
+                  <OHLCVChart
+                    data={visibleOhlcvData}
+                    showVolume={chartSettings.showVolume}
+                    height={500}
+                  />
                 </div>
               )}
 
@@ -965,64 +599,6 @@ function App() {
                       </div>
                     </div>
                   </div>
-
-                  {/* Regime Stats */}
-                  {statistics.regime_stats.regimes && (
-                    <div className="section">
-                      <h3 className="section-title">Regime Statistics</h3>
-                      <table className="table">
-                        <thead>
-                          <tr>
-                            <th>Regime</th>
-                            <th>Samples</th>
-                            <th>Mean Return</th>
-                            <th>Std Return</th>
-                            <th>Sharpe</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {statistics.regime_stats.regimes.map((r) => (
-                            <tr key={r.label}>
-                              <td>
-                                <span
-                                  style={{
-                                    display: 'inline-block',
-                                    width: 12,
-                                    height: 12,
-                                    borderRadius: 2,
-                                    backgroundColor:
-                                      REGIME_COLORS_SOLID[r.label % REGIME_COLORS_SOLID.length],
-                                    marginRight: 8,
-                                    verticalAlign: 'middle',
-                                  }}
-                                />
-                                Regime {r.label}
-                              </td>
-                              <td>{r.size.toLocaleString()}</td>
-                              <td
-                                className={r.mean_return >= 0 ? 'positive' : 'negative'}
-                                style={{ color: r.mean_return >= 0 ? '#3fb950' : '#f85149' }}
-                              >
-                                {(r.mean_return * 100).toFixed(4)}%
-                              </td>
-                              <td>{(r.std_return * 100).toFixed(4)}%</td>
-                              <td
-                                style={{ color: r.sharpe >= 0 ? '#3fb950' : '#f85149' }}
-                              >
-                                {r.sharpe.toFixed(2)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {statistics.regime_stats.explained_variance && (
-                        <div style={{ marginTop: '0.75rem', fontSize: '0.875rem', color: '#8b949e' }}>
-                          PCA Explained Variance:{' '}
-                          {(statistics.regime_stats.explained_variance * 100).toFixed(1)}%
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                   {/* Feature Stats */}
                   <div className="section">

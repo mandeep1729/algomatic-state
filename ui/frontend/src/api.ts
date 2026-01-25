@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Ticker, OHLCVData, FeatureData, RegimeData, Statistics } from './types';
+import type { Ticker, OHLCVData, FeatureData, Statistics } from './types';
 
 const API_BASE = '/api';
 
@@ -38,29 +38,6 @@ export async function fetchFeatures(
 
   const response = await axios.get<FeatureData>(
     `${API_BASE}/features/${symbol}?${params.toString()}`
-  );
-  return response.data;
-}
-
-export async function fetchRegimes(
-  symbol: string,
-  timeframe: string = '1Min',
-  startDate?: string,
-  endDate?: string,
-  nClusters: number = 5,
-  windowSize: number = 60,
-  nComponents: number = 8
-): Promise<RegimeData> {
-  const params = new URLSearchParams();
-  params.append('timeframe', timeframe);
-  if (startDate) params.append('start_date', startDate);
-  if (endDate) params.append('end_date', endDate);
-  params.append('n_clusters', nClusters.toString());
-  params.append('window_size', windowSize.toString());
-  params.append('n_components', nComponents.toString());
-
-  const response = await axios.get<RegimeData>(
-    `${API_BASE}/regimes/${symbol}?${params.toString()}`
   );
   return response.data;
 }
