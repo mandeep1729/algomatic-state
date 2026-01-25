@@ -215,5 +215,5 @@ __marimo__/
 # Node
 node_modules/
 
-# Data files
-data/
+# Data files (only top-level data directory)
+/data/

@@ -19,6 +19,23 @@ from src.data.database.models import (
 )
 
 
+def _normalize_timestamp_to_utc(ts: Optional[datetime]) -> Optional[datetime]:
+    """Normalize a timestamp to UTC timezone-aware format.
+
+    Args:
+        ts: Timestamp that may be naive or aware
+
+    Returns:
+        UTC timezone-aware timestamp, or None if input is None
+    """
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        # Assume naive timestamps are UTC
+        return ts.replace(tzinfo=timezone.utc)
+    return ts.astimezone(timezone.utc)
+
+
 class OHLCVRepository:
     """Repository for OHLCV bar data operations.
 
@@ -406,17 +423,17 @@ class OHLCVRepository:
             )
             self.session.add(sync_log)
 
-        # Update fields
+        # Update fields - normalize timestamps to UTC for consistent comparison
         if last_synced_timestamp:
-            sync_log.last_synced_timestamp = last_synced_timestamp
+            sync_log.last_synced_timestamp = _normalize_timestamp_to_utc(last_synced_timestamp)
         if first_synced_timestamp:
+            normalized_first = _normalize_timestamp_to_utc(first_synced_timestamp)
             if sync_log.first_synced_timestamp is None:
-                sync_log.first_synced_timestamp = first_synced_timestamp
+                sync_log.first_synced_timestamp = normalized_first
             else:
-                sync_log.first_synced_timestamp = min(
-                    sync_log.first_synced_timestamp,
-                    first_synced_timestamp,
-                )
+                # Both are now UTC-aware, safe to compare
+                existing_first = _normalize_timestamp_to_utc(sync_log.first_synced_timestamp)
+                sync_log.first_synced_timestamp = min(existing_first, normalized_first)
 
         sync_log.last_sync_at = datetime.now(timezone.utc)
         sync_log.bars_fetched = bars_fetched
