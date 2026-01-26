@@ -10,7 +10,6 @@ import {
   ColorType,
   CrosshairMode,
 } from 'lightweight-charts';
-import { getFeatureCategory, FEATURE_CATEGORY_COLORS } from '../featureConfig';
 
 interface OHLCVData {
   timestamps: string[];
@@ -247,11 +246,8 @@ export function OHLCVChart({
       const featureValues = featureData.features[featureKey];
       if (!featureValues) return;
 
-      // Get color based on category or fallback to cycle
-      const category = getFeatureCategory(featureKey);
-      const color = category
-        ? FEATURE_CATEGORY_COLORS[category]
-        : OVERLAY_COLORS[index % OVERLAY_COLORS.length];
+      // Assign unique color per indicator using index
+      const color = OVERLAY_COLORS[index % OVERLAY_COLORS.length];
 
       // Prepare line data, filtering out NaN/null values
       const lineData: LineData[] = [];
@@ -277,7 +273,7 @@ export function OHLCVChart({
         // Create new series
         series = chart.addLineSeries({
           color: color,
-          lineWidth: 1,
+          lineWidth: 2,
           priceScaleId: priceScaleId,
           lastValueVisible: false,
           priceLineVisible: false,
@@ -398,10 +394,7 @@ export function OHLCVChart({
           }}
         >
           {selectedFeatures.map((feature, index) => {
-            const category = getFeatureCategory(feature);
-            const color = category
-              ? FEATURE_CATEGORY_COLORS[category]
-              : OVERLAY_COLORS[index % OVERLAY_COLORS.length];
+            const color = OVERLAY_COLORS[index % OVERLAY_COLORS.length];
             return (
               <span
                 key={feature}
