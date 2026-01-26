@@ -1,4 +1,8 @@
-"""Trading runner for orchestrating live and paper trading."""
+"""Trading runner for orchestrating live and paper trading.
+
+NOTE: This module requires reimplementation of the strategy module.
+See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+"""
 
 import time
 import signal
@@ -6,20 +10,32 @@ import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
+import numpy as np
 import pandas as pd
 
 from src.data.loaders.alpaca_loader import AlpacaLoader
 from src.execution.client import AlpacaClient, AccountInfo
 from src.execution.orders import Order, OrderStatus
-from src.execution.order_manager import OrderManager
+from src.execution.order_manager import OrderManager, Signal
 from src.execution.order_tracker import OrderTracker, OrderUpdate, PositionTracker
 from src.execution.risk_manager import RiskManager, RiskConfig, RiskViolation
 from src.features.pipeline import FeaturePipeline
-from src.strategy.base import BaseStrategy
-from src.strategy.signals import Signal
 from src.utils.logging import get_logger, TradeLogger
+
+
+class BaseStrategy(Protocol):
+    """Protocol for strategy implementations."""
+
+    def generate_signals(
+        self,
+        features: pd.DataFrame,
+        timestamp: datetime | None = None,
+        state: np.ndarray | None = None,
+    ) -> list[Signal]:
+        """Generate trading signals from features."""
+        ...
 
 
 logger = get_logger(__name__)

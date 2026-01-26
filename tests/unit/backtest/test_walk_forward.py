@@ -11,9 +11,9 @@ from src.backtest.walk_forward import (
     WalkForwardConfig,
     WalkForwardWindow,
     WalkForwardResult,
+    BaseStrategy,
 )
-from src.strategy.base import BaseStrategy
-from src.strategy.signals import Signal, SignalDirection
+from src.backtest.engine import Signal, SignalDirection
 
 
 class SimpleStrategy(BaseStrategy):

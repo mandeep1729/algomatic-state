@@ -7,10 +7,9 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from src.backtest.engine import BacktestConfig, BacktestResult, Trade
+from src.backtest.engine import BacktestConfig, BacktestResult, Trade, SignalDirection
 from src.backtest.metrics import PerformanceMetrics
 from src.backtest.report import PerformanceReport, ReportConfig
-from src.strategy.signals import SignalDirection
 
 
 @pytest.fixture

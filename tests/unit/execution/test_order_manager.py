@@ -5,8 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.execution.orders import Order, OrderSide, OrderType, OrderStatus, OrderTimeInForce
-from src.execution.order_manager import OrderManager
-from src.strategy.signals import Signal, SignalDirection, SignalMetadata
+from src.execution.order_manager import OrderManager, Signal, SignalDirection, SignalMetadata
 
 
 class TestOrderManager:

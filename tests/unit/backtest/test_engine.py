@@ -12,9 +12,10 @@ from src.backtest.engine import (
     BacktestResult,
     Position,
     Trade,
+    BaseStrategy,
+    Signal,
+    SignalDirection,
 )
-from src.strategy.base import BaseStrategy
-from src.strategy.signals import Signal, SignalDirection, SignalMetadata
 
 
 class SimpleTestStrategy(BaseStrategy):

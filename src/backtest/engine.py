@@ -1,15 +1,61 @@
-"""Event-driven backtesting engine."""
+"""Event-driven backtesting engine.
+
+NOTE: This module requires reimplementation of the strategy module.
+The strategy classes (BaseStrategy, Signal, SignalDirection) have been
+removed as part of the HMM regime tracking system redesign.
+
+See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+"""
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from enum import Enum
+from typing import Any, Protocol
 
 import numpy as np
 import pandas as pd
 
 from src.backtest.metrics import PerformanceMetrics, calculate_metrics
-from src.strategy.base import BaseStrategy
-from src.strategy.signals import Signal, SignalDirection
+
+
+# Placeholder types until strategy module is reimplemented
+class SignalDirection(Enum):
+    """Trading signal direction."""
+    LONG = "long"
+    SHORT = "short"
+    FLAT = "flat"
+
+
+@dataclass
+class Signal:
+    """Placeholder signal class."""
+    timestamp: datetime
+    symbol: str
+    direction: SignalDirection
+    strength: float = 1.0
+    size: float = 0.0
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def is_long(self) -> bool:
+        return self.direction == SignalDirection.LONG
+
+    @property
+    def is_short(self) -> bool:
+        return self.direction == SignalDirection.SHORT
+
+
+class BaseStrategy(Protocol):
+    """Protocol for strategy implementations."""
+
+    def generate_signals(
+        self,
+        features: pd.DataFrame,
+        timestamp: datetime | None = None,
+        state: np.ndarray | None = None,
+    ) -> list[Signal]:
+        """Generate trading signals from features."""
+        ...
 
 
 @dataclass

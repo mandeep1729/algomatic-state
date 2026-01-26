@@ -1,4 +1,8 @@
-"""Walk-forward validation for robust backtesting."""
+"""Walk-forward validation for robust backtesting.
+
+NOTE: This module requires reimplementation of the strategy module.
+See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+"""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -7,9 +11,8 @@ from typing import Any, Callable
 import numpy as np
 import pandas as pd
 
-from src.backtest.engine import BacktestEngine, BacktestConfig, BacktestResult
+from src.backtest.engine import BacktestEngine, BacktestConfig, BacktestResult, BaseStrategy
 from src.backtest.metrics import PerformanceMetrics, calculate_metrics
-from src.strategy.base import BaseStrategy
 
 
 @dataclass

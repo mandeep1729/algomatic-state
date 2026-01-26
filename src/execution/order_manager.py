@@ -1,13 +1,61 @@
-"""Order manager for submitting and managing orders."""
+"""Order manager for submitting and managing orders.
+
+NOTE: Signal conversion functionality requires reimplementation of the strategy module.
+See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+"""
 
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
 from typing import Any
 
 from src.execution.client import AlpacaClient
 from src.execution.orders import Order, OrderSide, OrderType, OrderStatus, OrderTimeInForce
-from src.strategy.signals import Signal, SignalDirection
 from src.utils.logging import get_logger
+
+
+# Placeholder types until strategy module is reimplemented
+class SignalDirection(Enum):
+    """Trading signal direction."""
+    LONG = "long"
+    SHORT = "short"
+    FLAT = "flat"
+
+
+@dataclass
+class SignalMetadata:
+    """Metadata for trading signals."""
+    regime_label: int | None = None
+    regime_sharpe: float | None = None
+    momentum_value: float | None = None
+    volatility: float | None = None
+    pattern_match_count: int | None = None
+    pattern_expected_return: float | None = None
+    pattern_confidence: float | None = None
+
+
+@dataclass
+class Signal:
+    """Placeholder signal class."""
+    timestamp: datetime
+    symbol: str
+    direction: SignalDirection
+    strength: float = 1.0
+    size: float = 0.0
+    metadata: SignalMetadata = field(default_factory=SignalMetadata)
+
+    @property
+    def is_long(self) -> bool:
+        return self.direction == SignalDirection.LONG
+
+    @property
+    def is_short(self) -> bool:
+        return self.direction == SignalDirection.SHORT
+
+    @property
+    def is_exit(self) -> bool:
+        return self.direction == SignalDirection.FLAT
 
 
 logger = get_logger(__name__)

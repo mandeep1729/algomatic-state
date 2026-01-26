@@ -28,10 +28,6 @@ from src.data.loaders.database_loader import DatabaseLoader
 from src.data.database.connection import get_db_manager
 from src.data.database.models import VALID_TIMEFRAMES
 from src.features.pipeline import FeaturePipeline, get_minimal_features
-from src.state.windows import WindowGenerator
-from src.state.normalization import FeatureNormalizer
-from src.state.pca import PCAStateExtractor
-from src.state.clustering import RegimeClusterer
 
 logger = logging.getLogger(__name__)
 
@@ -311,78 +307,15 @@ async def get_regimes(
     window_size: int = Query(60, ge=10, le=200),
     n_components: int = Query(8, ge=2, le=20),
 ):
-    """Compute and return regime states."""
-    # Ensure features are computed
-    await get_features(symbol, timeframe, start_date, end_date)
+    """Compute and return regime states.
 
-    cache_key = f"regimes_{symbol}_{timeframe}_{start_date}_{end_date}_{n_clusters}_{window_size}_{n_components}"
-    cached = get_cached_data(cache_key)
-    if cached is not None:
-        return cached
-
-    try:
-        features_df = get_cached_data(f"features_df_{symbol.upper()}")
-        if features_df is None:
-            raise HTTPException(status_code=400, detail="Features not computed")
-
-        # Use minimal feature set for regime learning
-        minimal_features = get_minimal_features()
-        available_features = [f for f in minimal_features if f in features_df.columns]
-        feature_subset = features_df[available_features].copy()
-
-        # Fill any NaN values
-        feature_subset = feature_subset.fillna(0)
-
-        if len(feature_subset) < window_size:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Not enough data points ({len(feature_subset)}) for window size ({window_size})"
-            )
-
-        # Generate windows
-        window_gen = WindowGenerator(window_size=window_size, stride=1)
-        windows, timestamps = window_gen.generate(feature_subset)
-
-        # Normalize
-        normalizer = FeatureNormalizer(method="zscore", clip_value=3.0)
-        normalized_windows = normalizer.fit_transform(windows)
-
-        # Extract states with PCA
-        pca = PCAStateExtractor(n_components=n_components)
-        states = pca.fit_transform(normalized_windows)
-
-        # Compute forward returns for regime labeling
-        df = get_cached_data(f"df_{symbol.upper()}")
-        aligned_df = df.loc[timestamps]
-        forward_returns = aligned_df["close"].pct_change(5).shift(-5).fillna(0).values
-
-        # Cluster into regimes
-        clusterer = RegimeClusterer(n_clusters=n_clusters, method="kmeans")
-        clusterer.fit(states, forward_returns)
-        regime_labels = clusterer.predict(states)
-
-        # Get regime info
-        regime_summary = clusterer.get_regime_summary()
-        transition_matrix = clusterer.transition_matrix.tolist() if clusterer.transition_matrix is not None else []
-
-        response = {
-            "timestamps": timestamps.strftime("%Y-%m-%d %H:%M:%S").tolist(),
-            "regime_labels": regime_labels.tolist(),
-            "regime_info": regime_summary,
-            "transition_matrix": transition_matrix,
-            "explained_variance": pca.total_explained_variance,
-            "n_samples": len(regime_labels),
-        }
-
-        set_cached_data(cache_key, response)
-        return response
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    NOTE: This endpoint is temporarily disabled while the state vector
+    and HMM regime tracking system is being reimplemented.
+    """
+    raise HTTPException(
+        status_code=501,
+        detail="Regime computation is being reimplemented. See docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md"
+    )
 
 
 @app.get("/api/statistics/{symbol}")
