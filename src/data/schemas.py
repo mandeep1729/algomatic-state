@@ -1,7 +1,7 @@
 """Data validation schemas for OHLCV data using pandera."""
 
-import pandera as pa
-from pandera.typing import DataFrame, Index, Series
+import pandera.pandas as pa
+from pandera.pandas import DataFrame, Index, Series
 
 
 class OHLCVSchema(pa.DataFrameModel):

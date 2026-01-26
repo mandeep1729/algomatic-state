@@ -5,7 +5,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import pandas as pd
-import pandera.errors
+import pandera.pandas.errors as pandera_errors
 import pytest
 
 from src.data.loaders.csv_loader import CSVLoader
@@ -218,7 +218,7 @@ class TestCSVLoader:
         path = temp_csv(csv_content)
         loader = CSVLoader(validate=True)
 
-        with pytest.raises(pandera.errors.SchemaError):
+        with pytest.raises(pandera_errors.SchemaError):
             loader.load(path)
 
     def test_validation_negative_price(self, temp_csv):
@@ -230,7 +230,7 @@ class TestCSVLoader:
         path = temp_csv(csv_content)
         loader = CSVLoader(validate=True)
 
-        with pytest.raises(pandera.errors.SchemaError):
+        with pytest.raises(pandera_errors.SchemaError):
             loader.load(path)
 
     def test_skip_validation(self, temp_csv):
