@@ -1,9 +1,5 @@
 # Architecture Document: Algomatic State
 
-> **Note**: The State and Strategy layers are currently being redesigned to implement
-> HMM-based regime tracking. See [STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md](./STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md)
-> for the implementation roadmap.
-
 ## System Overview
 
 Algomatic State follows a layered architecture with clear separation between data ingestion, feature engineering, state representation, strategy logic, and execution. Each layer communicates through well-defined interfaces, enabling independent testing and evolution.
@@ -58,7 +54,7 @@ Algomatic State follows a layered architecture with clear separation between dat
 │                            ▼                                  │
 │                   State + Regime Output                       │
 │                                                               │
-│              STATE LAYER (Being Reimplemented)                │
+│                      STATE LAYER                              │
 └───────────────────────────────┼───────────────────────────────┘
                                 │
 ┌───────────────────────────────┼───────────────────────────────┐
@@ -70,7 +66,7 @@ Algomatic State follows a layered architecture with clear separation between dat
 │                            ▼                                  │
 │                    Signal Generator                           │
 │                                                               │
-│             STRATEGY LAYER (Being Reimplemented)              │
+│                     STRATEGY LAYER                            │
 └───────────────────────────────┼───────────────────────────────┘
                                 │
         ┌───────────────────────┼───────────────────────┐
@@ -130,11 +126,23 @@ algomatic-state/
 │   │   ├── pipeline.py         # Feature orchestration
 │   │   └── registry.py         # Feature registry
 │   │
-│   ├── state/                  # State representation (TO BE IMPLEMENTED)
-│   │   └── (see STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md)
+│   ├── hmm/                    # HMM State Vector Module
+│   │   ├── __init__.py         # Module exports
+│   │   ├── contracts.py        # Data contracts (FeatureVector, HMMOutput, etc.)
+│   │   ├── config.py           # Configuration loading
+│   │   ├── artifacts.py        # Model artifact management
+│   │   ├── scalers.py          # Robust, Standard, Yeo-Johnson scalers
+│   │   ├── encoders.py         # PCA and Temporal PCA encoders
+│   │   ├── hmm_model.py        # Gaussian HMM wrapper
+│   │   ├── data_pipeline.py    # Feature loading, gap handling, splitting
+│   │   ├── training.py         # Training pipeline and hyperparameter tuning
+│   │   ├── inference.py        # Online inference engine
+│   │   ├── storage.py          # Parquet state storage
+│   │   ├── validation.py       # Model validation and diagnostics
+│   │   └── monitoring.py       # Drift detection and operations
 │   │
-│   ├── strategy/               # Trading logic (TO BE IMPLEMENTED)
-│   │   └── (see STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md)
+│   ├── strategy/               # Trading logic (uses HMM states)
+│   │   └── (regime-gated signal generation)
 │   │
 │   ├── backtest/               # Backtesting
 │   │   ├── __init__.py
@@ -264,22 +272,21 @@ Orchestrates feature computation with:
 - Optional caching of computed features
 - Feature correlation analysis
 
-### 3. State Layer (Being Reimplemented)
-
-> **Status**: This layer is being redesigned to use HMM-based regime tracking.
-> See [STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md](./STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md) for details.
+### 3. State Layer (HMM Module)
 
 **Purpose**: Learn continuous latent state vectors and infer discrete market regimes.
 
-#### Target Architecture (per timeframe)
+**Location**: `src/hmm/`
+
+#### Architecture (per timeframe)
 ```
 Features x_t
      │
      ▼
-Scaler (robust/standard, fit on train only)
+Scaler (Robust/Standard/Yeo-Johnson)
      │
      ▼
-Encoder (PCA baseline or Temporal DAE)
+Encoder (PCA or Temporal PCA)
      │
      ▼
 Latent State z_t ∈ R^d (d ∈ [6,16])
@@ -297,19 +304,18 @@ Gaussian HMM
 - Different K (state count) per timeframe
 - Higher TF states for risk-on/off; lower TF for timing
 
-#### Key Components (To Be Implemented)
-- **Scaler**: Robust scaling (median/IQR) or standard scaling
-- **Encoder**: PCA baseline, optional temporal denoising autoencoder
-- **HMM**: Gaussian emissions, learned transition matrix
-- **Anti-chatter**: Minimum dwell time, probability thresholds
-- **OOD Detection**: Log-likelihood monitoring for out-of-distribution
+#### Key Components
+- **Scalers** (`scalers.py`): RobustScaler (median/IQR), StandardScaler, YeoJohnsonScaler, CombinedScaler
+- **Encoders** (`encoders.py`): PCAEncoder, TemporalPCAEncoder with auto latent dimension selection
+- **HMM** (`hmm_model.py`): GaussianHMMWrapper with K-means init, covariance regularization, AIC/BIC selection
+- **Training** (`training.py`): TrainingPipeline, CrossValidator, HyperparameterTuner
+- **Inference** (`inference.py`): InferenceEngine with anti-chatter and OOD detection
+- **Validation** (`validation.py`): DwellTimeAnalyzer, TransitionAnalyzer, PosteriorAnalyzer
+- **Monitoring** (`monitoring.py`): DriftDetector, ShadowInference, RetrainingScheduler
 
-### 4. Strategy Layer (Being Reimplemented)
+### 4. Strategy Layer
 
-> **Status**: This layer is being redesigned alongside the state layer.
-> See [STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md](./STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md) for details.
-
-**Purpose**: Generate trading signals using regime-aware logic.
+**Purpose**: Generate trading signals using regime-aware logic from HMM states.
 
 #### Target Signal Flow
 ```
@@ -415,7 +421,7 @@ Fill Handler ──► Update Positions
 
 ## Data Flow Diagrams
 
-### Training Flow (Target Design)
+### Training Flow
 ```
 Historical Data (Database/Alpaca)
          │
@@ -450,7 +456,7 @@ Historical Data (Database/Alpaca)
     Package Artifacts (scaler, encoder, hmm, metadata)
 ```
 
-### Inference Flow (Target Design)
+### Inference Flow
 ```
 New Bar Close (timeframe τ)
          │
