@@ -162,8 +162,46 @@ def main():
     if args.start:
         start_date = datetime.strptime(args.start, "%Y-%m-%d")
     else:
-        # Default to 1 year of data
+        # Default to 1 year of data (will be adjusted to available data below)
         start_date = end_date - timedelta(days=365)
+
+    # Check available data range and auto-adjust start_date if needed
+    db_manager = get_db_manager()
+    with db_manager.get_session() as session:
+        repo = OHLCVRepository(session)
+        summary = repo.get_data_summary(args.symbol)
+
+        if args.timeframe not in summary:
+            logger.error(f"No data found for {args.symbol} at {args.timeframe} timeframe")
+            sys.exit(1)
+
+        tf_summary = summary[args.timeframe]
+        data_start = tf_summary['earliest'].replace(tzinfo=None)
+        data_end = tf_summary['latest'].replace(tzinfo=None)
+
+        # Check if requested dates are completely outside available data
+        if end_date < data_start:
+            logger.error(f"Requested end {end_date.date()} is before available data starts ({data_start.date()})")
+            logger.info(f"Available data range: {data_start.date()} to {data_end.date()}")
+            logger.info(f"Hint: Use --end {data_end.date()} to use latest available data")
+            sys.exit(1)
+
+        if start_date > data_end:
+            logger.error(f"Requested start {start_date.date()} is after available data ends ({data_end.date()})")
+            logger.info(f"Available data range: {data_start.date()} to {data_end.date()}")
+            sys.exit(1)
+
+        # Auto-adjust start_date if it's before available data
+        if start_date < data_start:
+            logger.warning(f"Requested start {start_date.date()} is before available data {data_start.date()}")
+            start_date = data_start
+            logger.info(f"Auto-adjusted start date to {start_date.date()}")
+
+        # Auto-adjust end_date if it's after available data
+        if end_date > data_end:
+            logger.warning(f"Requested end {end_date.date()} is after available data {data_end.date()}")
+            end_date = data_end
+            logger.info(f"Auto-adjusted end date to {end_date.date()}")
 
     # Calculate train/val split
     val_days = args.val_days
@@ -171,6 +209,12 @@ def main():
     val_start = val_end - timedelta(days=val_days)
     train_end = val_start - timedelta(days=1)  # Gap of 1 day to prevent leakage
     train_start = start_date
+
+    # Validate we have enough data
+    if train_start >= train_end:
+        logger.error(f"Not enough data for training. Start {train_start.date()} >= End {train_end.date()}")
+        logger.error(f"Try reducing --val-days (currently {val_days}) or providing more data")
+        sys.exit(1)
 
     logger.info(f"Training HMM model for {args.symbol}")
     logger.info(f"Timeframe: {args.timeframe}")
@@ -221,18 +265,10 @@ def main():
 
     # Load pre-computed features from database
     logger.info("Loading pre-computed features from database...")
-    db_manager = get_db_manager()
 
     with db_manager.get_session() as session:
         repo = OHLCVRepository(session)
 
-        # Check data availability
-        summary = repo.get_data_summary(args.symbol)
-        if args.timeframe not in summary:
-            logger.error(f"No data found for {args.symbol} at {args.timeframe} timeframe")
-            sys.exit(1)
-
-        tf_summary = summary[args.timeframe]
         logger.info(f"Available data: {tf_summary['bar_count']} bars, {tf_summary['feature_count']} with features")
         logger.info(f"Date range: {tf_summary['earliest']} to {tf_summary['latest']}")
 
