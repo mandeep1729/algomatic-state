@@ -31,6 +31,7 @@ A hybrid system that:
 - Demonstrate state representation improves baseline momentum strategy
 - Identify distinct market regimes with meaningful performance differences
 - Maintain system stability during extended paper trading periods
+- Always follow instructions in docs/SKILLS.md
 
 ## Non-Goals
 - High-frequency trading (sub-second execution)
@@ -124,52 +125,6 @@ As specified in FEATURE.md:
 | Intrabar Structure | clv, body_ratio, upper_wick, lower_wick |
 | Anchors & Location | vwap_60, dist_vwap_60, dist_ema_48, breakout_20, pullback_depth |
 | Time-of-Day | tod_sin, tod_cos |
-
----
-
-## 3. State Representation Requirements
-
-### 3.1 Processing Pipeline
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| SR-3.1 | Create temporal windows of features (default: 60 minutes) | P0 | Done |
-| SR-3.2 | Normalize features using z-score scaling | P0 | Done |
-| SR-3.3 | Extract PCA-based state vectors (baseline method) | P0 | Done |
-| SR-3.4 | Train PyTorch autoencoder for nonlinear state extraction | P0 | Partial |
-| SR-3.5 | Cluster states into regimes using K-Means | P0 | Done |
-| SR-3.6 | Validate state quality via reconstruction and clustering metrics | P1 | Done |
-
-### 3.2 Regime Analysis
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| RA-3.1 | Calculate regime distribution (time spent in each regime) | P0 | Done |
-| RA-3.2 | Calculate regime performance (Sharpe ratio per regime) | P0 | Done |
-| RA-3.3 | Calculate regime transition probabilities | P0 | Done |
-| RA-3.4 | Visualize regime states overlaid on price charts | P0 | Done |
-
----
-
-## 4. Trading Strategy Requirements
-
-### 4.1 Signal Generation
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| TS-4.1 | Implement baseline momentum strategy | P0 | Done |
-| TS-4.2 | Filter trades by favorable regimes | P0 | Done |
-| TS-4.3 | Match current state to similar historical states | P1 | Partial |
-| TS-4.4 | Dynamic position sizing based on state confidence | P1 | Partial |
-
-### 4.2 Risk Management
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| RM-4.1 | Position size limits (per-asset and portfolio) | P0 | Done |
-| RM-4.2 | Daily loss limits | P0 | Done |
-| RM-4.3 | Maximum drawdown circuit breaker | P0 | Done |
-| RM-4.4 | Pre-trade risk checks | P0 | Done |
 
 ---
 

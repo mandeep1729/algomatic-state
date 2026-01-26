@@ -19,28 +19,21 @@ For each timeframe \(\tau\):
 
 Artifacts are trained per timeframe and versioned:
 - `scaler` (fit on train only)
-- `encoder` (PCA or temporal AE/DAE)
+- `encoder` (support PCA and temporal AE/DAE)
 - `hmm` (emissions + transitions)
 - `feature_spec` + `metadata`
 
 ## 4. Data & Bar Construction
 ### 4.1 Data inputs
 - OHLCV bars per symbol (or computed from ticks).
-- Optional: VWAP, spreads, imbalance proxies (if available).
+- features in the computed_features table.
 
 ### 4.2 Bar alignment rules
-- All feature computation uses **bar-close time** alignment.
-- Multi-timeframe bars must be **resampled from the same canonical source** (e.g., 1m as canonical; 5m/15m/1h/1d derived from it) to ensure consistent timestamps.
 - Missing bars: forward-fill *only* for non-price metadata; for OHLCV, mark gaps and optionally drop affected windows.
 
 ## 5. Feature Engineering (per timeframe)
 ### 5.1 Feature families (examples)
-- **Returns**: log returns over multiple horizons (e.g., 1, 3, 5, 10 bars).
-- **Volatility**: realized vol / ATR-like features over rolling windows.
-- **Trend quality**: slope of rolling regression, MA crossover strength, directional persistence.
-- **Range/structure**: HL range, close location value, candle body/wick ratios.
-- **Volume/flow**: volume z-score, volume trend, volume/volatility ratio.
-- **VWAP context**: price–VWAP distance, VWAP slope (if VWAP available).
+- use config/features.json
 
 ### 5.2 Normalization considerations
 - Use **robust scaling** where heavy tails matter (median/IQR), otherwise standard scaling.
@@ -48,7 +41,7 @@ Artifacts are trained per timeframe and versioned:
 - Avoid leakage: scaler fits only on the training window.
 
 ### 5.3 Feature spec
-Maintain `feature_spec.yaml` per timeframe model:
+Maintain `config/state_vector_feature_spec.yaml` per timeframe model:
 - names, formulas, window sizes
 - required raw fields
 - missing data policy
@@ -75,11 +68,7 @@ Use an HMM over latent vectors \(z_t\):
 - Transition model \(p(s_t | s_{t-1})\)
 
 ### 7.2 Emissions
-Two common choices:
-1) **Gaussian HMM** (each state has mean \(\mu_k\) and covariance \(\Sigma_k\))
-2) **GMM-HMM** (each state has a mixture of Gaussians; better if clusters are non-elliptical)
-
-Start with **Gaussian HMM** unless you see clear multi-modal emissions.
+- use **Gaussian HMM** (each state has mean \(\mu_k\) and covariance \(\Sigma_k\))
 
 ### 7.3 State count \(K\)
 Per timeframe, choose \(K\) via:
