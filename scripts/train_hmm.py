@@ -18,7 +18,7 @@ sys.path.insert(0, str(project_root))
 
 from src.data.database.connection import get_db_manager
 from src.data.database.repository import OHLCVRepository
-from src.hmm.config import load_feature_spec
+from src.hmm.config import create_default_config, load_feature_spec, DEFAULT_FEATURE_SET
 from src.hmm.data_pipeline import GapHandler
 from src.hmm.training import TrainingPipeline, TrainingConfig
 
@@ -177,25 +177,29 @@ def main():
     logger.info(f"Training period: {train_start.date()} to {train_end.date()}")
     logger.info(f"Validation period: {val_start.date()} to {val_end.date()}")
 
-    # Load feature spec
-    feature_spec = None
+    # Load feature spec - try YAML config first, fall back to defaults
+    config = None
+    config_path = Path("config/state_vector_feature_spec.yaml")
     try:
-        feature_spec = load_feature_spec()
-        feature_names = feature_spec.base_features
-        logger.info(f"Using {len(feature_names)} features from config")
+        if config_path.exists():
+            feature_spec = load_feature_spec(config_path, args.timeframe)
+            feature_names = feature_spec.feature_names
+            config = feature_spec.config
+            logger.info(f"Loaded {len(feature_names)} features from {config_path}")
+        else:
+            config = create_default_config()
+            feature_names = config.get_features_for_timeframe(args.timeframe)
+            logger.info(f"Using {len(feature_names)} default features")
     except Exception as e:
         logger.warning(f"Could not load feature spec: {e}")
-        # Fallback to a minimal feature set
-        feature_names = [
-            "r5", "r15", "r60", "vol_z_60", "macd", "stoch_k",
-            "rv_15", "rv_60", "clv", "bb_width"
-        ]
-        logger.info(f"Using fallback feature set: {feature_names}")
+        # Fallback to minimal feature set
+        feature_names = DEFAULT_FEATURE_SET.copy()
+        logger.info(f"Using fallback feature set ({len(feature_names)} features)")
 
     # Get timeframe-specific config
     tf_config = None
-    if feature_spec is not None and hasattr(feature_spec, 'timeframe_configs'):
-        tf_config = feature_spec.timeframe_configs.get(args.timeframe)
+    if config is not None:
+        tf_config = config.get_timeframe_config(args.timeframe)
 
     # Determine n_states
     n_states = None

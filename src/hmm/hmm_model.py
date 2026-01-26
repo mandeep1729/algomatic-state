@@ -240,10 +240,21 @@ class GaussianHMMWrapper:
                     self.model_.covars_[k] += self.cov_reg * np.eye(self._latent_dim)
 
         elif self.covariance_type == "diag":
-            self.model_.covars_ = np.maximum(self.model_.covars_, self.cov_reg)
+            # hmmlearn stores diag covars as 3D internally but setter expects 2D
+            # Extract diagonals, regularize, and set back
+            covars = self.model_.covars_
+            if covars.ndim == 3:
+                # Extract diagonals from each component's covariance matrix
+                diag_covars = np.array([np.diag(c) for c in covars])
+            else:
+                diag_covars = covars.copy()
+            diag_covars = np.maximum(diag_covars, self.cov_reg)
+            self.model_.covars_ = diag_covars
 
         elif self.covariance_type == "spherical":
-            self.model_.covars_ = np.maximum(self.model_.covars_, self.cov_reg)
+            covars = np.atleast_1d(self.model_.covars_).copy()
+            covars = np.maximum(covars, self.cov_reg)
+            self.model_.covars_ = covars
 
     def _compute_metrics(
         self,
