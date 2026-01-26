@@ -19,15 +19,15 @@ This document outlines the phased implementation plan for the system described i
 
 ---
 
-## Phase 2: Data Pipeline & Feature Engineering
+## Phase 2: Data Pipeline & Feature Loading
 
-**Goal**: Build the feature computation pipeline with proper windowing and no leakage.
+**Goal**: Load pre-computed features from database and prepare for state vector training.
 
 | # | Task | Description | Status |
 |---|------|-------------|--------|
 | 2.1 | Bar alignment & gap handling | Forward-fill logic for non-price data; gap marking for OHLCV | [ ] |
-| 2.2 | Feature computation engine | Compute features from `config/features.json` per timeframe | [ ] |
-| 2.3 | Rolling window manager | Past-only rolling windows for volatility/trend features | [ ] |
+| 2.2 | Feature loader from database | Load features from `computed_features` table per symbol/timeframe | [ ] |
+| 2.3 | Feature selection | Select candidate features from `config/features.json`; all features are candidates | [ ] |
 | 2.4 | Scaler implementation | Robust scaling (median/IQR) and standard scaling options | [ ] |
 | 2.5 | Train/val/test splitter | Time-based walk-forward splits with configurable windows | [ ] |
 | 2.6 | Leakage prevention checks | Validation that scaler fits only on train data | [ ] |
@@ -72,7 +72,7 @@ This document outlines the phased implementation plan for the system described i
 
 | # | Task | Description | Status |
 |---|------|-------------|--------|
-| 5.1 | Training orchestrator | Coordinate bars -> features -> scaler -> encoder -> HMM | [ ] |
+| 5.1 | Training orchestrator | Coordinate: load features from DB -> scaler -> encoder -> HMM | [ ] |
 | 5.2 | Hyperparameter tuning | Grid search for K, latent dim d, covariance type | [ ] |
 | 5.3 | Cross-validation framework | Walk-forward validation with multiple folds | [ ] |
 | 5.4 | Label alignment (Hungarian matching) | Match new states to old after retrain | [ ] |
