@@ -1,5 +1,9 @@
 # Architecture Document: Algomatic State
 
+> **Note**: The State and Strategy layers are currently being redesigned to implement
+> HMM-based regime tracking. See [STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md](./STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md)
+> for the implementation roadmap.
+
 ## System Overview
 
 Algomatic State follows a layered architecture with clear separation between data ingestion, feature engineering, state representation, strategy logic, and execution. Each layer communicates through well-defined interfaces, enabling independent testing and evolution.
@@ -13,8 +17,8 @@ Algomatic State follows a layered architecture with clear separation between dat
 ┌───────────────────────────────┼───────────────────────────────┐
 │                               ▼                               │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
-│  │   Alpaca    │    │    CSV      │    │   Cache     │       │
-│  │   Loader    │    │   Loader    │    │   Layer     │       │
+│  │   Alpaca    │    │  Database   │    │    CSV      │       │
+│  │   Loader    │    │   Loader    │    │   Loader    │       │
 │  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘       │
 │         └──────────────────┼──────────────────┘               │
 │                            ▼                                  │
@@ -26,7 +30,7 @@ Algomatic State follows a layered architecture with clear separation between dat
 ┌───────────────────────────────┼───────────────────────────────┐
 │                               ▼                               │
 │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────────────┐     │
-│  │ Returns │ │Volatility│ │ Volume │ │ Market Structure │     │
+│  │ Returns │ │Volatility│ │ Volume │ │  TA Indicators  │     │
 │  └────┬────┘ └────┬────┘ └────┬────┘ └────────┬────────┘     │
 │       └───────────┴───────────┴───────────────┘               │
 │                            ▼                                  │
@@ -38,39 +42,35 @@ Algomatic State follows a layered architecture with clear separation between dat
 ┌───────────────────────────────┼───────────────────────────────┐
 │                               ▼                               │
 │         ┌─────────────────────────────────────┐               │
-│         │      Temporal Window Generator       │               │
-│         └──────────────────┬──────────────────┘               │
-│                            ▼                                  │
-│         ┌─────────────────────────────────────┐               │
-│         │          Normalizer                  │               │
+│         │           Scaler (per TF)           │               │
 │         └──────────────────┬──────────────────┘               │
 │                            ▼                                  │
 │         ┌────────────┬─────┴─────┬────────────┐               │
-│         │    PCA     │           │ Autoencoder │               │
-│         │  Extractor │           │   (PyTorch) │               │
+│         │    PCA     │           │  Temporal  │               │
+│         │  Encoder   │           │     AE     │               │
 │         └─────┬──────┘           └──────┬─────┘               │
 │               └──────────┬──────────────┘                     │
 │                          ▼                                    │
-│                   State Validator                             │
+│         ┌─────────────────────────────────────┐               │
+│         │         Gaussian HMM                │               │
+│         │    (Regime Inference + Filtering)   │               │
+│         └──────────────────┬──────────────────┘               │
+│                            ▼                                  │
+│                   State + Regime Output                       │
 │                                                               │
-│                      STATE LAYER                              │
+│              STATE LAYER (Being Reimplemented)                │
 └───────────────────────────────┼───────────────────────────────┘
                                 │
 ┌───────────────────────────────┼───────────────────────────────┐
 │                               ▼                               │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
-│  │   Regime    │    │   Pattern   │    │  Position   │       │
-│  │   Filter    │    │   Matcher   │    │   Sizer     │       │
-│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘       │
-│         └──────────────────┼──────────────────┘               │
-│                            ▼                                  │
 │         ┌─────────────────────────────────────┐               │
-│         │    State-Enhanced Momentum Strategy  │               │
+│         │         Trading Strategy            │               │
+│         │   (Regime-gated signal generation)  │               │
 │         └──────────────────┬──────────────────┘               │
 │                            ▼                                  │
 │                    Signal Generator                           │
 │                                                               │
-│                    STRATEGY LAYER                             │
+│             STRATEGY LAYER (Being Reimplemented)              │
 └───────────────────────────────┼───────────────────────────────┘
                                 │
         ┌───────────────────────┼───────────────────────┐
@@ -95,7 +95,7 @@ algomatic-state/
 ├── config/                     # Configuration files
 │   ├── __init__.py
 │   ├── settings.py             # Pydantic settings classes
-│   ├── trading.yaml            # Strategy parameters
+│   ├── features.json           # Feature configuration
 │   └── assets.yaml             # Asset universe
 │
 ├── src/                        # Source code
@@ -107,10 +107,13 @@ algomatic-state/
 │   │   │   ├── __init__.py
 │   │   │   ├── base.py         # Abstract loader interface
 │   │   │   ├── csv_loader.py   # Local CSV files
+│   │   │   ├── database_loader.py # PostgreSQL database
 │   │   │   └── alpaca_loader.py # Alpaca API
-│   │   ├── schemas.py          # Data validation schemas
-│   │   ├── cache.py            # Caching layer
-│   │   └── validators.py       # Quality checks
+│   │   └── database/
+│   │       ├── __init__.py
+│   │       ├── connection.py   # Database connection
+│   │       ├── models.py       # SQLAlchemy models
+│   │       └── repository.py   # Data access layer
 │   │
 │   ├── features/               # Feature engineering
 │   │   ├── __init__.py
@@ -118,33 +121,20 @@ algomatic-state/
 │   │   ├── returns.py          # Return-based features
 │   │   ├── volatility.py       # Volatility features
 │   │   ├── volume.py           # Volume features
-│   │   ├── market_structure.py # Structure features
+│   │   ├── intrabar.py         # Intrabar features
+│   │   ├── time_of_day.py      # Time-based features
+│   │   ├── market_context.py   # Market context features
+│   │   ├── anchor.py           # Anchor VWAP features
+│   │   ├── talib_indicators.py # TA-Lib indicators
+│   │   ├── pandas_ta_indicators.py # pandas-ta indicators
 │   │   ├── pipeline.py         # Feature orchestration
 │   │   └── registry.py         # Feature registry
 │   │
-│   ├── windowing/              # Temporal processing
-│   │   ├── __init__.py
-│   │   ├── temporal.py         # Window generation
-│   │   ├── normalization.py    # Normalization methods
-│   │   └── dataset.py          # PyTorch Dataset
+│   ├── state/                  # State representation (TO BE IMPLEMENTED)
+│   │   └── (see STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md)
 │   │
-│   ├── state/                  # State representation
-│   │   ├── __init__.py
-│   │   ├── pca.py              # PCA extractor
-│   │   ├── autoencoder.py      # PyTorch model
-│   │   ├── trainer.py          # Training loop
-│   │   ├── state_manager.py    # Orchestration
-│   │   └── validation.py       # Quality metrics
-│   │
-│   ├── strategy/               # Trading logic
-│   │   ├── __init__.py
-│   │   ├── base.py             # Strategy interface
-│   │   ├── momentum.py         # Baseline strategy
-│   │   ├── state_enhanced.py   # Enhanced strategy
-│   │   ├── regime_filter.py    # Regime filtering
-│   │   ├── pattern_matcher.py  # Pattern matching
-│   │   ├── position_sizer.py   # Position sizing
-│   │   └── signals.py          # Signal types
+│   ├── strategy/               # Trading logic (TO BE IMPLEMENTED)
+│   │   └── (see STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md)
 │   │
 │   ├── backtest/               # Backtesting
 │   │   ├── __init__.py
@@ -155,18 +145,16 @@ algomatic-state/
 │   │
 │   ├── execution/              # Live trading
 │   │   ├── __init__.py
-│   │   ├── alpaca_client.py    # Alpaca wrapper
+│   │   ├── client.py           # Alpaca client wrapper
+│   │   ├── orders.py           # Order types and status
 │   │   ├── order_manager.py    # Order lifecycle
-│   │   ├── position_tracker.py # Position state
+│   │   ├── order_tracker.py    # Order tracking
 │   │   ├── risk_manager.py     # Risk checks
-│   │   ├── paper_trader.py     # Paper trading
-│   │   └── live_trader.py      # Live trading
+│   │   └── runner.py           # Trading runner
 │   │
 │   └── utils/                  # Utilities
 │       ├── __init__.py
 │       ├── logging.py          # Structured logging
-│       ├── time_utils.py       # Time/timezone helpers
-│       ├── serialization.py    # Model save/load
 │       └── exceptions.py       # Custom exceptions
 │
 ├── tests/                      # Test suite
@@ -179,29 +167,28 @@ algomatic-state/
 │   ├── helpers/                # Shared helper modules
 │   │   ├── data.py
 │   │   ├── logging_setup.py
-│   │   ├── output.py
-│   │   ├── state_models.py
-│   │   └── strategy_factory.py
+│   │   └── output.py
 │   ├── download_data.py
-│   ├── train_autoencoder.py
-│   ├── run_backtest.py
+│   ├── compute_features.py
+│   ├── import_csv_to_db.py
+│   ├── init_db.py
 │   ├── run_paper_trading.py
 │   └── run_live_trading.py
 │
-├── notebooks/                  # Jupyter notebooks
-│   ├── 01_data_exploration.ipynb
-│   ├── 02_feature_analysis.ipynb
-│   ├── 03_state_representation.ipynb
-│   └── 04_strategy_development.ipynb
+├── ui/                         # Web UI
+│   ├── backend/
+│   │   └── api.py              # FastAPI backend
+│   └── frontend/               # React frontend
 │
-├── data/                       # Data directory
-│   ├── raw/                    # Original data files
-│   ├── processed/              # Processed datasets
-│   └── cache/                  # Cached computations
-│
-├── models/                     # Trained models
+├── data/                       # Data directory (gitignored)
+├── models/                     # Trained models (per timeframe)
+│   └── timeframe=X/model_id=Y/ # Versioned model artifacts
+├── states/                     # State time-series (Parquet)
 ├── logs/                       # Application logs
 └── docs/                       # Documentation
+    ├── ARCHITECTURE.md
+    ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+    └── MULTI_TIMEFRAME_STATE_VECTORS_HMM_REGIME_TRACKING.md
 ```
 
 ## Core Components
@@ -277,92 +264,77 @@ Orchestrates feature computation with:
 - Optional caching of computed features
 - Feature correlation analysis
 
-### 3. State Layer
+### 3. State Layer (Being Reimplemented)
 
-**Purpose**: Create compressed representations of market conditions.
+> **Status**: This layer is being redesigned to use HMM-based regime tracking.
+> See [STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md](./STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md) for details.
 
-#### Processing Flow
-```
-Raw Features (N features)
-        │
-        ▼
-Temporal Windows (window_size × N features)
-        │
-        ▼
-Normalization (z-score per feature)
-        │
-        ▼
-Flattening (window_size × N vector)
-        │
-        ├─────────────────────────────────┐
-        ▼                                 ▼
-    PCA (baseline)                  Autoencoder
-        │                                 │
-        ▼                                 ▼
-State Vector (k dims)           State Vector (latent_dim)
-```
+**Purpose**: Learn continuous latent state vectors and infer discrete market regimes.
 
-#### TemporalAutoencoder Architecture
+#### Target Architecture (per timeframe)
 ```
-Input: (batch, window_size, n_features)
-         │
-         ▼
-    Conv1D(n_features → 32, kernel=3)
-    BatchNorm + ReLU
-         │
-         ▼
-    Conv1D(32 → 64, kernel=3)
-    BatchNorm + ReLU
-         │
-         ▼
-    Conv1D(64 → 128, kernel=3)
-    BatchNorm + ReLU
-         │
-         ▼
-    Flatten + Linear → latent_dim
-         │
-         ▼
-    Latent State: (batch, latent_dim)
-         │
-         ▼
-    Linear + Reshape
-         │
-         ▼
-    ConvTranspose1D (mirror of encoder)
-         │
-         ▼
-Output: (batch, window_size, n_features)
+Features x_t
+     │
+     ▼
+Scaler (robust/standard, fit on train only)
+     │
+     ▼
+Encoder (PCA baseline or Temporal DAE)
+     │
+     ▼
+Latent State z_t ∈ R^d (d ∈ [6,16])
+     │
+     ▼
+Gaussian HMM
+     │
+     ├─► Filtered Posterior α_t(k) = p(s_t=k | z_{1:t})
+     │
+     └─► Discrete Regime s_t ∈ {1..K}
 ```
 
-#### State Validation Metrics
-- **Reconstruction MSE**: How well can we reconstruct the input?
-- **Silhouette Score**: How distinct are the learned clusters?
-- **Regime Purity**: Do regimes have consistent return distributions?
-- **Temporal Stability**: Do states change smoothly over time?
+#### Multi-Timeframe Design
+- Separate models per timeframe: 1m, 5m, 15m, 1h, 1d
+- Different K (state count) per timeframe
+- Higher TF states for risk-on/off; lower TF for timing
 
-### 4. Strategy Layer
+#### Key Components (To Be Implemented)
+- **Scaler**: Robust scaling (median/IQR) or standard scaling
+- **Encoder**: PCA baseline, optional temporal denoising autoencoder
+- **HMM**: Gaussian emissions, learned transition matrix
+- **Anti-chatter**: Minimum dwell time, probability thresholds
+- **OOD Detection**: Log-likelihood monitoring for out-of-distribution
 
-**Purpose**: Generate trading signals from features and states.
+### 4. Strategy Layer (Being Reimplemented)
 
-#### Signal Flow
+> **Status**: This layer is being redesigned alongside the state layer.
+> See [STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md](./STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md) for details.
+
+**Purpose**: Generate trading signals using regime-aware logic.
+
+#### Target Signal Flow
 ```
 Market Data
      │
-     ├─► Features ─► Momentum Signal (baseline)
-     │                      │
-     └─► State ────────────►├─► Regime Filter ──► Filtered Signal
-                            │         │
-                            │         ▼
-                            └─► Pattern Match ─► Confidence
-                                      │
-                                      ▼
-                              Position Sizer
-                                      │
-                                      ▼
-                              Final Signal (direction + size)
+     ├─► Features ─► Base Signal (momentum/mean-reversion)
+     │
+     └─► HMM State ─► Regime Classification
+                            │
+                            ▼
+                     Regime-Gated Filter
+                            │
+                            ▼
+                     Position Sizer (regime-adjusted)
+                            │
+                            ▼
+                     Final Signal
 ```
 
-#### Signal Types
+#### Hierarchical Usage Pattern
+- **1h/1d states**: Risk-on/off filter + position sizing
+- **15m/5m states**: Trend quality / chop filter
+- **1m states**: Entry timing / stop logic
+
+#### Signal Types (Placeholder)
 ```python
 @dataclass
 class Signal:
@@ -371,14 +343,8 @@ class Signal:
     direction: Literal["long", "short", "flat"]
     strength: float        # 0.0 to 1.0
     size: float           # Dollar amount or shares
-    metadata: dict        # Regime, pattern match info
+    metadata: dict        # Regime info, state_id, state_prob
 ```
-
-#### Regime-Based Filtering
-1. Cluster states using K-means (5-7 regimes)
-2. Label regimes by historical momentum performance
-3. At inference, classify current state into regime
-4. Only trade when regime score exceeds threshold
 
 ### 5. Backtest Layer
 
@@ -449,74 +415,89 @@ Fill Handler ──► Update Positions
 
 ## Data Flow Diagrams
 
-### Training Flow
+### Training Flow (Target Design)
 ```
-Historical Data (CSV/Alpaca)
+Historical Data (Database/Alpaca)
          │
          ▼
-    Feature Pipeline
+    Feature Pipeline (per timeframe τ)
          │
          ▼
-    Temporal Windowing
+    Train/Val/Test Split (time-based)
          │
          ▼
-    Normalization (fit)
-         │
-    ┌────┴────┐
-    ▼         ▼
-  PCA      Autoencoder
- (fit)     (train)
-    │         │
-    └────┬────┘
-         ▼
-    State Validation
+    Scaler (fit on train only)
          │
          ▼
-    Regime Clustering (fit)
+    Encoder (PCA or Temporal AE)
          │
          ▼
-    Walk-Forward Backtest
+    Latent States z_t
          │
          ▼
-    Performance Report
+    Gaussian HMM (fit on train)
+         │
+         ▼
+    Tune K via AIC/BIC on validation
+         │
+         ▼
+    State Label Alignment (Hungarian matching)
+         │
+         ▼
+    Validation Report (dwell times, transitions, OOD)
+         │
+         ▼
+    Package Artifacts (scaler, encoder, hmm, metadata)
 ```
 
-### Inference Flow (Live Trading)
+### Inference Flow (Target Design)
 ```
-Alpaca Real-time Data
+New Bar Close (timeframe τ)
          │
          ▼
-    Feature Pipeline
+    Compute Features x_t
          │
          ▼
-    Temporal Window (latest)
+    Scale: x̃_t = scaler(x_t)
          │
          ▼
-    Normalization (transform)
+    Encode: z_t = encoder(x̃_t) or encoder(x̃_{t-L:t})
          │
          ▼
-    Autoencoder (inference)
+    HMM Filtering Update → α_t(k)
          │
          ▼
-    Current State
-         │
-    ┌────┴────┐
-    ▼         ▼
- Regime    Pattern
- Filter    Matcher
-    │         │
-    └────┬────┘
-         ▼
-    Momentum Strategy
+    Anti-Chatter Check (p_switch, min_dwell)
          │
          ▼
-    Position Sizer
+    OOD Check (log p(z_t) threshold)
+         │
+         ├─► state_id = argmax_k α_t(k)
+         └─► state_prob = max(α_t)
+         │
+         ▼
+    Strategy (regime-gated signals)
          │
          ▼
     Risk Manager
          │
          ▼
     Order Manager → Alpaca
+```
+
+### Multi-Timeframe Synchronization
+```
+1m bar close → compute 1m state
+              │
+5m bar close → compute 5m state (every 5 bars)
+              │
+15m bar close → compute 15m state (every 15 bars)
+              │
+1h bar close → compute 1h state
+              │
+1d bar close → compute 1d state
+
+Higher TF states carry forward until next update.
 ```
 
 ## Configuration Architecture
@@ -633,10 +614,13 @@ AlgomaticError (base)
 |-----------|------------|-----------|
 | Language | Python 3.11+ | Ecosystem, Alpaca SDK |
 | Data | pandas, numpy, pyarrow | Standard for financial data |
-| ML | PyTorch | Flexibility for custom architectures |
+| Database | PostgreSQL, SQLAlchemy | Persistent storage for OHLCV and features |
+| ML | PyTorch, scikit-learn | Encoder training, clustering |
+| HMM | hmmlearn | Gaussian HMM for regime tracking |
+| TA | TA-Lib, pandas-ta | Technical indicators |
 | Validation | pandera | DataFrame schema validation |
 | Config | pydantic, pyyaml | Type-safe configuration |
 | API | alpaca-py | Official Alpaca SDK |
+| Web | FastAPI, React | Visualization UI |
 | Testing | pytest | Standard Python testing |
 | Logging | structlog | Structured logging |
-| CLI | typer | Modern CLI framework |
