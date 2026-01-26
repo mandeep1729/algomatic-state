@@ -1,0 +1,157 @@
+# State Vector Feature Specification
+# Configuration for HMM-based regime tracking
+
+# Global encoder and scaler settings
+encoder_type: pca  # Options: pca, temporal_vae, temporal_dae
+scaler_type: robust  # Options: robust, standard, yeo_johnson
+ood_threshold: -50.0  # Log-likelihood threshold for OOD detection
+state_ttl_bars: 1  # State validity TTL in bars
+
+# Base feature set (used across all timeframes unless overridden)
+base_features:
+  - clv
+  - pullback_depth
+  - r5
+  - r15
+  - r60
+  - vwap_60
+  - dist_vwap_60
+  - tod_sin
+  - macd
+  - stoch_k
+  - sma_20
+  - ema_20
+  - vol_of_vol
+  - vol_z_60
+  - range_1
+  - rv_15
+  - rv_60
+  - relvol_60
+  - range_z_60
+  - bb_middle
+  - bb_width
+
+# Per-feature specifications (optional overrides)
+feature_specs:
+  clv:
+    name: clv
+    description: Close location value within bar range
+    lookback: 1
+    group: intrabar
+    scaling: robust
+    differencing: false
+    clip_std: 5.0
+
+  pullback_depth:
+    name: pullback_depth
+    description: Depth of pullback from recent high
+    lookback: 20
+    group: intrabar
+    scaling: robust
+
+  r5:
+    name: r5
+    description: 5-bar log return
+    lookback: 5
+    group: returns
+    scaling: robust
+
+  r15:
+    name: r15
+    description: 15-bar log return
+    lookback: 15
+    group: returns
+    scaling: robust
+
+  r60:
+    name: r60
+    description: 60-bar log return
+    lookback: 60
+    group: returns
+    scaling: robust
+
+  rv_15:
+    name: rv_15
+    description: 15-bar realized volatility
+    lookback: 15
+    group: volatility
+    scaling: robust
+
+  rv_60:
+    name: rv_60
+    description: 60-bar realized volatility
+    lookback: 60
+    group: volatility
+    scaling: robust
+
+  vol_z_60:
+    name: vol_z_60
+    description: 60-bar volatility z-score
+    lookback: 60
+    group: volatility
+    scaling: none
+
+  vol_of_vol:
+    name: vol_of_vol
+    description: Volatility of volatility
+    lookback: 60
+    group: volatility
+    scaling: robust
+
+  macd:
+    name: macd
+    description: MACD indicator
+    lookback: 26
+    group: momentum
+    scaling: robust
+
+  stoch_k:
+    name: stoch_k
+    description: Stochastic %K oscillator
+    lookback: 14
+    group: momentum
+    scaling: none
+
+  tod_sin:
+    name: tod_sin
+    description: Time-of-day sine encoding
+    lookback: 1
+    group: temporal
+    scaling: none
+
+# Per-timeframe configurations
+timeframe_configs:
+  1Min:
+    n_states: 12
+    latent_dim: 10
+    covariance_type: diag
+    min_dwell_bars: 5
+    p_switch_threshold: 0.65
+
+  5Min:
+    n_states: 8
+    latent_dim: 8
+    covariance_type: diag
+    min_dwell_bars: 4
+    p_switch_threshold: 0.6
+
+  15Min:
+    n_states: 8
+    latent_dim: 8
+    covariance_type: diag
+    min_dwell_bars: 3
+    p_switch_threshold: 0.6
+
+  1Hour:
+    n_states: 6
+    latent_dim: 6
+    covariance_type: diag
+    min_dwell_bars: 2
+    p_switch_threshold: 0.55
+
+  1Day:
+    n_states: 5
+    latent_dim: 5
+    covariance_type: diag
+    min_dwell_bars: 2
+    p_switch_threshold: 0.55
