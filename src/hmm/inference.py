@@ -5,18 +5,21 @@ Handles:
 - Processing new bars in real-time
 - Anti-chatter controls (min dwell, switch threshold)
 - OOD detection
+- Rolling feature buffer for online computation
 """
 
-from dataclasses import dataclass
-from datetime import datetime
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+import pandas as pd
 
 from src.hmm.artifacts import ArtifactPaths
-from src.hmm.contracts import HMMOutput, LatentStateVector, ModelMetadata
-from src.hmm.encoders import BaseEncoder
+from src.hmm.contracts import HMMOutput, LatentStateVector, ModelMetadata, VALID_TIMEFRAMES
+from src.hmm.encoders import BaseEncoder, TemporalPCAEncoder
 from src.hmm.hmm_model import GaussianHMMWrapper
 from src.hmm.scalers import BaseScaler
 
@@ -403,3 +406,368 @@ class MultiTimeframeInferenceEngine:
             engine.reset()
         self.latest_outputs.clear()
         self.output_timestamps.clear()
+
+
+@dataclass
+class BarData:
+    """OHLCV bar data for rolling buffer."""
+
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    features: dict[str, float] = field(default_factory=dict)
+
+
+class RollingFeatureBuffer:
+    """Rolling buffer for maintaining feature computation state.
+
+    Maintains a fixed-size window of recent bars and pre-computed
+    features for efficient online feature computation.
+    """
+
+    def __init__(
+        self,
+        max_lookback: int = 100,
+        feature_names: Optional[list[str]] = None,
+    ):
+        """Initialize rolling buffer.
+
+        Args:
+            max_lookback: Maximum number of bars to retain
+            feature_names: Optional list of feature names to track
+        """
+        self.max_lookback = max_lookback
+        self.feature_names = feature_names or []
+        self._bars: deque[BarData] = deque(maxlen=max_lookback)
+        self._feature_cache: dict[str, deque] = {}
+
+        for name in self.feature_names:
+            self._feature_cache[name] = deque(maxlen=max_lookback)
+
+    def add_bar(self, bar: BarData) -> None:
+        """Add a new bar to the buffer.
+
+        Args:
+            bar: BarData with OHLCV and optional features
+        """
+        self._bars.append(bar)
+
+        for name in self.feature_names:
+            value = bar.features.get(name, np.nan)
+            self._feature_cache[name].append(value)
+
+    def add_ohlcv(
+        self,
+        timestamp: datetime,
+        open_: float,
+        high: float,
+        low: float,
+        close: float,
+        volume: float,
+        features: Optional[dict[str, float]] = None,
+    ) -> None:
+        """Add a bar from OHLCV values.
+
+        Args:
+            timestamp: Bar timestamp
+            open_: Open price
+            high: High price
+            low: Low price
+            close: Close price
+            volume: Volume
+            features: Optional pre-computed features
+        """
+        bar = BarData(
+            timestamp=timestamp,
+            open=open_,
+            high=high,
+            low=low,
+            close=close,
+            volume=volume,
+            features=features or {},
+        )
+        self.add_bar(bar)
+
+    def get_closes(self, n: Optional[int] = None) -> np.ndarray:
+        """Get recent close prices.
+
+        Args:
+            n: Number of bars (None for all)
+
+        Returns:
+            Array of close prices
+        """
+        bars = list(self._bars)
+        if n is not None:
+            bars = bars[-n:]
+        return np.array([b.close for b in bars])
+
+    def get_highs(self, n: Optional[int] = None) -> np.ndarray:
+        """Get recent high prices."""
+        bars = list(self._bars)
+        if n is not None:
+            bars = bars[-n:]
+        return np.array([b.high for b in bars])
+
+    def get_lows(self, n: Optional[int] = None) -> np.ndarray:
+        """Get recent low prices."""
+        bars = list(self._bars)
+        if n is not None:
+            bars = bars[-n:]
+        return np.array([b.low for b in bars])
+
+    def get_volumes(self, n: Optional[int] = None) -> np.ndarray:
+        """Get recent volumes."""
+        bars = list(self._bars)
+        if n is not None:
+            bars = bars[-n:]
+        return np.array([b.volume for b in bars])
+
+    def get_feature(self, name: str, n: Optional[int] = None) -> np.ndarray:
+        """Get recent values of a feature.
+
+        Args:
+            name: Feature name
+            n: Number of bars
+
+        Returns:
+            Array of feature values
+        """
+        if name not in self._feature_cache:
+            return np.array([])
+
+        values = list(self._feature_cache[name])
+        if n is not None:
+            values = values[-n:]
+        return np.array(values)
+
+    def get_latest_features(self) -> dict[str, float]:
+        """Get the latest feature values.
+
+        Returns:
+            Dictionary of feature name -> latest value
+        """
+        if not self._bars:
+            return {}
+        return self._bars[-1].features.copy()
+
+    def get_feature_matrix(
+        self,
+        feature_names: list[str],
+        n: Optional[int] = None,
+    ) -> np.ndarray:
+        """Get feature matrix for multiple features.
+
+        Args:
+            feature_names: List of feature names
+            n: Number of bars
+
+        Returns:
+            2D array of shape (n_bars, n_features)
+        """
+        arrays = []
+        for name in feature_names:
+            arr = self.get_feature(name, n)
+            arrays.append(arr)
+
+        if not arrays:
+            return np.array([])
+
+        return np.column_stack(arrays)
+
+    def to_dataframe(self) -> pd.DataFrame:
+        """Convert buffer to DataFrame.
+
+        Returns:
+            DataFrame with OHLCV and features
+        """
+        if not self._bars:
+            return pd.DataFrame()
+
+        data = {
+            "timestamp": [b.timestamp for b in self._bars],
+            "open": [b.open for b in self._bars],
+            "high": [b.high for b in self._bars],
+            "low": [b.low for b in self._bars],
+            "close": [b.close for b in self._bars],
+            "volume": [b.volume for b in self._bars],
+        }
+
+        for name in self.feature_names:
+            data[name] = list(self._feature_cache[name])
+
+        df = pd.DataFrame(data)
+        df.set_index("timestamp", inplace=True)
+        return df
+
+    @property
+    def size(self) -> int:
+        """Return current buffer size."""
+        return len(self._bars)
+
+    @property
+    def is_ready(self) -> bool:
+        """Check if buffer has enough data for inference."""
+        return len(self._bars) >= self.max_lookback
+
+    def clear(self) -> None:
+        """Clear the buffer."""
+        self._bars.clear()
+        for cache in self._feature_cache.values():
+            cache.clear()
+
+
+class TemporalInferenceEngine(InferenceEngine):
+    """Inference engine with temporal window support.
+
+    Extends InferenceEngine to handle temporal encoders that
+    require a window of past observations.
+    """
+
+    def __init__(
+        self,
+        scaler: BaseScaler,
+        encoder: BaseEncoder,
+        hmm: GaussianHMMWrapper,
+        metadata: ModelMetadata,
+        window_size: int = 5,
+        **kwargs,
+    ):
+        """Initialize temporal inference engine.
+
+        Args:
+            scaler: Fitted scaler
+            encoder: Fitted encoder (should be TemporalPCAEncoder)
+            hmm: Fitted HMM
+            metadata: Model metadata
+            window_size: Size of temporal window
+            **kwargs: Additional arguments for InferenceEngine
+        """
+        super().__init__(scaler, encoder, hmm, metadata, **kwargs)
+        self.window_size = window_size
+        self._feature_buffer: deque = deque(maxlen=window_size)
+
+    def reset(self) -> None:
+        """Reset internal state and feature buffer."""
+        super().reset()
+        self._feature_buffer.clear()
+
+    def process(
+        self,
+        features: dict[str, float],
+        symbol: str,
+        timestamp: datetime,
+    ) -> HMMOutput:
+        """Process features with temporal windowing.
+
+        Args:
+            features: Feature dictionary
+            symbol: Ticker symbol
+            timestamp: Bar timestamp
+
+        Returns:
+            HMMOutput
+        """
+        x = np.array([features.get(name, np.nan) for name in self.metadata.feature_names])
+        x_scaled = self.scaler.transform(x.reshape(1, -1))[0]
+
+        self._feature_buffer.append(x_scaled)
+
+        if len(self._feature_buffer) < self.window_size:
+            return HMMOutput.unknown(
+                symbol=symbol,
+                timestamp=timestamp,
+                timeframe=self.metadata.timeframe,
+                model_id=self.metadata.model_id,
+                n_states=self.metadata.n_states,
+                log_likelihood=-np.inf,
+                z=None,
+            )
+
+        window = np.array(list(self._feature_buffer))
+        window = window.reshape(1, self.window_size, -1)
+
+        z = self.encoder.transform(window)
+
+        posterior = self.hmm.predict_proba(z)[0]
+        log_lik = self.hmm.emission_log_likelihood(z)[0]
+
+        if np.isnan(log_lik) or log_lik < self.ood_threshold:
+            self._state.dwell_count += 1
+            return HMMOutput.unknown(
+                symbol=symbol,
+                timestamp=timestamp,
+                timeframe=self.metadata.timeframe,
+                model_id=self.metadata.model_id,
+                n_states=self.metadata.n_states,
+                log_likelihood=log_lik if not np.isnan(log_lik) else -np.inf,
+                z=z[0],
+            )
+
+        raw_state = np.argmax(posterior)
+        raw_prob = posterior[raw_state]
+
+        final_state = self._apply_anti_chatter(raw_state, raw_prob)
+
+        self._state.last_timestamp = timestamp
+        self._state.recent_states.append(raw_state)
+        if len(self._state.recent_states) > self.majority_vote_window:
+            self._state.recent_states.pop(0)
+
+        return HMMOutput(
+            symbol=symbol,
+            timestamp=timestamp,
+            timeframe=self.metadata.timeframe,
+            model_id=self.metadata.model_id,
+            state_id=final_state,
+            state_prob=posterior[final_state],
+            posterior=posterior,
+            log_likelihood=log_lik,
+            is_ood=False,
+            z=z[0],
+        )
+
+
+def create_inference_engine(
+    paths: ArtifactPaths,
+    window_size: Optional[int] = None,
+    **kwargs,
+) -> InferenceEngine:
+    """Factory function to create appropriate inference engine.
+
+    Automatically selects TemporalInferenceEngine if encoder requires it.
+
+    Args:
+        paths: Model artifact paths
+        window_size: Optional window size override
+        **kwargs: Additional InferenceEngine arguments
+
+    Returns:
+        InferenceEngine or TemporalInferenceEngine
+    """
+    metadata = paths.load_metadata()
+    scaler = BaseScaler.load(paths.scaler_path)
+    encoder = BaseEncoder.load(paths.encoder_path)
+    hmm = GaussianHMMWrapper.load(paths.hmm_path)
+
+    if isinstance(encoder, TemporalPCAEncoder):
+        ws = window_size or encoder.window_size
+        return TemporalInferenceEngine(
+            scaler=scaler,
+            encoder=encoder,
+            hmm=hmm,
+            metadata=metadata,
+            window_size=ws,
+            **kwargs,
+        )
+
+    return InferenceEngine(
+        scaler=scaler,
+        encoder=encoder,
+        hmm=hmm,
+        metadata=metadata,
+        **kwargs,
+    )

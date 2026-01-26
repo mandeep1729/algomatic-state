@@ -47,6 +47,9 @@ from src.hmm.hmm_model import (
 from src.hmm.inference import (
     InferenceEngine,
     MultiTimeframeInferenceEngine,
+    TemporalInferenceEngine,
+    RollingFeatureBuffer,
+    create_inference_engine,
 )
 from src.hmm.data_pipeline import (
     FeatureLoader,
@@ -55,6 +58,42 @@ from src.hmm.data_pipeline import (
     DataSplit,
     validate_no_leakage,
     create_feature_vectors,
+)
+from src.hmm.training import (
+    TrainingPipeline,
+    TrainingConfig,
+    TrainingResult,
+    CrossValidator,
+    HyperparameterTuner,
+    HyperparameterGrid,
+    train_model,
+)
+from src.hmm.storage import (
+    StateWriter,
+    StateReader,
+    StateRecord,
+    validate_state_dataframe,
+)
+from src.hmm.validation import (
+    ModelValidator,
+    ValidationReport,
+    DwellTimeAnalyzer,
+    TransitionAnalyzer,
+    PosteriorAnalyzer,
+    StateConditionedReturnAnalyzer,
+    OODMonitor,
+    WalkForwardBacktest,
+    generate_validation_report,
+)
+from src.hmm.monitoring import (
+    MetricsCollector,
+    MonitoringMetrics,
+    DriftDetector,
+    DriftAlert,
+    ShadowInference,
+    ModelRolloutManager,
+    RetrainingScheduler,
+    MonitoringDashboard,
 )
 
 __all__ = [
@@ -99,6 +138,9 @@ __all__ = [
     # Inference
     "InferenceEngine",
     "MultiTimeframeInferenceEngine",
+    "TemporalInferenceEngine",
+    "RollingFeatureBuffer",
+    "create_inference_engine",
     # Data Pipeline
     "FeatureLoader",
     "GapHandler",
@@ -106,4 +148,36 @@ __all__ = [
     "DataSplit",
     "validate_no_leakage",
     "create_feature_vectors",
+    # Training
+    "TrainingPipeline",
+    "TrainingConfig",
+    "TrainingResult",
+    "CrossValidator",
+    "HyperparameterTuner",
+    "HyperparameterGrid",
+    "train_model",
+    # Storage
+    "StateWriter",
+    "StateReader",
+    "StateRecord",
+    "validate_state_dataframe",
+    # Validation
+    "ModelValidator",
+    "ValidationReport",
+    "DwellTimeAnalyzer",
+    "TransitionAnalyzer",
+    "PosteriorAnalyzer",
+    "StateConditionedReturnAnalyzer",
+    "OODMonitor",
+    "WalkForwardBacktest",
+    "generate_validation_report",
+    # Monitoring
+    "MetricsCollector",
+    "MonitoringMetrics",
+    "DriftDetector",
+    "DriftAlert",
+    "ShadowInference",
+    "ModelRolloutManager",
+    "RetrainingScheduler",
+    "MonitoringDashboard",
 ]
