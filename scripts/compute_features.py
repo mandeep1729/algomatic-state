@@ -1,6 +1,17 @@
 #!/usr/bin/env python
-"""Compute technical indicators for all tickers and timeframes in the database."""
+"""Compute all features (engineered + TA indicators) for all tickers and timeframes.
 
+Features computed:
+- Engineered: r1, r5, r15, r60, clv, vol_z_60, rv_60, range_z_60, etc.
+- TA indicators: RSI, MACD, BB, ADX, stoch_k, etc.
+
+Usage:
+    python scripts/compute_features.py                    # Compute missing features
+    python scripts/compute_features.py --force            # Recompute all features
+    python scripts/compute_features.py --symbols AAPL     # Specific symbols only
+"""
+
+import argparse
 import logging
 import sys
 from pathlib import Path
@@ -20,43 +31,65 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def compute_all_features(version: str = "v1.0") -> dict:
-    """Compute technical indicators for all tickers and timeframes.
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Compute features for all tickers and timeframes",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--force", "-f",
+        action="store_true",
+        help="Force recompute all features (ignore existing)"
+    )
+    parser.add_argument(
+        "--symbols", "-s",
+        nargs="+",
+        help="Only process specific symbols (default: all)"
+    )
+    parser.add_argument(
+        "--timeframes", "-t",
+        nargs="+",
+        choices=VALID_TIMEFRAMES,
+        help="Only process specific timeframes (default: all)"
+    )
+    parser.add_argument(
+        "--version", "-v",
+        default="v2.0",
+        help="Feature version string (default: v2.0)"
+    )
+    return parser.parse_args()
+
+
+def compute_all_features(
+    version: str = "v2.0",
+    force: bool = False,
+    symbols: list[str] | None = None,
+    timeframes: list[str] | None = None,
+) -> dict:
+    """Compute all features (engineered + TA indicators) for all tickers and timeframes.
+
+    Uses FeaturePipeline which computes:
+    - Engineered features: r1, r5, r15, r60, clv, vol_z_60, rv_60, etc.
+    - TA indicators: RSI, MACD, BB, ADX, etc.
 
     Args:
         version: Feature version string for tracking
+        force: If True, recompute all features (ignore existing)
+        symbols: If provided, only process these symbols
+        timeframes: If provided, only process these timeframes
 
     Returns:
         Dictionary with computation statistics
     """
-    # Check for available indicator calculators (prefer TA-Lib, fallback to pandas-ta)
-    calculator = None
-    calculator_name = None
+    from src.features import FeaturePipeline
 
-    try:
-        from src.features import TALibIndicatorCalculator, TALIB_AVAILABLE
-        if TALIB_AVAILABLE:
-            logger.info("Initializing TA-Lib calculator...")
-            calculator = TALibIndicatorCalculator()
-            calculator_name = "TA-Lib"
-    except ImportError:
-        pass
-
-    if calculator is None:
-        try:
-            from src.features import PandasTAIndicatorCalculator, PANDAS_TA_AVAILABLE
-            if PANDAS_TA_AVAILABLE:
-                logger.info("TA-Lib not available, using pandas-ta calculator...")
-                calculator = PandasTAIndicatorCalculator()
-                calculator_name = "pandas-ta"
-        except ImportError:
-            pass
-
-    if calculator is None:
-        logger.error("No indicator calculator available. Install TA-Lib or pandas-ta.")
-        return {"error": "No indicator calculator available"}
-
-    logger.info(f"Using {calculator_name} for indicator computation")
+    # Use FeaturePipeline for full feature set (engineered + TA indicators)
+    pipeline = FeaturePipeline.default()
+    logger.info(f"Using FeaturePipeline with {len(pipeline.feature_names)} features")
+    logger.info(f"Max lookback: {pipeline.max_lookback} bars")
+    if force:
+        logger.info("Force mode: will recompute all features")
 
     db_manager = get_db_manager()
     stats = {
@@ -67,12 +100,24 @@ def compute_all_features(version: str = "v1.0") -> dict:
         "errors": [],
     }
 
+    # Determine which timeframes to process
+    target_timeframes = timeframes or VALID_TIMEFRAMES
+
     with db_manager.get_session() as session:
         repo = OHLCVRepository(session)
 
-        # Get all tickers
-        tickers = repo.list_tickers(active_only=True)
-        logger.info(f"Found {len(tickers)} tickers in database")
+        # Get tickers to process
+        all_tickers = repo.list_tickers(active_only=True)
+        if symbols:
+            symbols_upper = [s.upper() for s in symbols]
+            tickers = [t for t in all_tickers if t.symbol in symbols_upper]
+            if not tickers:
+                logger.error(f"No matching tickers found for: {symbols}")
+                return stats
+        else:
+            tickers = all_tickers
+
+        logger.info(f"Processing {len(tickers)} tickers")
 
         for ticker in tickers:
             symbol = ticker.symbol
@@ -80,7 +125,7 @@ def compute_all_features(version: str = "v1.0") -> dict:
             logger.info(f"Processing {symbol}...")
             stats["tickers_processed"] += 1
 
-            for timeframe in VALID_TIMEFRAMES:
+            for timeframe in target_timeframes:
                 try:
                     # Get OHLCV data
                     df = repo.get_bars(symbol, timeframe)
@@ -90,35 +135,43 @@ def compute_all_features(version: str = "v1.0") -> dict:
                         continue
 
                     # Check which bars already have features computed
-                    existing_timestamps = repo.get_existing_feature_timestamps(
-                        ticker_id=ticker.id,
-                        timeframe=timeframe,
-                    )
-
-                    # Normalize df index for comparison (ensure timezone-naive)
-                    df_timestamps = set(
-                        ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
-                        for ts in df.index
-                    )
-
-                    # Find bars that need features computed
-                    missing_timestamps = df_timestamps - existing_timestamps
-
-                    if not missing_timestamps:
-                        logger.info(
-                            f"  {timeframe}: All {len(df)} bars already have features, skipping"
+                    if force:
+                        # Force mode: recompute all
+                        missing_timestamps = set(
+                            ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                            for ts in df.index
                         )
-                        stats["timeframes_skipped"] += 1
-                        continue
+                        logger.info(f"  {timeframe}: {len(df)} bars (force recompute)")
+                    else:
+                        existing_timestamps = repo.get_existing_feature_timestamps(
+                            ticker_id=ticker.id,
+                            timeframe=timeframe,
+                        )
 
-                    logger.info(
-                        f"  {timeframe}: {len(df)} bars total, "
-                        f"{len(existing_timestamps)} have features, "
-                        f"{len(missing_timestamps)} need computation"
-                    )
+                        # Normalize df index for comparison (ensure timezone-naive)
+                        df_timestamps = set(
+                            ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                            for ts in df.index
+                        )
 
-                    # Compute indicators on full dataframe (needed for lookback periods)
-                    features_df = calculator.compute(df)
+                        # Find bars that need features computed
+                        missing_timestamps = df_timestamps - existing_timestamps
+
+                        if not missing_timestamps:
+                            logger.info(
+                                f"  {timeframe}: All {len(df)} bars already have features, skipping"
+                            )
+                            stats["timeframes_skipped"] += 1
+                            continue
+
+                        logger.info(
+                            f"  {timeframe}: {len(df)} bars total, "
+                            f"{len(existing_timestamps)} have features, "
+                            f"{len(missing_timestamps)} need computation"
+                        )
+
+                    # Compute all features on full dataframe (needed for lookback periods)
+                    features_df = pipeline.compute(df)
 
                     if features_df.empty:
                         logger.warning(f"  {timeframe}: No features computed")
@@ -165,9 +218,16 @@ def compute_all_features(version: str = "v1.0") -> dict:
 
 def main():
     """Main entry point."""
-    logger.info("Starting technical indicator computation for all tickers...")
+    args = parse_args()
 
-    stats = compute_all_features(version="v1.0")
+    logger.info("Starting feature computation...")
+
+    stats = compute_all_features(
+        version=args.version,
+        force=args.force,
+        symbols=args.symbols,
+        timeframes=args.timeframes,
+    )
 
     logger.info("\n" + "="*50)
     logger.info("COMPUTATION COMPLETE")
