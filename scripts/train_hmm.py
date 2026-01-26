@@ -178,6 +178,7 @@ def main():
     logger.info(f"Validation period: {val_start.date()} to {val_end.date()}")
 
     # Load feature spec
+    feature_spec = None
     try:
         feature_spec = load_feature_spec()
         feature_names = feature_spec.base_features
@@ -193,7 +194,7 @@ def main():
 
     # Get timeframe-specific config
     tf_config = None
-    if hasattr(feature_spec, 'timeframe_configs'):
+    if feature_spec is not None and hasattr(feature_spec, 'timeframe_configs'):
         tf_config = feature_spec.timeframe_configs.get(args.timeframe)
 
     # Determine n_states
