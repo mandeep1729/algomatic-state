@@ -1,6 +1,7 @@
 """FastAPI backend for regime state visualization UI."""
 
 import logging
+import logging.handlers
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -13,11 +14,30 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Configure logging to show application logs
+# Configure logging with file rotation
+LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE = LOG_DIR / "backend.log"
+
+log_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+# Console handler
+console_handler = logging.StreamHandler(sys.stderr)
+console_handler.setFormatter(log_format)
+
+# File handler with rotation (10MB max, 3 backup files)
+file_handler = logging.handlers.RotatingFileHandler(
+    LOG_FILE,
+    maxBytes=10 * 1024 * 1024,  # 10 MB
+    backupCount=3,
+    encoding="utf-8",
+)
+file_handler.setFormatter(log_format)
+
+# Configure root logger
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stderr)]
+    handlers=[console_handler, file_handler]
 )
 
 # Add parent directory to path for imports
