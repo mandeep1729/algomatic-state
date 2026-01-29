@@ -258,7 +258,22 @@ class ModelMetadata:
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
-        return {
+
+        def _convert_numpy(obj):
+            """Recursively convert numpy types to Python native types."""
+            if isinstance(obj, np.integer):
+                return int(obj)
+            elif isinstance(obj, np.floating):
+                return float(obj)
+            elif isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: _convert_numpy(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [_convert_numpy(v) for v in obj]
+            return obj
+
+        return _convert_numpy({
             "model_id": self.model_id,
             "timeframe": self.timeframe,
             "version": self.version,
@@ -276,7 +291,7 @@ class ModelMetadata:
             "ood_threshold": self.ood_threshold,
             "state_mapping": self.state_mapping,
             "metrics": self.metrics,
-        }
+        })
 
     @classmethod
     def from_dict(cls, data: dict) -> "ModelMetadata":
