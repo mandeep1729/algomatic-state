@@ -8,6 +8,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
+
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
