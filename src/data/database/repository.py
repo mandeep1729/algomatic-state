@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from src.data.database.models import (
     DataSyncLog,
     OHLCVBar,
-    OHLCVState,
     Ticker,
     VALID_SOURCES,
     VALID_TIMEFRAMES,
@@ -686,7 +685,7 @@ class OHLCVRepository:
         states: list[dict],
         model_id: str,
     ) -> int:
-        """Store HMM state assignments for bars.
+        """Store HMM state assignments in computed_features table.
 
         Args:
             states: List of dicts with keys: bar_id, state_id, state_prob, is_ood, log_likelihood
@@ -701,32 +700,28 @@ class OHLCVRepository:
 
         logger.info(f"Storing {len(states)} state assignments for model {model_id}")
 
-        # Add model_id to each record, convert numpy types to Python native
-        records = []
+        # Update computed_features rows with state information
+        updated_count = 0
         for state in states:
-            records.append({
-                "bar_id": int(state["bar_id"]),
+            bar_id = int(state["bar_id"])
+            state_id = int(state["state_id"])  # -1 indicates OOD
+            state_prob = float(state["state_prob"])
+            log_likelihood = float(state["log_likelihood"]) if state.get("log_likelihood") is not None else None
+
+            # Update the ComputedFeature row for this bar
+            result = self.session.query(ComputedFeature).filter(
+                ComputedFeature.bar_id == bar_id
+            ).update({
                 "model_id": model_id,
-                "state_id": int(state["state_id"]),  # -1 indicates OOD
-                "state_prob": float(state["state_prob"]),
-                "log_likelihood": float(state["log_likelihood"]) if state.get("log_likelihood") is not None else None,
-            })
+                "state_id": state_id,
+                "state_prob": state_prob,
+                "log_likelihood": log_likelihood,
+            }, synchronize_session=False)
 
-        # Upsert: update if bar_id + model_id exists
-        stmt = pg_insert(OHLCVState).values(records)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["bar_id", "model_id"],
-            set_={
-                "state_id": stmt.excluded.state_id,
-                "state_prob": stmt.excluded.state_prob,
-                "log_likelihood": stmt.excluded.log_likelihood,
-                "created_at": func.now(),
-            }
-        )
+            updated_count += result
 
-        result = self.session.execute(stmt)
-        logger.info(f"Upserted {result.rowcount} state records for model {model_id}")
-        return result.rowcount
+        logger.info(f"Updated {updated_count} feature records with state info for model {model_id}")
+        return updated_count
 
     def get_states(
         self,
@@ -736,7 +731,7 @@ class OHLCVRepository:
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
     ) -> pd.DataFrame:
-        """Retrieve state assignments as a DataFrame.
+        """Retrieve state assignments from computed_features as a DataFrame.
 
         Args:
             symbol: Stock symbol
@@ -749,26 +744,25 @@ class OHLCVRepository:
             DataFrame with timestamp index and state columns
         """
         query = self.session.query(
-            OHLCVBar.timestamp,
-            OHLCVState.state_id,
-            OHLCVState.state_prob,
-            OHLCVState.log_likelihood,
+            ComputedFeature.timestamp,
+            ComputedFeature.state_id,
+            ComputedFeature.state_prob,
+            ComputedFeature.log_likelihood,
         ).join(
-            OHLCVState, OHLCVBar.id == OHLCVState.bar_id
-        ).join(
-            Ticker, OHLCVBar.ticker_id == Ticker.id
+            Ticker, ComputedFeature.ticker_id == Ticker.id
         ).filter(
             Ticker.symbol == self._normalize_symbol(symbol),
-            OHLCVBar.timeframe == timeframe,
-            OHLCVState.model_id == model_id,
+            ComputedFeature.timeframe == timeframe,
+            ComputedFeature.model_id == model_id,
+            ComputedFeature.state_id.isnot(None),  # Only rows with state assigned
         )
 
         if start:
-            query = query.filter(OHLCVBar.timestamp >= start)
+            query = query.filter(ComputedFeature.timestamp >= start)
         if end:
-            query = query.filter(OHLCVBar.timestamp <= end)
+            query = query.filter(ComputedFeature.timestamp <= end)
 
-        query = query.order_by(OHLCVBar.timestamp)
+        query = query.order_by(ComputedFeature.timestamp)
         results = query.all()
 
         if not results:
@@ -789,7 +783,7 @@ class OHLCVRepository:
         timeframe: str,
         model_id: str,
     ) -> dict[int, int]:
-        """Get count of bars per state.
+        """Get count of bars per state from computed_features.
 
         Args:
             symbol: Stock symbol
@@ -800,17 +794,16 @@ class OHLCVRepository:
             Dictionary mapping state_id -> count
         """
         query = self.session.query(
-            OHLCVState.state_id,
-            func.count(OHLCVState.id),
+            ComputedFeature.state_id,
+            func.count(ComputedFeature.id),
         ).join(
-            OHLCVBar, OHLCVBar.id == OHLCVState.bar_id
-        ).join(
-            Ticker, OHLCVBar.ticker_id == Ticker.id
+            Ticker, ComputedFeature.ticker_id == Ticker.id
         ).filter(
             Ticker.symbol == self._normalize_symbol(symbol),
-            OHLCVBar.timeframe == timeframe,
-            OHLCVState.model_id == model_id,
-        ).group_by(OHLCVState.state_id)
+            ComputedFeature.timeframe == timeframe,
+            ComputedFeature.model_id == model_id,
+            ComputedFeature.state_id.isnot(None),
+        ).group_by(ComputedFeature.state_id)
 
         results = query.all()
         return {state_id: count for state_id, count in results}
@@ -852,7 +845,7 @@ class OHLCVRepository:
         timeframe: str,
         model_id: str,
     ) -> int:
-        """Delete all state assignments for a symbol/timeframe/model.
+        """Clear state assignments for a symbol/timeframe/model in computed_features.
 
         Args:
             symbol: Stock symbol
@@ -860,21 +853,23 @@ class OHLCVRepository:
             model_id: Model identifier
 
         Returns:
-            Number of rows deleted
+            Number of rows updated (state cleared)
         """
         ticker = self.get_ticker(symbol)
         if ticker is None:
             return 0
 
-        # Get bar IDs for this ticker/timeframe
-        bar_ids_subquery = self.session.query(OHLCVBar.id).filter(
-            OHLCVBar.ticker_id == ticker.id,
-            OHLCVBar.timeframe == timeframe,
-        ).subquery()
+        # Clear state columns for this ticker/timeframe/model
+        count = self.session.query(ComputedFeature).filter(
+            ComputedFeature.ticker_id == ticker.id,
+            ComputedFeature.timeframe == timeframe,
+            ComputedFeature.model_id == model_id,
+        ).update({
+            "model_id": None,
+            "state_id": None,
+            "state_prob": None,
+            "log_likelihood": None,
+        }, synchronize_session=False)
 
-        count = self.session.query(OHLCVState).filter(
-            OHLCVState.bar_id.in_(select(bar_ids_subquery)),
-            OHLCVState.model_id == model_id,
-        ).delete(synchronize_session=False)
-
+        logger.info(f"Cleared {count} state assignments for {symbol}/{timeframe} model={model_id}")
         return count

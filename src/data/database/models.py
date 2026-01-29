@@ -107,12 +107,6 @@ class OHLCVBar(Base):
         back_populates="bar",
         cascade="all, delete-orphan",
     )
-    state: Mapped[Optional["OHLCVState"]] = relationship(
-        "OHLCVState",
-        uselist=False,
-        back_populates="bar",
-        cascade="all, delete-orphan",
-    )
 
     # Table constraints
     __table_args__ = (
@@ -168,7 +162,13 @@ class ComputedFeature(Base):
     # Feature storage: {"rsi_14": 45.3, "sma_200": 150.2, ...}
     features: Mapped[dict] = mapped_column(JSONB, nullable=False)
     feature_version: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    
+
+    # HMM state columns (consolidated from ohlcv_states table)
+    model_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    state_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # -1 indicates OOD
+    state_prob: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    log_likelihood: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.utcnow,
@@ -183,6 +183,10 @@ class ComputedFeature(Base):
     __table_args__ = (
         # Ensure we don't duplicate features for same bar (covered by unique bar_id, but good to be explicit about logical unique)
         Index("ix_features_ticker_timeframe_ts", "ticker_id", "timeframe", "timestamp"),
+        # Index for state queries
+        Index("ix_features_model_state", "model_id", "state_id"),
+        # State probability must be between 0 and 1 (when set)
+        CheckConstraint("state_prob IS NULL OR (state_prob >= 0 AND state_prob <= 1)", name="ck_state_prob_range"),
     )
 
     def __repr__(self) -> str:
@@ -236,50 +240,6 @@ class DataSyncLog(Base):
         return (
             f"<DataSyncLog(ticker_id={self.ticker_id}, timeframe='{self.timeframe}', "
             f"last_synced={self.last_synced_timestamp}, status='{self.status}')>"
-        )
-
-
-class OHLCVState(Base):
-    """HMM state assignments for OHLCV bars.
-
-    Stores the inferred regime state for each bar from HMM inference.
-    Supports multiple models having states for the same bar.
-    """
-
-    __tablename__ = "ohlcv_states"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    bar_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("ohlcv_bars.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    model_id: Mapped[str] = mapped_column(String(50), nullable=False)
-    state_id: Mapped[int] = mapped_column(Integer, nullable=False)  # -1 indicates OOD
-    state_prob: Mapped[float] = mapped_column(Float, nullable=False)
-    log_likelihood: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=datetime.utcnow,
-        nullable=False,
-    )
-
-    # Relationships
-    bar: Mapped["OHLCVBar"] = relationship("OHLCVBar", back_populates="state")
-
-    # Table constraints
-    __table_args__ = (
-        UniqueConstraint("bar_id", "model_id", name="uq_ohlcv_states_bar_model"),
-        Index("ix_ohlcv_states_bar_id", "bar_id"),
-        Index("ix_ohlcv_states_model_id", "model_id"),
-        Index("ix_ohlcv_states_state_id", "state_id"),
-        CheckConstraint("state_prob >= 0 AND state_prob <= 1", name="ck_state_prob_range"),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<OHLCVState(bar_id={self.bar_id}, model_id='{self.model_id}', "
-            f"state_id={self.state_id}, prob={self.state_prob:.3f})>"
         )
 
 
