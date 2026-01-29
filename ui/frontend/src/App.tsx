@@ -8,7 +8,9 @@ import {
   fetchFeatures,
   fetchStatistics,
   fetchRegimes,
+  analyzeSymbol,
 } from './api';
+import type { AnalyzeResponse } from './api';
 import type { TickerSummary } from './api';
 import type {
   Ticker,
@@ -43,6 +45,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'charts' | 'features' | 'stats'>('charts');
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResponse | null>(null);
 
   // Chart settings
   const [chartSettings, setChartSettings] = useState<ChartSettings>({
@@ -298,6 +302,35 @@ function App() {
     }));
   };
 
+  // Handle Analyze button click
+  const handleAnalyze = async () => {
+    if (!selectedTicker) return;
+
+    setAnalyzing(true);
+    setAnalyzeResult(null);
+    setError(null);
+
+    try {
+      const result = await analyzeSymbol(selectedTicker, timeframe);
+      setAnalyzeResult(result);
+
+      // Reload data to show updated states
+      if (tickerSummary) {
+        const tfData = tickerSummary.timeframes[timeframe];
+        if (tfData && tfData.earliest && tfData.latest) {
+          const start = tfData.earliest.split('T')[0];
+          const end = tfData.latest.split('T')[0];
+          await loadDataWithParams(selectedTicker, timeframe, start, end);
+        }
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Analysis failed';
+      setError(errorMessage);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   // Format timestamp for display
   const formatTimestamp = (ts: string) => {
     const date = new Date(ts);
@@ -353,6 +386,38 @@ function App() {
               </select>
             </div>
 
+            {/* Analyze Button */}
+            <button
+              onClick={handleAnalyze}
+              disabled={!selectedTicker || loading || analyzing}
+              style={{
+                width: '100%',
+                padding: '0.75rem 1rem',
+                marginTop: '1rem',
+                backgroundColor: analyzing ? '#30363d' : '#238636',
+                color: '#fff',
+                border: 'none',
+                borderRadius: '6px',
+                fontSize: '0.875rem',
+                fontWeight: 500,
+                cursor: !selectedTicker || loading || analyzing ? 'not-allowed' : 'pointer',
+                opacity: !selectedTicker || loading || analyzing ? 0.6 : 1,
+                transition: 'background-color 0.2s',
+              }}
+              onMouseOver={(e) => {
+                if (!analyzing && selectedTicker && !loading) {
+                  e.currentTarget.style.backgroundColor = '#2ea043';
+                }
+              }}
+              onMouseOut={(e) => {
+                if (!analyzing) {
+                  e.currentTarget.style.backgroundColor = '#238636';
+                }
+              }}
+            >
+              {analyzing ? 'Analyzing...' : 'Analyze'}
+            </button>
+
             {loading && (
               <div style={{ fontSize: '0.75rem', color: '#58a6ff', marginTop: '0.5rem' }}>
                 {tickerSummary && Object.keys(tickerSummary.timeframes).length === 0
@@ -363,6 +428,27 @@ function App() {
             {error && (
               <div style={{ fontSize: '0.75rem', color: '#f85149', marginTop: '0.5rem' }}>
                 {error}
+              </div>
+            )}
+
+            {/* Analyze Result */}
+            {analyzeResult && (
+              <div style={{
+                marginTop: '0.75rem',
+                padding: '0.75rem',
+                backgroundColor: '#0d1117',
+                borderRadius: '6px',
+                border: '1px solid #238636',
+                fontSize: '0.75rem',
+              }}>
+                <div style={{ color: '#3fb950', fontWeight: 500, marginBottom: '0.5rem' }}>
+                  Analysis Complete
+                </div>
+                <div style={{ color: '#8b949e' }}>
+                  <div>Features: {analyzeResult.features_computed.toLocaleString()}</div>
+                  <div>Model: {analyzeResult.model_trained ? 'Trained' : 'Using existing'}</div>
+                  <div>States: {analyzeResult.states_computed.toLocaleString()} / {analyzeResult.total_bars.toLocaleString()}</div>
+                </div>
               </div>
             )}
           </div>

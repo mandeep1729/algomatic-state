@@ -3,7 +3,7 @@
 import logging
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -841,6 +841,240 @@ async def import_data(
         }
     except Exception as e:
         logger.exception(f"Error importing data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class AnalyzeResponse(BaseModel):
+    """Response for analyze endpoint."""
+    symbol: str
+    timeframe: str
+    features_computed: int
+    model_trained: bool
+    model_id: Optional[str]
+    states_computed: int
+    total_bars: int
+    message: str
+
+
+@app.post("/api/analyze/{symbol}")
+async def analyze_symbol(
+    symbol: str,
+    timeframe: str = Query("1Min", description="Timeframe to analyze"),
+):
+    """Analyze a symbol: compute features, train model if needed, compute states.
+
+    This endpoint orchestrates:
+    1. Compute features for bars that don't have them
+    2. Train HMM model if none exists or last training was >30 days ago
+    3. Compute states for bars without state entries
+    """
+    from src.hmm.training import TrainingPipeline, TrainingConfig
+    from src.hmm.data_pipeline import GapHandler
+    from src.hmm.config import DEFAULT_FEATURE_SET
+
+    if timeframe not in VALID_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
+        )
+
+    symbol = symbol.upper()
+    models_root = Path(__file__).parent.parent.parent / "models"
+
+    result = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "features_computed": 0,
+        "model_trained": False,
+        "model_id": None,
+        "states_computed": 0,
+        "total_bars": 0,
+        "message": "",
+    }
+    messages = []
+
+    try:
+        db_manager = get_db_manager()
+
+        # Step 1: Compute features for bars that don't have them
+        logger.info(f"[Analyze] Step 1: Computing features for {symbol}/{timeframe}")
+        features_result = await compute_features(symbol, force=False)
+        result["features_computed"] = features_result.features_stored
+        if features_result.features_stored > 0:
+            messages.append(f"Computed {features_result.features_stored} features")
+        else:
+            messages.append("Features already computed")
+
+        # Step 2: Check if model needs training
+        logger.info(f"[Analyze] Step 2: Checking model status for {timeframe}")
+        available_models = list_models(timeframe, models_root)
+        need_training = True
+        current_model_id = None
+
+        if available_models:
+            current_model_id = available_models[-1]
+            paths = get_model_path(timeframe, current_model_id, models_root)
+            if paths.exists():
+                metadata = paths.load_metadata()
+                # Check if model is less than 30 days old
+                if metadata.created_at:
+                    model_age = datetime.now(timezone.utc) - metadata.created_at
+                    if model_age.days < 30:
+                        need_training = False
+                        result["model_id"] = current_model_id
+                        messages.append(f"Model {current_model_id} is current ({model_age.days} days old)")
+
+        if need_training:
+            logger.info(f"[Analyze] Training new model for {timeframe}")
+            with db_manager.get_session() as session:
+                repo = OHLCVRepository(session)
+                ticker = repo.get_ticker(symbol)
+                if not ticker:
+                    raise HTTPException(status_code=404, detail=f"Ticker {symbol} not found")
+
+                # Get features for training
+                features_df = repo.get_features(symbol, timeframe)
+                if features_df.empty or len(features_df) < 200:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Insufficient data for training. Need at least 200 bars, have {len(features_df)}"
+                    )
+
+                # Determine feature names
+                available_features = set(features_df.columns)
+                feature_names = [f for f in DEFAULT_FEATURE_SET if f in available_features]
+                if len(feature_names) < 5:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Insufficient features. Need at least 5 features."
+                    )
+
+                # Split data: 80% train, 20% validation
+                split_idx = int(len(features_df) * 0.8)
+                train_df = features_df.iloc[:split_idx]
+                val_df = features_df.iloc[split_idx:]
+
+                # Handle gaps and clean data
+                gap_handler = GapHandler(timeframe)
+                train_df = gap_handler.handle_gaps(train_df)
+                val_df = gap_handler.handle_gaps(val_df)
+
+                train_df_clean = train_df[feature_names].dropna()
+                val_df_clean = val_df[feature_names].dropna()
+
+                if len(train_df_clean) < 100 or len(val_df_clean) < 20:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Insufficient clean data after NaN removal"
+                    )
+
+                # Create training config
+                config = TrainingConfig(
+                    timeframe=timeframe,
+                    symbols=[symbol],
+                    train_start=train_df_clean.index.min(),
+                    train_end=train_df_clean.index.max(),
+                    val_start=val_df_clean.index.min(),
+                    val_end=val_df_clean.index.max(),
+                    feature_names=feature_names,
+                    scaler_type="robust",
+                    encoder_type="pca",
+                    latent_dim=None,  # Auto-select
+                    n_states=None,    # Auto-select
+                    covariance_type="diag",
+                    random_seed=42,
+                )
+
+                # Train model
+                pipeline = TrainingPipeline(models_root=models_root, random_seed=42)
+                train_result = pipeline.train(config, train_df_clean, val_df_clean)
+
+                result["model_trained"] = True
+                result["model_id"] = train_result.model_id
+                current_model_id = train_result.model_id
+                messages.append(f"Trained new model {train_result.model_id} with {train_result.hmm.n_states} states")
+
+        # Step 3: Compute states for bars without state entries
+        logger.info(f"[Analyze] Step 3: Computing states for {symbol}/{timeframe}")
+        if current_model_id:
+            with db_manager.get_session() as session:
+                repo = OHLCVRepository(session)
+                ticker = repo.get_ticker(symbol)
+
+                # Get all bars
+                bars_df = repo.get_bars(symbol, timeframe)
+                result["total_bars"] = len(bars_df)
+
+                if bars_df.empty:
+                    messages.append("No bars to process")
+                else:
+                    # Get bars that already have states
+                    existing_states = repo.get_states(symbol, timeframe, current_model_id)
+                    existing_timestamps = set(existing_states.index) if not existing_states.empty else set()
+
+                    # Find bars without states
+                    all_timestamps = set(bars_df.index)
+                    missing_timestamps = all_timestamps - existing_timestamps
+
+                    if missing_timestamps:
+                        # Get features for missing bars
+                        features_df = repo.get_features(symbol, timeframe)
+
+                        # Filter to missing timestamps
+                        features_to_process = features_df[features_df.index.isin(missing_timestamps)]
+
+                        if not features_to_process.empty:
+                            # Load model
+                            paths = get_model_path(timeframe, current_model_id, models_root)
+                            engine = InferenceEngine.from_artifacts(paths)
+                            metadata = paths.load_metadata()
+                            model_features = metadata.feature_names
+
+                            # Get bar_id mapping
+                            bar_id_map = repo.get_bar_ids_for_timestamps(
+                                ticker.id, timeframe, list(features_to_process.index)
+                            )
+
+                            # Run inference
+                            state_records = []
+                            engine.reset()
+
+                            for ts, row in features_to_process.iterrows():
+                                features = {name: row.get(name, np.nan) for name in model_features}
+                                output = engine.process(features, symbol, ts)
+
+                                bar_id = bar_id_map.get(ts)
+                                if bar_id:
+                                    state_records.append({
+                                        "bar_id": bar_id,
+                                        "state_id": output.state_id,
+                                        "state_prob": float(output.state_prob),
+                                        "log_likelihood": float(output.log_likelihood) if not np.isinf(output.log_likelihood) else None,
+                                    })
+
+                            # Store states
+                            if state_records:
+                                stored = repo.store_states(state_records, current_model_id)
+                                session.commit()
+                                result["states_computed"] = stored
+                                messages.append(f"Computed {stored} states")
+                            else:
+                                messages.append("No new states to compute")
+                        else:
+                            messages.append("No features available for missing bars")
+                    else:
+                        messages.append("All bars already have states")
+        else:
+            messages.append("No model available for state computation")
+
+        result["message"] = "; ".join(messages)
+        logger.info(f"[Analyze] Complete: {result['message']}")
+        return AnalyzeResponse(**result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error analyzing {symbol}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

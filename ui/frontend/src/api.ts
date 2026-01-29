@@ -112,3 +112,27 @@ export async function fetchRegimes(
   );
   return response.data;
 }
+
+export interface AnalyzeResponse {
+  symbol: string;
+  timeframe: string;
+  features_computed: number;
+  model_trained: boolean;
+  model_id: string | null;
+  states_computed: number;
+  total_bars: number;
+  message: string;
+}
+
+export async function analyzeSymbol(
+  symbol: string,
+  timeframe: string = '1Min'
+): Promise<AnalyzeResponse> {
+  const params = new URLSearchParams();
+  params.append('timeframe', timeframe);
+
+  const response = await axios.post<AnalyzeResponse>(
+    `${API_BASE}/analyze/${symbol}?${params.toString()}`
+  );
+  return response.data;
+}
