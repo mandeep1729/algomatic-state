@@ -245,9 +245,9 @@ async def get_ohlcv_data(
         loader = get_database_loader()
         logger.info(f"Loading OHLCV for {symbol}, timeframe={timeframe}, alpaca_loader={loader.alpaca_loader is not None}")
 
-        # Default to last 30 days if no dates specified
+        # Default to last 3 years if no dates specified
         end = datetime.fromisoformat(end_date) if end_date else datetime.now()
-        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=30)
+        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=3*365)
         logger.info(f"Date range: {start} to {end}")
 
         # This will:
@@ -678,9 +678,9 @@ async def trigger_sync(
                 detail="Alpaca credentials not configured. Cannot sync data."
             )
 
-        # Parse dates
+        # Parse dates (default to last 3 years)
         end = datetime.fromisoformat(end_date) if end_date else datetime.now()
-        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=30)
+        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=3*365)
 
         # Trigger sync by loading data (auto_fetch is enabled)
         df = db_loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)
