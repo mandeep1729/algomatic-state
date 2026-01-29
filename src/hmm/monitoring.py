@@ -433,39 +433,42 @@ class ModelRolloutManager:
         self._current_model: Optional[str] = None
         self._shadow: Optional[ShadowInference] = None
 
-    def get_current_model(self, timeframe: str) -> Optional[str]:
+    def get_current_model(self, symbol: str, timeframe: str) -> Optional[str]:
         """Get current production model ID.
 
         Args:
+            symbol: Ticker symbol
             timeframe: Model timeframe
 
         Returns:
             Current model ID or None
         """
-        models = list_models(timeframe, self.models_root)
+        models = list_models(symbol, timeframe, self.models_root)
         return models[-1] if models else None
 
     def start_shadow(
         self,
+        symbol: str,
         timeframe: str,
         candidate_model_id: str,
     ) -> bool:
         """Start shadow inference with candidate model.
 
         Args:
+            symbol: Ticker symbol
             timeframe: Model timeframe
             candidate_model_id: Candidate model ID
 
         Returns:
             True if shadow started successfully
         """
-        current_id = self.get_current_model(timeframe)
+        current_id = self.get_current_model(symbol, timeframe)
         if not current_id:
             return False
 
         try:
-            prod_paths = get_model_path(timeframe, current_id, self.models_root)
-            cand_paths = get_model_path(timeframe, candidate_model_id, self.models_root)
+            prod_paths = get_model_path(symbol, timeframe, current_id, self.models_root)
+            cand_paths = get_model_path(symbol, timeframe, candidate_model_id, self.models_root)
 
             prod_engine = create_inference_engine(prod_paths)
             cand_engine = create_inference_engine(cand_paths)

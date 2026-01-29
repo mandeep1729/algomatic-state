@@ -26,16 +26,18 @@ class ArtifactPaths:
 
     Directory structure:
         models/
-          timeframe=1Min/
-            model_id=state_v003/
-              scaler.pkl
-              encoder.pkl (or encoder.onnx)
-              hmm.pkl
-              feature_spec.yaml
-              metadata.json
+          ticker=AAPL/
+            timeframe=1Min/
+              model_id=state_v003/
+                scaler.pkl
+                encoder.pkl (or encoder.onnx)
+                hmm.pkl
+                feature_spec.yaml
+                metadata.json
     """
 
     root: Path
+    symbol: str
     timeframe: str
     model_id: str
 
@@ -49,7 +51,7 @@ class ArtifactPaths:
     @property
     def model_dir(self) -> Path:
         """Return model directory path."""
-        return self.root / f"timeframe={self.timeframe}" / f"model_id={self.model_id}"
+        return self.root / f"ticker={self.symbol}" / f"timeframe={self.timeframe}" / f"model_id={self.model_id}"
 
     @property
     def scaler_path(self) -> Path:
@@ -197,6 +199,7 @@ class StatesPaths:
 
 
 def get_model_path(
+    symbol: str,
     timeframe: str,
     model_id: str,
     root: Optional[Path] = None,
@@ -204,6 +207,7 @@ def get_model_path(
     """Get artifact paths for a model.
 
     Args:
+        symbol: Ticker symbol (e.g., 'AAPL')
         timeframe: Model timeframe
         model_id: Model version identifier
         root: Optional root directory (defaults to 'models/')
@@ -212,7 +216,7 @@ def get_model_path(
         ArtifactPaths instance
     """
     root = root or DEFAULT_MODELS_ROOT
-    return ArtifactPaths(root=root, timeframe=timeframe, model_id=model_id)
+    return ArtifactPaths(root=root, symbol=symbol, timeframe=timeframe, model_id=model_id)
 
 
 def get_states_path(
@@ -248,12 +252,14 @@ def generate_model_id(prefix: str = "state", version: int = 1) -> str:
 
 
 def list_models(
+    symbol: str,
     timeframe: str,
     root: Optional[Path] = None,
 ) -> list[str]:
-    """List all model IDs for a timeframe.
+    """List all model IDs for a symbol and timeframe.
 
     Args:
+        symbol: Ticker symbol (e.g., 'AAPL')
         timeframe: Timeframe to list models for
         root: Optional root directory
 
@@ -261,7 +267,7 @@ def list_models(
         List of model IDs, sorted by version
     """
     root = root or DEFAULT_MODELS_ROOT
-    tf_dir = root / f"timeframe={timeframe}"
+    tf_dir = root / f"ticker={symbol}" / f"timeframe={timeframe}"
 
     if not tf_dir.exists():
         return []
@@ -276,20 +282,22 @@ def list_models(
 
 
 def get_latest_model(
+    symbol: str,
     timeframe: str,
     root: Optional[Path] = None,
 ) -> Optional[ArtifactPaths]:
     """Get paths for the latest model version.
 
     Args:
+        symbol: Ticker symbol (e.g., 'AAPL')
         timeframe: Timeframe to get latest model for
         root: Optional root directory
 
     Returns:
         ArtifactPaths for latest model, or None if no models exist
     """
-    model_ids = list_models(timeframe, root)
+    model_ids = list_models(symbol, timeframe, root)
     if not model_ids:
         return None
 
-    return get_model_path(timeframe, model_ids[-1], root)
+    return get_model_path(symbol, timeframe, model_ids[-1], root)

@@ -26,21 +26,23 @@ class TestArtifactPaths:
         """Test basic path generation."""
         paths = ArtifactPaths(
             root=Path("models"),
+            symbol="AAPL",
             timeframe="1Min",
             model_id="state_v001",
         )
 
-        assert paths.model_dir == Path("models/timeframe=1Min/model_id=state_v001")
-        assert paths.scaler_path == Path("models/timeframe=1Min/model_id=state_v001/scaler.pkl")
-        assert paths.encoder_path == Path("models/timeframe=1Min/model_id=state_v001/encoder.pkl")
-        assert paths.hmm_path == Path("models/timeframe=1Min/model_id=state_v001/hmm.pkl")
-        assert paths.metadata_path == Path("models/timeframe=1Min/model_id=state_v001/metadata.json")
+        assert paths.model_dir == Path("models/ticker=AAPL/timeframe=1Min/model_id=state_v001")
+        assert paths.scaler_path == Path("models/ticker=AAPL/timeframe=1Min/model_id=state_v001/scaler.pkl")
+        assert paths.encoder_path == Path("models/ticker=AAPL/timeframe=1Min/model_id=state_v001/encoder.pkl")
+        assert paths.hmm_path == Path("models/ticker=AAPL/timeframe=1Min/model_id=state_v001/hmm.pkl")
+        assert paths.metadata_path == Path("models/ticker=AAPL/timeframe=1Min/model_id=state_v001/metadata.json")
 
     def test_invalid_timeframe(self):
         """Test that invalid timeframe raises error."""
         with pytest.raises(ValueError, match="Invalid timeframe"):
             ArtifactPaths(
                 root=Path("models"),
+                symbol="AAPL",
                 timeframe="2Min",
                 model_id="state_v001",
             )
@@ -50,6 +52,7 @@ class TestArtifactPaths:
         with tempfile.TemporaryDirectory() as tmpdir:
             paths = ArtifactPaths(
                 root=Path(tmpdir),
+                symbol="AAPL",
                 timeframe="1Min",
                 model_id="state_v001",
             )
@@ -62,6 +65,7 @@ class TestArtifactPaths:
         with tempfile.TemporaryDirectory() as tmpdir:
             paths = ArtifactPaths(
                 root=Path(tmpdir),
+                symbol="AAPL",
                 timeframe="1Min",
                 model_id="state_v001",
             )
@@ -72,6 +76,7 @@ class TestArtifactPaths:
         with tempfile.TemporaryDirectory() as tmpdir:
             paths = ArtifactPaths(
                 root=Path(tmpdir),
+                symbol="AAPL",
                 timeframe="1Min",
                 model_id="state_v001",
             )
@@ -176,17 +181,17 @@ class TestListModels:
     def test_empty_list(self):
         """Test listing when no models exist."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            models = list_models("1Min", root=Path(tmpdir))
+            models = list_models("AAPL", "1Min", root=Path(tmpdir))
             assert models == []
 
     def test_list_models(self):
         """Test listing existing models."""
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            (root / "timeframe=1Min" / "model_id=state_v001").mkdir(parents=True)
-            (root / "timeframe=1Min" / "model_id=state_v002").mkdir(parents=True)
+            (root / "ticker=AAPL" / "timeframe=1Min" / "model_id=state_v001").mkdir(parents=True)
+            (root / "ticker=AAPL" / "timeframe=1Min" / "model_id=state_v002").mkdir(parents=True)
 
-            models = list_models("1Min", root=root)
+            models = list_models("AAPL", "1Min", root=root)
 
             assert models == ["state_v001", "state_v002"]
 
@@ -197,18 +202,18 @@ class TestGetLatestModel:
     def test_no_models(self):
         """Test returns None when no models."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = get_latest_model("1Min", root=Path(tmpdir))
+            result = get_latest_model("AAPL", "1Min", root=Path(tmpdir))
             assert result is None
 
     def test_returns_latest(self):
         """Test returns latest version."""
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            (root / "timeframe=1Min" / "model_id=state_v001").mkdir(parents=True)
-            (root / "timeframe=1Min" / "model_id=state_v003").mkdir(parents=True)
-            (root / "timeframe=1Min" / "model_id=state_v002").mkdir(parents=True)
+            (root / "ticker=AAPL" / "timeframe=1Min" / "model_id=state_v001").mkdir(parents=True)
+            (root / "ticker=AAPL" / "timeframe=1Min" / "model_id=state_v003").mkdir(parents=True)
+            (root / "ticker=AAPL" / "timeframe=1Min" / "model_id=state_v002").mkdir(parents=True)
 
-            paths = get_latest_model("1Min", root=root)
+            paths = get_latest_model("AAPL", "1Min", root=root)
 
             assert paths is not None
             assert paths.model_id == "state_v003"
@@ -219,16 +224,18 @@ class TestGetModelPath:
 
     def test_basic_usage(self):
         """Test basic path retrieval."""
-        paths = get_model_path("1Min", "state_v001")
+        paths = get_model_path("AAPL", "1Min", "state_v001")
 
+        assert paths.symbol == "AAPL"
         assert paths.timeframe == "1Min"
         assert paths.model_id == "state_v001"
 
     def test_custom_root(self):
         """Test custom root directory."""
-        paths = get_model_path("1Hour", "state_v002", root=Path("/custom"))
+        paths = get_model_path("MSFT", "1Hour", "state_v002", root=Path("/custom"))
 
         assert paths.root == Path("/custom")
+        assert paths.symbol == "MSFT"
 
 
 class TestGetStatesPath:

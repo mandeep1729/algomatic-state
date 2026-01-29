@@ -3,10 +3,10 @@
 
 Usage:
     # Print state analysis for a model
-    python scripts/analyze_hmm_states.py --model-id state_v001 --timeframe 1Min
+    python scripts/analyze_hmm_states.py --symbol AAPL --model-id state_v001 --timeframe 1Min
 
     # Save labels to metadata.json
-    python scripts/analyze_hmm_states.py --model-id state_v001 --timeframe 1Min --save
+    python scripts/analyze_hmm_states.py --symbol AAPL --model-id state_v001 --timeframe 1Min --save
 
     # List available models
     python scripts/analyze_hmm_states.py --list-models
@@ -50,16 +50,21 @@ Examples:
     python scripts/analyze_hmm_states.py --list-models
 
     # Print state analysis
-    python scripts/analyze_hmm_states.py --model-id state_v001 --timeframe 1Min
+    python scripts/analyze_hmm_states.py --symbol AAPL --model-id state_v001 --timeframe 1Min
 
     # Save labels to model metadata
-    python scripts/analyze_hmm_states.py --model-id state_v001 --timeframe 1Min --save
+    python scripts/analyze_hmm_states.py --symbol AAPL --model-id state_v001 --timeframe 1Min --save
 
     # Show detailed statistics for each state
-    python scripts/analyze_hmm_states.py --model-id state_v001 --verbose
+    python scripts/analyze_hmm_states.py --symbol AAPL --model-id state_v001 --verbose
         """
     )
 
+    parser.add_argument(
+        "--symbol", "-s",
+        default=None,
+        help="Ticker symbol (e.g., AAPL)"
+    )
     parser.add_argument(
         "--model-id", "-m",
         default=None,
@@ -203,24 +208,34 @@ def main():
     if args.list_models:
         print("\nAvailable models:")
         print("-" * 50)
-        for tf in ["1Min", "5Min", "15Min", "1Hour", "1Day"]:
-            model_ids = list_models(tf, models_root)
-            if model_ids:
-                print(f"\n{tf}:")
-                for model_id in model_ids:
-                    paths = get_model_path(tf, model_id, models_root)
-                    status = "OK" if paths.exists() else "incomplete"
-                    print(f"  - {model_id} [{status}]")
+        # List all ticker directories
+        if models_root.exists():
+            for ticker_dir in sorted(models_root.iterdir()):
+                if ticker_dir.is_dir() and ticker_dir.name.startswith("ticker="):
+                    symbol = ticker_dir.name.replace("ticker=", "")
+                    print(f"\n{symbol}:")
+                    for tf in ["1Min", "5Min", "15Min", "1Hour", "1Day"]:
+                        model_ids = list_models(symbol, tf, models_root)
+                        if model_ids:
+                            print(f"  {tf}:")
+                            for model_id in model_ids:
+                                paths = get_model_path(symbol, tf, model_id, models_root)
+                                status = "OK" if paths.exists() else "incomplete"
+                                print(f"    - {model_id} [{status}]")
         print()
         return
 
-    # Validate model-id is provided
+    # Validate symbol and model-id are provided
+    if not args.symbol:
+        logger.error("--symbol is required. Use --list-models to see available models.")
+        sys.exit(1)
+
     if not args.model_id:
         logger.error("--model-id is required. Use --list-models to see available models.")
         sys.exit(1)
 
     # Get model paths
-    paths = get_model_path(args.timeframe, args.model_id, models_root)
+    paths = get_model_path(args.symbol, args.timeframe, args.model_id, models_root)
 
     if not paths.exists():
         logger.error(f"Model not found: {paths.model_dir}")

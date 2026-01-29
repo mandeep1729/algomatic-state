@@ -209,7 +209,8 @@ class TrainingPipeline:
         metrics = self._compute_metrics(hmm, Z_train, Z_val, encoder)
 
         model_id = generate_model_id(version=model_version or 1)
-        paths = get_model_path(config.timeframe, model_id, self.models_root)
+        # Use first symbol for path (models are trained per-symbol)
+        paths = get_model_path(config.symbols[0], config.timeframe, model_id, self.models_root)
 
         metadata = ModelMetadata(
             model_id=model_id,

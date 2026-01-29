@@ -335,22 +335,22 @@ async def get_regimes(
         models_root = Path(__file__).parent.parent.parent / "models"
 
         if model_id is None:
-            # Get latest model
-            available_models = list_models(timeframe, models_root)
+            # Get latest model for this symbol
+            available_models = list_models(symbol.upper(), timeframe, models_root)
             if not available_models:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"No trained models found for timeframe {timeframe}"
+                    detail=f"No trained models found for {symbol.upper()} timeframe {timeframe}"
                 )
             model_id = available_models[-1]
 
         # Get model paths
-        paths = get_model_path(timeframe, model_id, models_root)
+        paths = get_model_path(symbol.upper(), timeframe, model_id, models_root)
 
         if not paths.exists():
             raise HTTPException(
                 status_code=404,
-                detail=f"Model {model_id} not found for timeframe {timeframe}"
+                detail=f"Model {model_id} not found for {symbol.upper()} timeframe {timeframe}"
             )
 
         # Load inference engine
@@ -906,14 +906,14 @@ async def analyze_symbol(
             messages.append("Features already computed")
 
         # Step 2: Check if model needs training
-        logger.info(f"[Analyze] Step 2: Checking model status for {timeframe}")
-        available_models = list_models(timeframe, models_root)
+        logger.info(f"[Analyze] Step 2: Checking model status for {symbol} {timeframe}")
+        available_models = list_models(symbol.upper(), timeframe, models_root)
         need_training = True
         current_model_id = None
 
         if available_models:
             current_model_id = available_models[-1]
-            paths = get_model_path(timeframe, current_model_id, models_root)
+            paths = get_model_path(symbol.upper(), timeframe, current_model_id, models_root)
             if paths.exists():
                 metadata = paths.load_metadata()
                 # Check if model is less than 30 days old
@@ -1025,7 +1025,7 @@ async def analyze_symbol(
 
                         if not features_to_process.empty:
                             # Load model
-                            paths = get_model_path(timeframe, current_model_id, models_root)
+                            paths = get_model_path(symbol.upper(), timeframe, current_model_id, models_root)
                             engine = InferenceEngine.from_artifacts(paths)
                             metadata = paths.load_metadata()
                             model_features = metadata.feature_names
