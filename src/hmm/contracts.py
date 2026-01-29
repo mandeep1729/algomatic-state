@@ -223,7 +223,7 @@ class ModelMetadata:
         covariance_type: HMM covariance type
         state_ttl_bars: State validity TTL in bars
         ood_threshold: Log-likelihood threshold for OOD detection
-        state_mapping: Optional mapping from new states to canonical labels
+        state_mapping: Optional semantic labels for states (str(state_id) -> label dict)
         metrics: Training/validation metrics
     """
 
@@ -242,7 +242,7 @@ class ModelMetadata:
     covariance_type: Literal["full", "diag", "tied", "spherical"] = "diag"
     state_ttl_bars: int = 1
     ood_threshold: float = -50.0
-    state_mapping: Optional[dict[int, int]] = None
+    state_mapping: Optional[dict[str, dict]] = None
     metrics: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self):

@@ -27,7 +27,11 @@ from src.data.loaders.csv_loader import CSVLoader
 from src.data.loaders.database_loader import DatabaseLoader
 from src.data.database.connection import get_db_manager
 from src.data.database.models import VALID_TIMEFRAMES
+from src.data.database.repository import OHLCVRepository
 from src.features.pipeline import FeaturePipeline, get_minimal_features
+from src.hmm.artifacts import get_model_path, list_models
+from src.hmm.inference import InferenceEngine
+from src.hmm.labeling import state_mapping_to_labels, StateLabel as HMMStateLabel
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +74,20 @@ class FeatureResponse(BaseModel):
     feature_names: list[str]
 
 
+class StateInfo(BaseModel):
+    """Semantic state info."""
+    state_id: int
+    label: str
+    short_label: str
+    color: str
+    description: str
+
+
 class RegimeResponse(BaseModel):
     """Regime state response."""
     timestamps: list[str]
-    regime_labels: list[int]
-    regime_info: list[dict]
-    transition_matrix: list[list[float]]
+    state_ids: list[int]
+    state_info: dict[str, StateInfo]
 
 
 class StatisticsResponse(BaseModel):
@@ -297,25 +309,170 @@ async def get_features(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/regimes/{symbol}")
+@app.get("/api/regimes/{symbol}", response_model=RegimeResponse)
 async def get_regimes(
     symbol: str,
     timeframe: str = Query("1Min", description="Bar timeframe"),
+    model_id: str = Query(None, description="Model ID (default: latest)"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
-    n_clusters: int = Query(5, ge=2, le=10),
-    window_size: int = Query(60, ge=10, le=200),
-    n_components: int = Query(8, ge=2, le=20),
 ):
-    """Compute and return regime states.
+    """Get HMM regime states for a symbol.
 
-    NOTE: This endpoint is temporarily disabled while the state vector
-    and HMM regime tracking system is being reimplemented.
+    Loads the trained HMM model and runs inference on cached features
+    to return state assignments with semantic labels.
     """
-    raise HTTPException(
-        status_code=501,
-        detail="Regime computation is being reimplemented. See docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md"
-    )
+    # First ensure features are computed
+    await get_features(symbol, timeframe, start_date, end_date)
+
+    cache_key = f"regimes_{symbol.upper()}_{timeframe}_{model_id}_{start_date}_{end_date}"
+    cached = get_cached_data(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        # Determine which model to use
+        models_root = Path(__file__).parent.parent.parent / "models"
+
+        if model_id is None:
+            # Get latest model
+            available_models = list_models(timeframe, models_root)
+            if not available_models:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No trained models found for timeframe {timeframe}"
+                )
+            model_id = available_models[-1]
+
+        # Get model paths
+        paths = get_model_path(timeframe, model_id, models_root)
+
+        if not paths.exists():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Model {model_id} not found for timeframe {timeframe}"
+            )
+
+        # Load inference engine
+        engine = InferenceEngine.from_artifacts(paths)
+        metadata = paths.load_metadata()
+
+        # Get cached features
+        features_df = get_cached_data(f"features_df_{symbol.upper()}")
+        if features_df is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Features not computed. Load OHLCV data first."
+            )
+
+        # Filter features to those used by model
+        model_features = metadata.feature_names
+        missing_features = set(model_features) - set(features_df.columns)
+
+        if missing_features:
+            logger.warning(f"Missing features for model: {missing_features}")
+            # Use available features
+            available_model_features = [f for f in model_features if f in features_df.columns]
+            if len(available_model_features) < len(model_features) * 0.8:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Too many missing features. Model requires: {model_features}"
+                )
+
+        # Get bar_id mapping for storing states
+        db_manager = get_db_manager()
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+            ticker = repo.get_ticker(symbol.upper())
+            if ticker:
+                bar_id_map = repo.get_bar_ids_for_timestamps(
+                    ticker.id, timeframe, list(features_df.index)
+                )
+            else:
+                bar_id_map = {}
+
+        # Run inference on each row
+        timestamps = []
+        state_ids = []
+        state_records = []  # For database storage
+
+        engine.reset()
+        for ts, row in features_df.iterrows():
+            # Build feature dict with model's expected features
+            features = {name: row.get(name, np.nan) for name in model_features}
+
+            output = engine.process(features, symbol.upper(), ts)
+            timestamps.append(ts.strftime("%Y-%m-%d %H:%M:%S"))
+            state_ids.append(output.state_id)
+
+            # Collect state record for database if bar_id exists
+            bar_id = bar_id_map.get(ts)
+            if bar_id:
+                state_records.append({
+                    "bar_id": bar_id,
+                    "state_id": output.state_id,  # -1 indicates OOD
+                    "state_prob": float(output.state_prob),
+                    "log_likelihood": float(output.log_likelihood) if not np.isinf(output.log_likelihood) else None,
+                })
+
+        # Store states in database
+        if state_records:
+            with db_manager.get_session() as session:
+                repo = OHLCVRepository(session)
+                stored_count = repo.store_states(state_records, model_id)
+                session.commit()
+                logger.info(f"Stored {stored_count} states for {symbol.upper()}/{timeframe}/{model_id}")
+
+        # Get state info from metadata (semantic labels)
+        state_info = {}
+        if metadata.state_mapping:
+            # Use existing semantic labels
+            for state_id_str, label_dict in metadata.state_mapping.items():
+                state_info[state_id_str] = StateInfo(
+                    state_id=label_dict.get("state_id", int(state_id_str)),
+                    label=label_dict.get("label", f"state_{state_id_str}"),
+                    short_label=label_dict.get("short_label", f"S{state_id_str}"),
+                    color=label_dict.get("color", "#6b7280"),
+                    description=label_dict.get("description", f"State {state_id_str}"),
+                )
+        else:
+            # Generate default labels
+            default_colors = [
+                "#22c55e", "#ef4444", "#3b82f6", "#f59e0b",
+                "#8b5cf6", "#ec4899", "#14b8a6", "#f97316",
+            ]
+            for i in range(metadata.n_states):
+                state_info[str(i)] = StateInfo(
+                    state_id=i,
+                    label=f"state_{i}",
+                    short_label=f"S{i}",
+                    color=default_colors[i % len(default_colors)],
+                    description=f"HMM State {i}",
+                )
+
+        # Add unknown state (-1) info
+        state_info["-1"] = StateInfo(
+            state_id=-1,
+            label="unknown",
+            short_label="UNK",
+            color="#6b7280",
+            description="Out-of-distribution observation",
+        )
+
+        response = RegimeResponse(
+            timestamps=timestamps,
+            state_ids=state_ids,
+            state_info=state_info,
+        )
+
+        set_cached_data(cache_key, response)
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error computing regimes: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/statistics/{symbol}")

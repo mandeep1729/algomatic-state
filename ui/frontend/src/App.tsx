@@ -7,6 +7,7 @@ import {
   fetchOHLCVData,
   fetchFeatures,
   fetchStatistics,
+  fetchRegimes,
 } from './api';
 import type { TickerSummary } from './api';
 import type {
@@ -15,6 +16,7 @@ import type {
   FeatureData,
   Statistics,
   ChartSettings,
+  RegimeData,
 } from './types';
 import { OHLCVChart, FeatureFilter } from './components';
 
@@ -31,6 +33,7 @@ function App() {
   // Data
   const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
   const [featureData, setFeatureData] = useState<FeatureData | null>(null);
+  const [regimeData, setRegimeData] = useState<RegimeData | null>(null);
   const [statistics, setStatistics] = useState<Statistics | null>(null);
 
   // View range for the slider (indices into the data arrays)
@@ -44,6 +47,7 @@ function App() {
   // Chart settings
   const [chartSettings, setChartSettings] = useState<ChartSettings>({
     showVolume: true,
+    showStates: true,
     selectedFeatures: [],
   });
 
@@ -96,6 +100,16 @@ function App() {
     };
   }, [featureData, constrainedViewRange]);
 
+  const visibleRegimeData = useMemo((): RegimeData | null => {
+    if (!regimeData) return null;
+    const [start, end] = constrainedViewRange;
+    return {
+      timestamps: regimeData.timestamps.slice(start, end),
+      state_ids: regimeData.state_ids.slice(start, end),
+      state_info: regimeData.state_info,
+    };
+  }, [regimeData, constrainedViewRange]);
+
   // Load tickers from database on mount
   useEffect(() => {
     fetchTickers()
@@ -128,6 +142,16 @@ function App() {
       const stats = await fetchStatistics(ticker, tf, start, end);
       setStatistics(stats);
 
+      // Load regimes (if model is available)
+      try {
+        const regimes = await fetchRegimes(ticker, tf, undefined, start, end);
+        setRegimeData(regimes);
+      } catch (regimeErr) {
+        // Regime data is optional - model may not be trained yet
+        console.warn('Regimes not available:', regimeErr);
+        setRegimeData(null);
+      }
+
       // Refresh ticker summary to get updated bar counts after fetch
       const updatedSummary = await fetchTickerSummary(ticker);
       setTickerSummary(updatedSummary);
@@ -156,6 +180,7 @@ function App() {
       setTickerSummary(null);
       setOhlcvData(null);
       setFeatureData(null);
+      setRegimeData(null);
       setStatistics(null);
       return;
     }
@@ -163,6 +188,7 @@ function App() {
     // Clear previous data when switching tickers
     setOhlcvData(null);
     setFeatureData(null);
+    setRegimeData(null);
     setStatistics(null);
 
     fetchTickerSummary(selectedTicker)
@@ -494,8 +520,10 @@ function App() {
                   <OHLCVChart
                     data={visibleOhlcvData}
                     featureData={visibleFeatureData}
+                    regimeData={visibleRegimeData}
                     selectedFeatures={chartSettings.selectedFeatures}
                     showVolume={chartSettings.showVolume}
+                    showStates={chartSettings.showStates}
                     height={500}
                   />
                 </div>

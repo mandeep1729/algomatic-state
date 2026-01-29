@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { Ticker, OHLCVData, FeatureData, Statistics } from './types';
+import type { Ticker, OHLCVData, FeatureData, Statistics, RegimeData } from './types';
 
 const API_BASE = '/api';
 
@@ -90,6 +90,25 @@ export interface ComputeFeaturesResponse {
 export async function computeFeatures(symbol: string): Promise<ComputeFeaturesResponse> {
   const response = await axios.post<ComputeFeaturesResponse>(
     `${API_BASE}/compute-features/${symbol}`
+  );
+  return response.data;
+}
+
+export async function fetchRegimes(
+  symbol: string,
+  timeframe: string = '1Min',
+  modelId?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<RegimeData> {
+  const params = new URLSearchParams();
+  params.append('timeframe', timeframe);
+  if (modelId) params.append('model_id', modelId);
+  if (startDate) params.append('start_date', startDate);
+  if (endDate) params.append('end_date', endDate);
+
+  const response = await axios.get<RegimeData>(
+    `${API_BASE}/regimes/${symbol}?${params.toString()}`
   );
   return response.data;
 }

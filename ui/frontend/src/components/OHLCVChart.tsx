@@ -26,11 +26,27 @@ interface FeatureData {
   feature_names: string[];
 }
 
+interface StateInfo {
+  state_id: number;
+  label: string;
+  short_label: string;
+  color: string;
+  description: string;
+}
+
+interface RegimeData {
+  timestamps: string[];
+  state_ids: number[];
+  state_info: Record<string, StateInfo>;
+}
+
 interface OHLCVChartProps {
   data: OHLCVData | null;
   featureData?: FeatureData | null;
+  regimeData?: RegimeData | null;
   selectedFeatures?: string[];
   showVolume?: boolean;
+  showStates?: boolean;
   height?: number;
   onRangeChange?: (start: number, end: number) => void;
 }
@@ -60,8 +76,10 @@ const isPriceScaleFeature = (featureKey: string): boolean => {
 export function OHLCVChart({
   data,
   featureData,
+  regimeData,
   selectedFeatures = [],
   showVolume = true,
+  showStates = true,
   height = 500,
   onRangeChange,
 }: OHLCVChartProps) {
@@ -69,6 +87,7 @@ export function OHLCVChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+  const stateSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const featureSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
 
   // Initialize chart
@@ -152,7 +171,23 @@ export function OHLCVChart({
     // Configure volume scale
     chart.priceScale('volume').applyOptions({
       scaleMargins: {
-        top: 0.85,
+        top: 0.8,
+        bottom: 0.08,
+      },
+    });
+
+    // Add state series as histogram at very bottom
+    const stateSeries = chart.addHistogramSeries({
+      priceFormat: {
+        type: 'volume',
+      },
+      priceScaleId: 'states',
+    });
+
+    // Configure state scale (below volume)
+    chart.priceScale('states').applyOptions({
+      scaleMargins: {
+        top: 0.95,
         bottom: 0,
       },
     });
@@ -160,6 +195,7 @@ export function OHLCVChart({
     chartRef.current = chart;
     candlestickSeriesRef.current = candlestickSeries;
     volumeSeriesRef.current = volumeSeries;
+    stateSeriesRef.current = stateSeries;
 
     // Handle visible range change
     chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
@@ -188,6 +224,7 @@ export function OHLCVChart({
       chartRef.current = null;
       candlestickSeriesRef.current = null;
       volumeSeriesRef.current = null;
+      stateSeriesRef.current = null;
       featureSeriesRef.current.clear();
     };
   }, []);
@@ -306,6 +343,34 @@ export function OHLCVChart({
     }
   }, [showVolume]);
 
+  // Update state histogram data
+  useEffect(() => {
+    if (!stateSeriesRef.current || !regimeData) {
+      return;
+    }
+
+    const stateData: HistogramData[] = regimeData.timestamps.map((ts, i) => {
+      const stateId = regimeData.state_ids[i];
+      const stateInfo = regimeData.state_info[String(stateId)];
+      return {
+        time: toUnixTime(ts),
+        value: 1, // Constant height for state bars
+        color: stateInfo?.color || '#6b7280',
+      };
+    });
+
+    stateSeriesRef.current.setData(stateData);
+  }, [regimeData]);
+
+  // Update state visibility
+  useEffect(() => {
+    if (stateSeriesRef.current) {
+      stateSeriesRef.current.applyOptions({
+        visible: showStates && regimeData !== null,
+      });
+    }
+  }, [showStates, regimeData]);
+
   // Update chart height
   useEffect(() => {
     if (chartRef.current) {
@@ -411,6 +476,41 @@ export function OHLCVChart({
               </span>
             );
           })}
+        </div>
+      )}
+      {/* State legend */}
+      {showStates && regimeData && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '8px',
+            left: '8px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '4px',
+            zIndex: 10,
+            maxWidth: '80%',
+          }}
+        >
+          {Object.entries(regimeData.state_info)
+            .filter(([key]) => key !== '-1') // Hide unknown state from legend
+            .sort(([a], [b]) => Number(a) - Number(b))
+            .map(([stateId, info]) => (
+              <span
+                key={stateId}
+                style={{
+                  padding: '2px 6px',
+                  fontSize: '9px',
+                  background: 'rgba(0,0,0,0.8)',
+                  color: info.color,
+                  borderRadius: '3px',
+                  border: `1px solid ${info.color}`,
+                }}
+                title={info.description}
+              >
+                {info.short_label}
+              </span>
+            ))}
         </div>
       )}
     </div>

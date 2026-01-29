@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from src.data.database.models import (
     DataSyncLog,
     OHLCVBar,
+    OHLCVState,
     Ticker,
     VALID_SOURCES,
     VALID_TIMEFRAMES,
@@ -649,7 +650,7 @@ class OHLCVRepository:
             earliest = self.get_earliest_timestamp(symbol, timeframe)
             latest = self.get_latest_timestamp(symbol, timeframe)
             count = self.get_bar_count(symbol, timeframe)
-            
+
             # Check for features
             feature_count = self.session.query(func.count(ComputedFeature.id)).filter(
                 ComputedFeature.ticker_id == ticker.id,
@@ -665,3 +666,199 @@ class OHLCVRepository:
                 }
 
         return summary
+
+    # -------------------------------------------------------------------------
+    # State Operations
+    # -------------------------------------------------------------------------
+
+    def store_states(
+        self,
+        states: list[dict],
+        model_id: str,
+    ) -> int:
+        """Store HMM state assignments for bars.
+
+        Args:
+            states: List of dicts with keys: bar_id, state_id, state_prob, is_ood, log_likelihood
+            model_id: Model identifier (e.g., "state_v001")
+
+        Returns:
+            Number of states stored/updated
+        """
+        if not states:
+            return 0
+
+        # Add model_id to each record, convert numpy types to Python native
+        records = []
+        for state in states:
+            records.append({
+                "bar_id": int(state["bar_id"]),
+                "model_id": model_id,
+                "state_id": int(state["state_id"]),  # -1 indicates OOD
+                "state_prob": float(state["state_prob"]),
+                "log_likelihood": float(state["log_likelihood"]) if state.get("log_likelihood") is not None else None,
+            })
+
+        # Upsert: update if bar_id + model_id exists
+        stmt = pg_insert(OHLCVState).values(records)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["bar_id", "model_id"],
+            set_={
+                "state_id": stmt.excluded.state_id,
+                "state_prob": stmt.excluded.state_prob,
+                "log_likelihood": stmt.excluded.log_likelihood,
+                "created_at": func.now(),
+            }
+        )
+
+        result = self.session.execute(stmt)
+        return result.rowcount
+
+    def get_states(
+        self,
+        symbol: str,
+        timeframe: str,
+        model_id: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> pd.DataFrame:
+        """Retrieve state assignments as a DataFrame.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+            model_id: Model identifier
+            start: Optional start datetime
+            end: Optional end datetime
+
+        Returns:
+            DataFrame with timestamp index and state columns
+        """
+        query = self.session.query(
+            OHLCVBar.timestamp,
+            OHLCVState.state_id,
+            OHLCVState.state_prob,
+            OHLCVState.log_likelihood,
+        ).join(
+            OHLCVState, OHLCVBar.id == OHLCVState.bar_id
+        ).join(
+            Ticker, OHLCVBar.ticker_id == Ticker.id
+        ).filter(
+            Ticker.symbol == self._normalize_symbol(symbol),
+            OHLCVBar.timeframe == timeframe,
+            OHLCVState.model_id == model_id,
+        )
+
+        if start:
+            query = query.filter(OHLCVBar.timestamp >= start)
+        if end:
+            query = query.filter(OHLCVBar.timestamp <= end)
+
+        query = query.order_by(OHLCVBar.timestamp)
+        results = query.all()
+
+        if not results:
+            return pd.DataFrame(columns=["state_id", "state_prob", "log_likelihood"])
+
+        df = pd.DataFrame(
+            results,
+            columns=["timestamp", "state_id", "state_prob", "log_likelihood"],
+        )
+        df.set_index("timestamp", inplace=True)
+        return df
+
+    def get_state_counts(
+        self,
+        symbol: str,
+        timeframe: str,
+        model_id: str,
+    ) -> dict[int, int]:
+        """Get count of bars per state.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+            model_id: Model identifier
+
+        Returns:
+            Dictionary mapping state_id -> count
+        """
+        query = self.session.query(
+            OHLCVState.state_id,
+            func.count(OHLCVState.id),
+        ).join(
+            OHLCVBar, OHLCVBar.id == OHLCVState.bar_id
+        ).join(
+            Ticker, OHLCVBar.ticker_id == Ticker.id
+        ).filter(
+            Ticker.symbol == self._normalize_symbol(symbol),
+            OHLCVBar.timeframe == timeframe,
+            OHLCVState.model_id == model_id,
+        ).group_by(OHLCVState.state_id)
+
+        results = query.all()
+        return {state_id: count for state_id, count in results}
+
+    def get_bar_ids_for_timestamps(
+        self,
+        ticker_id: int,
+        timeframe: str,
+        timestamps: list[datetime],
+    ) -> dict[datetime, int]:
+        """Get bar IDs for a list of timestamps.
+
+        Args:
+            ticker_id: Ticker ID
+            timeframe: Bar timeframe
+            timestamps: List of timestamps to look up
+
+        Returns:
+            Dictionary mapping timestamp -> bar_id
+        """
+        if not timestamps:
+            return {}
+
+        min_ts = min(timestamps)
+        max_ts = max(timestamps)
+
+        bars = self.session.query(OHLCVBar.timestamp, OHLCVBar.id).filter(
+            OHLCVBar.ticker_id == ticker_id,
+            OHLCVBar.timeframe == timeframe,
+            OHLCVBar.timestamp >= min_ts,
+            OHLCVBar.timestamp <= max_ts,
+        ).all()
+
+        return {b.timestamp: b.id for b in bars}
+
+    def delete_states(
+        self,
+        symbol: str,
+        timeframe: str,
+        model_id: str,
+    ) -> int:
+        """Delete all state assignments for a symbol/timeframe/model.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+            model_id: Model identifier
+
+        Returns:
+            Number of rows deleted
+        """
+        ticker = self.get_ticker(symbol)
+        if ticker is None:
+            return 0
+
+        # Get bar IDs for this ticker/timeframe
+        bar_ids_subquery = self.session.query(OHLCVBar.id).filter(
+            OHLCVBar.ticker_id == ticker.id,
+            OHLCVBar.timeframe == timeframe,
+        ).subquery()
+
+        count = self.session.query(OHLCVState).filter(
+            OHLCVState.bar_id.in_(select(bar_ids_subquery)),
+            OHLCVState.model_id == model_id,
+        ).delete(synchronize_session=False)
+
+        return count

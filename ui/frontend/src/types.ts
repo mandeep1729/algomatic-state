@@ -63,5 +63,20 @@ export interface Statistics {
 
 export interface ChartSettings {
   showVolume: boolean;
+  showStates: boolean;
   selectedFeatures: string[];
+}
+
+export interface StateInfo {
+  state_id: number;
+  label: string;
+  short_label: string;
+  color: string;
+  description: string;
+}
+
+export interface RegimeData {
+  timestamps: string[];
+  state_ids: number[];
+  state_info: Record<string, StateInfo>;
 }
