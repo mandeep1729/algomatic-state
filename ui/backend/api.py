@@ -48,6 +48,7 @@ logging.basicConfig(
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from config.settings import get_settings
 from src.data.loaders.csv_loader import CSVLoader
 from src.data.loaders.database_loader import DatabaseLoader
 from src.data.database.connection import get_db_manager
@@ -250,9 +251,11 @@ async def get_ohlcv_data(
         loader = get_database_loader()
         logger.info(f"Loading OHLCV for {symbol}, timeframe={timeframe}, alpaca_loader={loader.alpaca_loader is not None}")
 
-        # Default to last 3 years if no dates specified
+        # Default to configured history_months if no dates specified
+        settings = get_settings()
+        history_days = settings.data.history_months * 30  # Approximate days per month
         end = datetime.fromisoformat(end_date) if end_date else datetime.now()
-        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=3*365)
+        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=history_days)
         logger.info(f"Date range: {start} to {end}")
 
         # This will:
@@ -683,9 +686,11 @@ async def trigger_sync(
                 detail="Alpaca credentials not configured. Cannot sync data."
             )
 
-        # Parse dates (default to last 3 years)
+        # Parse dates (default to configured history_months)
+        settings = get_settings()
+        history_days = settings.data.history_months * 30  # Approximate days per month
         end = datetime.fromisoformat(end_date) if end_date else datetime.now()
-        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=3*365)
+        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=history_days)
 
         # Trigger sync by loading data (auto_fetch is enabled)
         df = db_loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)

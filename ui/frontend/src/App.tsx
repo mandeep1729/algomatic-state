@@ -167,11 +167,11 @@ function App() {
     }
   }, []);
 
-  // Helper to get default date range (last 3 years)
+  // Helper to get default date range (last 3 months - matches backend config)
   const getDefaultDateRange = () => {
     const end = new Date();
     const start = new Date();
-    start.setFullYear(start.getFullYear() - 3);
+    start.setMonth(start.getMonth() - 3);
     return {
       start: start.toISOString().split('T')[0],
       end: end.toISOString().split('T')[0],

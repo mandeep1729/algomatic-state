@@ -53,6 +53,10 @@ class DataConfig(BaseSettings):
         default=24,
         description="Maximum cache age in hours",
     )
+    history_months: int = Field(
+        default=3,
+        description="How far back to fetch historical data from Alpaca (in months)",
+    )
 
 
 class FeatureConfig(BaseSettings):
