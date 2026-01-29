@@ -8,6 +8,7 @@ Handles:
 - Rolling feature buffer for online computation
 """
 
+import logging
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -22,6 +23,8 @@ from src.hmm.contracts import HMMOutput, LatentStateVector, ModelMetadata, VALID
 from src.hmm.encoders import BaseEncoder, TemporalPCAEncoder
 from src.hmm.hmm_model import GaussianHMMWrapper
 from src.hmm.scalers import BaseScaler
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -107,12 +110,18 @@ class InferenceEngine:
             Initialized InferenceEngine
         """
         if not paths.exists():
+            logger.error(f"Model artifacts not found at {paths.model_dir}")
             raise FileNotFoundError(f"Model artifacts not found at {paths.model_dir}")
 
+        logger.info(f"Loading model artifacts from {paths.model_dir}")
         metadata = paths.load_metadata()
+        logger.debug(f"Loading scaler from {paths.scaler_path}")
         scaler = BaseScaler.load(paths.scaler_path)
+        logger.debug(f"Loading encoder from {paths.encoder_path}")
         encoder = BaseEncoder.load(paths.encoder_path)
+        logger.debug(f"Loading HMM from {paths.hmm_path}")
         hmm = GaussianHMMWrapper.load(paths.hmm_path)
+        logger.info(f"Model loaded: {metadata.model_id} with {metadata.n_states} states, {len(metadata.feature_names)} features")
 
         return cls(
             scaler=scaler,
@@ -161,6 +170,7 @@ class InferenceEngine:
 
         if np.isnan(log_lik) or log_lik < self.ood_threshold:
             self._state.dwell_count += 1
+            logger.debug(f"[{symbol}] OOD detected at {timestamp}: log_lik={log_lik:.2f} < threshold={self.ood_threshold}")
             return HMMOutput.unknown(
                 symbol=symbol,
                 timestamp=timestamp,
@@ -175,6 +185,10 @@ class InferenceEngine:
         raw_prob = posterior[raw_state]
 
         final_state = self._apply_anti_chatter(raw_state, raw_prob)
+
+        # Log state transitions
+        if final_state != self._state.current_state and self._state.current_state != -1:
+            logger.debug(f"[{symbol}] State transition at {timestamp}: {self._state.current_state} -> {final_state} (prob={raw_prob:.3f})")
 
         self._state.last_timestamp = timestamp
         self._state.recent_states.append(raw_state)

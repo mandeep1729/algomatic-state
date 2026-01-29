@@ -4,6 +4,7 @@ Analyzes HMM state centroids and assigns human-readable labels
 based on feature characteristics like trend direction and volatility.
 """
 
+import logging
 from dataclasses import dataclass
 from typing import Optional
 
@@ -12,6 +13,8 @@ import numpy as np
 from src.hmm.encoders import BaseEncoder
 from src.hmm.hmm_model import GaussianHMMWrapper
 from src.hmm.scalers import BaseScaler
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -261,11 +264,15 @@ class StateLabelingEngine:
         Returns:
             Dictionary mapping state_id -> StateLabel
         """
+        logger.info(f"Labeling {self.hmm.n_states} HMM states based on {len(self.feature_names)} features")
+
         # Get centroids in scaled feature space
         try:
             scaled_centroids = self._inverse_transform_centroids()
-        except (ValueError, AttributeError):
+            logger.debug(f"Inverse-transformed centroids shape: {scaled_centroids.shape}")
+        except (ValueError, AttributeError) as e:
             # If inverse transform fails, return unknown labels
+            logger.warning(f"Failed to inverse transform centroids: {e}. Using unknown labels.")
             return {
                 i: StateLabel(
                     state_id=i,
@@ -293,7 +300,9 @@ class StateLabelingEngine:
 
             # Create label
             labels[state_id] = self._create_state_label(state_id, trend, volatility)
+            logger.debug(f"State {state_id}: {labels[state_id].label} ({labels[state_id].short_label})")
 
+        logger.info(f"Generated labels for {len(labels)} states: {[l.label for l in labels.values()]}")
         return labels
 
     def get_state_statistics(self) -> dict[int, dict]:

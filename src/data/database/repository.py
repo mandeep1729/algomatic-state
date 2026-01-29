@@ -1,5 +1,6 @@
 """Data access layer for OHLCV market data."""
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -18,6 +19,8 @@ from src.data.database.models import (
     VALID_TIMEFRAMES,
     ComputedFeature,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_timestamp_to_utc(ts: Optional[datetime]) -> Optional[datetime]:
@@ -267,6 +270,7 @@ class OHLCVRepository:
         results = query.all()
 
         if not results:
+            logger.debug(f"No bars found for {symbol}/{timeframe}")
             return pd.DataFrame(columns=["open", "high", "low", "close", "volume"])
 
         df = pd.DataFrame(
@@ -276,6 +280,7 @@ class OHLCVRepository:
         df.set_index("timestamp", inplace=True)
         df.index.name = None  # Match expected format
 
+        logger.debug(f"Retrieved {len(df)} bars for {symbol}/{timeframe} from {df.index.min()} to {df.index.max()}")
         return df
 
     def bulk_insert_bars(
@@ -531,9 +536,11 @@ class OHLCVRepository:
             })
 
         if not records:
+            logger.debug(f"No features to store for ticker_id={ticker_id}/{timeframe}")
             return 0
 
         # 3. Bulk Upsert (Update existing features for this bar)
+        logger.info(f"Storing {len(records)} feature records for ticker_id={ticker_id}/{timeframe}")
         stmt = pg_insert(ComputedFeature).values(records)
         stmt = stmt.on_conflict_do_update(
             index_elements=["bar_id"],  # Unique constraint on bar_id
@@ -545,6 +552,7 @@ class OHLCVRepository:
         )
 
         result = self.session.execute(stmt)
+        logger.debug(f"Upserted {result.rowcount} feature records")
         return result.rowcount
 
     def get_existing_feature_timestamps(
@@ -613,6 +621,7 @@ class OHLCVRepository:
         results = query.all()
 
         if not results:
+            logger.debug(f"No features found for {symbol}/{timeframe}")
             return pd.DataFrame()
 
         # Convert list of (timestamp, feature_dict) to DataFrame
@@ -625,7 +634,8 @@ class OHLCVRepository:
         df = pd.DataFrame(data)
         df.set_index("timestamp", inplace=True)
         df.sort_index(inplace=True)
-        
+
+        logger.debug(f"Retrieved {len(df)} feature rows for {symbol}/{timeframe} with {len(df.columns)} features")
         return df
 
     # -------------------------------------------------------------------------
@@ -686,7 +696,10 @@ class OHLCVRepository:
             Number of states stored/updated
         """
         if not states:
+            logger.debug(f"No states to store for model {model_id}")
             return 0
+
+        logger.info(f"Storing {len(states)} state assignments for model {model_id}")
 
         # Add model_id to each record, convert numpy types to Python native
         records = []
@@ -712,6 +725,7 @@ class OHLCVRepository:
         )
 
         result = self.session.execute(stmt)
+        logger.info(f"Upserted {result.rowcount} state records for model {model_id}")
         return result.rowcount
 
     def get_states(
@@ -758,6 +772,7 @@ class OHLCVRepository:
         results = query.all()
 
         if not results:
+            logger.debug(f"No states found for {symbol}/{timeframe} model={model_id}")
             return pd.DataFrame(columns=["state_id", "state_prob", "log_likelihood"])
 
         df = pd.DataFrame(
@@ -765,6 +780,7 @@ class OHLCVRepository:
             columns=["timestamp", "state_id", "state_prob", "log_likelihood"],
         )
         df.set_index("timestamp", inplace=True)
+        logger.debug(f"Retrieved {len(df)} states for {symbol}/{timeframe} model={model_id}")
         return df
 
     def get_state_counts(

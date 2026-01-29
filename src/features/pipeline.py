@@ -1,5 +1,6 @@
 """Feature pipeline orchestration."""
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from .registry import (
     get_default_calculators,
     load_feature_config,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -145,6 +148,7 @@ class FeaturePipeline:
         Raises:
             ValueError: If market_df is required but not provided
         """
+        logger.info(f"Computing features for {len(df)} rows using {len(self.calculators)} calculators")
         result = pd.DataFrame(index=df.index)
 
         # Track intermediate values for cross-calculator dependencies
@@ -152,6 +156,7 @@ class FeaturePipeline:
 
         for calc in self.calculators:
             calc_name = calc.__class__.__name__
+            logger.debug(f"Running calculator: {calc_name}")
 
             # Build kwargs for this calculator
             calc_kwargs = dict(kwargs)
@@ -174,6 +179,7 @@ class FeaturePipeline:
 
             # Compute features
             features = calc.compute(df, **calc_kwargs)
+            logger.debug(f"{calc_name} computed {len(features.columns)} features")
 
             # Store intermediates for dependent calculators
             if "r1" in features.columns:
@@ -189,8 +195,11 @@ class FeaturePipeline:
         if self.config.drop_leading_na:
             first_valid = result.apply(lambda x: x.first_valid_index()).max()
             if first_valid is not None:
+                dropped = len(result) - len(result.loc[first_valid:])
                 result = result.loc[first_valid:]
+                logger.debug(f"Dropped {dropped} leading rows with NaN values")
 
+        logger.info(f"Feature computation complete: {len(result)} rows, {len(result.columns)} features")
         return result
 
     def compute_subset(

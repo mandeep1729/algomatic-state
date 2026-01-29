@@ -7,12 +7,15 @@ Handles:
 """
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from src.hmm.contracts import ModelMetadata, VALID_TIMEFRAMES
+
+logger = logging.getLogger(__name__)
 
 
 # Default root directories
@@ -103,8 +106,10 @@ class ArtifactPaths:
             metadata: Model metadata to save
         """
         self.ensure_dirs()
+        logger.info(f"Saving metadata to {self.metadata_path}")
         with open(self.metadata_path, "w") as f:
             json.dump(metadata.to_dict(), f, indent=2)
+        logger.debug(f"Metadata saved: model_id={metadata.model_id}, n_states={metadata.n_states}")
 
     def load_metadata(self) -> ModelMetadata:
         """Load metadata from JSON file.
@@ -116,12 +121,16 @@ class ArtifactPaths:
             FileNotFoundError: If metadata file doesn't exist
         """
         if not self.metadata_path.exists():
+            logger.error(f"Metadata not found: {self.metadata_path}")
             raise FileNotFoundError(f"Metadata not found: {self.metadata_path}")
 
+        logger.debug(f"Loading metadata from {self.metadata_path}")
         with open(self.metadata_path) as f:
             data = json.load(f)
 
-        return ModelMetadata.from_dict(data)
+        metadata = ModelMetadata.from_dict(data)
+        logger.info(f"Loaded metadata: model_id={metadata.model_id}, n_states={metadata.n_states}, features={len(metadata.feature_names)}")
+        return metadata
 
 
 @dataclass
@@ -270,6 +279,7 @@ def list_models(
     tf_dir = root / f"ticker={symbol}" / f"timeframe={timeframe}"
 
     if not tf_dir.exists():
+        logger.debug(f"No models directory found for {symbol}/{timeframe} at {tf_dir}")
         return []
 
     model_ids = []
@@ -278,6 +288,7 @@ def list_models(
             model_id = path.name.replace("model_id=", "")
             model_ids.append(model_id)
 
+    logger.debug(f"Found {len(model_ids)} models for {symbol}/{timeframe}: {model_ids}")
     return sorted(model_ids)
 
 
