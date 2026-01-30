@@ -827,31 +827,27 @@ class DatabaseLoader(BaseDataLoader):
                 for log in logs
             ]
 
-    def _get_indicator_calculator(self):
-        """Get the best available indicator calculator.
+    def _get_feature_pipeline(self):
+        """Get the feature pipeline for computing all features.
 
-        Returns TA-Lib calculator if available, otherwise pandas-ta calculator.
+        Returns the full FeaturePipeline which includes:
+        - Returns features (r1, r5, r15, r60)
+        - Volatility features (rv_60, range_z_60, etc.)
+        - Volume features (relvol_60, vol_z_60)
+        - Intrabar features (clv, body_ratio)
+        - Anchor features (dist_vwap_60, breakout_20)
+        - Time-of-day features (tod_sin, tod_cos)
+        - TA-Lib indicators (RSI, MACD, Bollinger Bands, etc.)
 
         Returns:
-            Indicator calculator instance or None if none available
+            FeaturePipeline instance or None if not available
         """
-        # Try TA-Lib first (faster, more accurate)
         try:
-            from src.features import TALibIndicatorCalculator, TALIB_AVAILABLE
-            if TALIB_AVAILABLE:
-                return TALibIndicatorCalculator()
-        except ImportError:
-            pass
-
-        # Fall back to pandas-ta (pure Python)
-        try:
-            from src.features import PandasTAIndicatorCalculator, PANDAS_TA_AVAILABLE
-            if PANDAS_TA_AVAILABLE:
-                return PandasTAIndicatorCalculator()
-        except ImportError:
-            pass
-
-        return None
+            from src.features import FeaturePipeline
+            return FeaturePipeline.default()
+        except ImportError as e:
+            logger.warning(f"Failed to create FeaturePipeline: {e}")
+            return None
 
     def _compute_technical_indicators(
         self,
@@ -860,10 +856,10 @@ class DatabaseLoader(BaseDataLoader):
         symbol: str,
         version: str = "v1.0",
     ) -> None:
-        """Compute and store technical indicators for all timeframes.
+        """Compute and store all features for all timeframes.
 
-        This method computes comprehensive technical indicators using TA-Lib
-        (or pandas-ta as fallback) and stores them in the computed_features table.
+        This method computes comprehensive features using the full FeaturePipeline
+        and stores them in the computed_features table.
 
         Args:
             repo: OHLCV repository instance
@@ -883,27 +879,29 @@ class DatabaseLoader(BaseDataLoader):
         timeframes: list[str],
         version: str = "v1.0",
     ) -> None:
-        """Compute and store technical indicators for specific timeframes.
+        """Compute and store all features for specific timeframes.
 
-        Only computes indicators for bars that don't already have features
+        Uses the full FeaturePipeline to compute all features including:
+        returns, volatility, volume, intrabar, anchor, time-of-day, and TA-Lib indicators.
+
+        Only computes features for bars that don't already have them
         in the computed_features table.
 
         Args:
             repo: OHLCV repository instance
             ticker: Ticker database object
             symbol: Stock symbol
-            timeframes: List of timeframes to compute indicators for
+            timeframes: List of timeframes to compute features for
             version: Feature version string for tracking
         """
-        calculator = self._get_indicator_calculator()
-        if calculator is None:
+        pipeline = self._get_feature_pipeline()
+        if pipeline is None:
             logger.warning(
-                "No indicator calculator available (install TA-Lib or pandas-ta), "
-                "skipping indicator computation"
+                "FeaturePipeline not available, skipping feature computation"
             )
             return
 
-        logger.info(f"Computing technical indicators for {symbol} ({timeframes})")
+        logger.info(f"Computing features for {symbol} ({timeframes})")
 
         for timeframe in timeframes:
             try:
@@ -911,7 +909,7 @@ class DatabaseLoader(BaseDataLoader):
                 df = repo.get_bars(symbol, timeframe)
 
                 if df.empty:
-                    logger.debug(f"No {timeframe} data for {symbol}, skipping indicators")
+                    logger.debug(f"No {timeframe} data for {symbol}, skipping features")
                     continue
 
                 # Get existing feature timestamps to avoid recomputation
@@ -940,8 +938,8 @@ class DatabaseLoader(BaseDataLoader):
                     f"(out of {len(df)} total, {len(existing_timestamps)} existing)"
                 )
 
-                # Compute indicators on full dataframe (needed for lookback periods)
-                features_df = calculator.compute(df)
+                # Compute all features on full dataframe (needed for lookback periods)
+                features_df = pipeline.compute(df)
 
                 if features_df.empty:
                     logger.warning(f"No features computed for {symbol}/{timeframe}")
@@ -969,8 +967,8 @@ class DatabaseLoader(BaseDataLoader):
 
                 logger.info(
                     f"Stored {rows_stored} feature rows for {symbol}/{timeframe} "
-                    f"({len(features_df.columns)} indicators)"
+                    f"({len(features_df.columns)} features)"
                 )
 
             except Exception as e:
-                logger.error(f"Failed to compute indicators for {symbol}/{timeframe}: {e}")
+                logger.error(f"Failed to compute features for {symbol}/{timeframe}: {e}")

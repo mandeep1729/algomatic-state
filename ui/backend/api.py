@@ -721,10 +721,10 @@ class ComputeFeaturesResponse(BaseModel):
 
 @app.post("/api/compute-features/{symbol}")
 async def compute_features(symbol: str, force: bool = False):
-    """Compute technical indicators for all timeframes of a ticker.
+    """Compute all features for all timeframes of a ticker.
 
-    This computes indicators like RSI, MACD, Bollinger Bands, etc.
-    and stores them in the computed_features table.
+    This computes the full feature set including returns, volatility, volume,
+    intrabar, anchor, time-of-day, and TA-Lib indicators (68 features total).
 
     Args:
         symbol: Ticker symbol
@@ -732,20 +732,10 @@ async def compute_features(symbol: str, force: bool = False):
     """
     try:
         from src.data.database.repository import OHLCVRepository
-        from src.features import PandasTAIndicatorCalculator, PANDAS_TA_AVAILABLE
-        from src.features import TALibIndicatorCalculator, TALIB_AVAILABLE
+        from src.features import FeaturePipeline
 
-        # Get calculator (prefer TA-Lib, fall back to pandas-ta)
-        calculator = None
-        if TALIB_AVAILABLE:
-            calculator = TALibIndicatorCalculator()
-        elif PANDAS_TA_AVAILABLE:
-            calculator = PandasTAIndicatorCalculator()
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail="No indicator calculator available. Install TA-Lib or pandas-ta."
-            )
+        # Use full FeaturePipeline for all 68 features
+        pipeline = FeaturePipeline.default()
 
         db_manager = get_db_manager()
         stats = {
@@ -795,8 +785,8 @@ async def compute_features(symbol: str, force: bool = False):
                         f"(out of {len(df)} total)"
                     )
 
-                # Compute indicators
-                features_df = calculator.compute(df)
+                # Compute all features using FeaturePipeline
+                features_df = pipeline.compute(df)
                 if features_df.empty:
                     continue
 
