@@ -220,6 +220,62 @@ async def get_data_sources():
     return sources
 
 
+async def _load_ohlcv_internal(
+    symbol: str,
+    timeframe: str = "1Min",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> dict:
+    """Internal helper to load OHLCV data.
+
+    Can be called from other endpoints without FastAPI Query parameter issues.
+    """
+    if timeframe not in VALID_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
+        )
+
+    # Always use database loader with auto-fetch from Alpaca
+    loader = get_database_loader()
+    logger.info(f"Loading OHLCV for {symbol}, timeframe={timeframe}, alpaca_loader={loader.alpaca_loader is not None}")
+
+    # Default to configured history_months if no dates specified
+    settings = get_settings()
+    history_days = settings.data.history_months * 30  # Approximate days per month
+    end = datetime.fromisoformat(end_date) if end_date else datetime.now()
+    start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=history_days)
+    logger.info(f"Date range: {start} to {end}")
+
+    # This will:
+    # 1. Check if data exists in database for the requested range
+    # 2. If not, fetch from Alpaca (if configured) and store in ohlcv_bars
+    # 3. Return data from database
+    df = loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)
+    logger.info(f"Loaded {len(df)} rows for {symbol}")
+
+    if df.empty:
+        logger.warning(f"No data found for {symbol} in range {start} to {end}")
+        raise HTTPException(
+            status_code=404,
+            detail=f"No data found for {symbol}. Ensure Alpaca API is configured or import data manually."
+        )
+
+    response = {
+        "timestamps": df.index.strftime("%Y-%m-%d %H:%M:%S").tolist(),
+        "open": df["open"].tolist(),
+        "high": df["high"].tolist(),
+        "low": df["low"].tolist(),
+        "close": df["close"].tolist(),
+        "volume": df["volume"].tolist(),
+    }
+
+    # Store raw dataframe in cache for feature computation
+    set_cached_data(f"df_{symbol}", df)
+
+    return response
+
+
 @app.get("/api/ohlcv/{symbol}")
 async def get_ohlcv_data(
     symbol: str,
@@ -241,50 +297,8 @@ async def get_ohlcv_data(
         return cached
 
     try:
-        if timeframe not in VALID_TIMEFRAMES:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
-            )
-
-        # Always use database loader with auto-fetch from Alpaca
-        loader = get_database_loader()
-        logger.info(f"Loading OHLCV for {symbol}, timeframe={timeframe}, alpaca_loader={loader.alpaca_loader is not None}")
-
-        # Default to configured history_months if no dates specified
-        settings = get_settings()
-        history_days = settings.data.history_months * 30  # Approximate days per month
-        end = datetime.fromisoformat(end_date) if end_date else datetime.now()
-        start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=history_days)
-        logger.info(f"Date range: {start} to {end}")
-
-        # This will:
-        # 1. Check if data exists in database for the requested range
-        # 2. If not, fetch from Alpaca (if configured) and store in ohlcv_bars
-        # 3. Return data from database
-        df = loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)
-        logger.info(f"Loaded {len(df)} rows for {symbol}")
-
-        if df.empty:
-            logger.warning(f"No data found for {symbol} in range {start} to {end}")
-            raise HTTPException(
-                status_code=404,
-                detail=f"No data found for {symbol}. Ensure Alpaca API is configured or import data manually."
-            )
-
-        response = {
-            "timestamps": df.index.strftime("%Y-%m-%d %H:%M:%S").tolist(),
-            "open": df["open"].tolist(),
-            "high": df["high"].tolist(),
-            "low": df["low"].tolist(),
-            "close": df["close"].tolist(),
-            "volume": df["volume"].tolist(),
-        }
-
-        # Store raw dataframe in cache for feature computation
-        set_cached_data(f"df_{symbol}", df)
+        response = await _load_ohlcv_internal(symbol, timeframe, start_date, end_date)
         set_cached_data(cache_key, response)
-
         return response
 
     except HTTPException:
@@ -916,6 +930,19 @@ async def analyze_symbol(
     try:
         db_manager = get_db_manager()
 
+        # Step 0: Ensure OHLCV data is loaded (fetch from Alpaca if needed)
+        logger.info(f"[Analyze] Step 0: Loading OHLCV data for {symbol}/{timeframe}")
+        try:
+            await _load_ohlcv_internal(symbol, timeframe)
+            messages.append("OHLCV data loaded")
+        except HTTPException as e:
+            if e.status_code == 404:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No OHLCV data available for {symbol}. Ensure Alpaca API is configured."
+                )
+            raise
+
         # Step 1: Compute features for bars that don't have them
         logger.info(f"[Analyze] Step 1: Computing features for {symbol}/{timeframe}")
         features_result = await compute_features(symbol, force=False)
@@ -1095,6 +1122,334 @@ async def analyze_symbol(
         raise
     except Exception as e:
         logger.exception(f"Error analyzing {symbol}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# PCA State Endpoints
+# =============================================================================
+
+
+class PCAStateInfo(BaseModel):
+    """State info for PCA states response."""
+    state_id: int
+    label: str
+    short_label: str
+    color: str
+    description: str
+
+
+class PCARegimeResponse(BaseModel):
+    """Response for PCA regimes endpoint."""
+    timestamps: list[str]
+    state_ids: list[int]
+    distances: list[float]
+    state_info: dict[str, PCAStateInfo]
+    model_id: str
+    n_components: int
+    n_states: int
+
+
+class PCAAnalyzeResponse(BaseModel):
+    """Response for PCA analyze endpoint."""
+    symbol: str
+    timeframe: str
+    features_computed: int
+    model_trained: bool
+    model_id: Optional[str]
+    states_computed: int
+    n_components: int
+    n_states: int
+    total_variance_explained: float
+    message: str
+
+
+@app.post("/api/pca/analyze/{symbol}")
+async def analyze_symbol_pca(
+    symbol: str,
+    timeframe: str = Query("1Min", description="Timeframe to analyze"),
+    n_components: Optional[int] = Query(None, description="Number of PCA components (auto if not specified)"),
+    n_states: Optional[int] = Query(None, description="Number of K-means clusters (auto if not specified)"),
+):
+    """Analyze a symbol using PCA + K-means state computation.
+
+    This endpoint:
+    1. Ensures features are computed
+    2. Trains a PCA + K-means model
+    3. Computes states for all bars
+    """
+    from src.pca_states import (
+        PCAStateTrainer,
+        PCAStateEngine,
+        get_pca_model_path,
+        list_pca_models,
+        label_pca_states,
+        labels_to_dict,
+    )
+
+    if timeframe not in VALID_TIMEFRAMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid timeframe: {timeframe}. Must be one of {list(VALID_TIMEFRAMES)}"
+        )
+
+    symbol = symbol.upper()
+    models_root = Path(__file__).parent.parent.parent / "models"
+
+    result = {
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "features_computed": 0,
+        "model_trained": False,
+        "model_id": None,
+        "states_computed": 0,
+        "n_components": 0,
+        "n_states": 0,
+        "total_variance_explained": 0.0,
+        "message": "",
+    }
+    messages = []
+
+    try:
+        db_manager = get_db_manager()
+
+        # Step 0: Ensure OHLCV data is loaded (fetch from Alpaca if needed)
+        logger.info(f"[PCA Analyze] Step 0: Loading OHLCV data for {symbol}/{timeframe}")
+        try:
+            await _load_ohlcv_internal(symbol, timeframe)
+            messages.append("OHLCV data loaded")
+        except HTTPException as e:
+            if e.status_code == 404:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"No OHLCV data available for {symbol}. Ensure Alpaca API is configured."
+                )
+            raise
+
+        # Step 1: Ensure features are computed
+        logger.info(f"[PCA Analyze] Step 1: Computing features for {symbol}/{timeframe}")
+        features_result = await compute_features(symbol, force=False)
+        result["features_computed"] = features_result.features_stored
+        if features_result.features_stored > 0:
+            messages.append(f"Computed {features_result.features_stored} features")
+        else:
+            messages.append("Features already computed")
+
+        # Step 2: Get features from database
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+            ticker = repo.get_ticker(symbol)
+            if not ticker:
+                raise HTTPException(status_code=404, detail=f"Ticker {symbol} not found")
+
+            features_df = repo.get_features(symbol, timeframe)
+            if features_df.empty or len(features_df) < 200:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient data for training. Need at least 200 bars, have {len(features_df)}"
+                )
+
+        # Determine feature names (use a subset suitable for PCA)
+        pca_features = [
+            "r1", "r5", "r15", "r60",
+            "rv_60", "vol_z_60",
+            "rsi_14", "macd", "bb_pct",
+            "adx_14", "atr_14",
+            "relvol_60",
+        ]
+        available_features = set(features_df.columns)
+        feature_names = [f for f in pca_features if f in available_features]
+
+        if len(feature_names) < 5:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient features for PCA. Need at least 5 features."
+            )
+
+        logger.info(f"[PCA Analyze] Using {len(feature_names)} features: {feature_names}")
+
+        # Step 3: Train PCA model
+        logger.info(f"[PCA Analyze] Step 2: Training PCA + K-means model")
+        model_id = "pca_v001"
+
+        trainer = PCAStateTrainer(
+            n_components=n_components or 6,
+            n_states=n_states or 5,
+            auto_select_components=n_components is None,
+            auto_select_states=n_states is None,
+        )
+
+        train_result = trainer.fit(
+            df=features_df,
+            feature_names=feature_names,
+            model_id=model_id,
+            timeframe=timeframe,
+            symbols=[symbol],
+        )
+
+        # Save model
+        model_path = get_pca_model_path(symbol, timeframe, model_id, models_root)
+        trainer.save(model_path)
+
+        result["model_trained"] = True
+        result["model_id"] = model_id
+        result["n_components"] = train_result.metadata.n_components
+        result["n_states"] = train_result.metadata.n_states
+        result["total_variance_explained"] = train_result.metadata.total_variance_explained
+        messages.append(
+            f"Trained PCA model: {train_result.metadata.n_components} components, "
+            f"{train_result.metadata.n_states} states, "
+            f"{train_result.metadata.total_variance_explained*100:.1f}% variance explained"
+        )
+
+        # Step 4: Compute states and store
+        logger.info(f"[PCA Analyze] Step 3: Computing states")
+        engine = PCAStateEngine.from_artifacts(model_path)
+        state_df = engine.transform(features_df)
+
+        # Generate semantic labels
+        labels = label_pca_states(engine, features_df, feature_names)
+        trainer.metadata.state_mapping = labels_to_dict(labels)
+
+        # Update metadata with labels
+        trainer.save(model_path)
+
+        # Store states in computed_features table
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+
+            # Get bar_id mapping
+            bar_id_map = repo.get_bar_ids_for_timestamps(
+                ticker.id, timeframe, list(features_df.index)
+            )
+
+            # Build state records
+            state_records = []
+            for ts, row in state_df.iterrows():
+                bar_id = bar_id_map.get(ts)
+                if bar_id:
+                    state_records.append({
+                        "bar_id": bar_id,
+                        "state_id": int(row["state_id"]),
+                        "state_prob": 1.0 - min(row["distance"] / trainer.metadata.ood_threshold, 1.0),
+                        "log_likelihood": -float(row["distance"]),
+                    })
+
+            if state_records:
+                stored_count = repo.store_states(state_records, f"pca_{model_id}")
+                session.commit()
+                result["states_computed"] = stored_count
+                messages.append(f"Computed {stored_count} states")
+
+        result["message"] = "; ".join(messages)
+        logger.info(f"[PCA Analyze] Complete: {result['message']}")
+
+        return PCAAnalyzeResponse(**result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"PCA analysis failed for {symbol}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/pca/regimes/{symbol}", response_model=PCARegimeResponse)
+async def get_pca_regimes(
+    symbol: str,
+    timeframe: str = Query("1Min", description="Bar timeframe"),
+    model_id: str = Query("pca_v001", description="Model ID"),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+):
+    """Get PCA-based regime states for a symbol."""
+    from src.pca_states import PCAStateEngine, get_pca_model_path, list_pca_models
+
+    symbol = symbol.upper()
+    models_root = Path(__file__).parent.parent.parent / "models"
+
+    try:
+        # Check for available models
+        available_models = list_pca_models(symbol, timeframe, models_root)
+        if not available_models:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No PCA models found for {symbol}/{timeframe}. Run /api/pca/analyze first."
+            )
+
+        if model_id not in available_models:
+            model_id = available_models[-1]
+
+        # Load model
+        model_path = get_pca_model_path(symbol, timeframe, model_id, models_root)
+        engine = PCAStateEngine.from_artifacts(model_path)
+
+        # Get features
+        db_manager = get_db_manager()
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+            features_df = repo.get_features(symbol, timeframe)
+
+        if features_df.empty:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No features found for {symbol}/{timeframe}"
+            )
+
+        # Filter by date range
+        if start_date:
+            features_df = features_df[features_df.index >= start_date]
+        if end_date:
+            features_df = features_df[features_df.index <= end_date]
+
+        # Compute states
+        state_df = engine.transform(features_df)
+
+        # Build state info
+        state_info = {}
+        if engine.metadata.state_mapping:
+            for state_id_str, label_dict in engine.metadata.state_mapping.items():
+                state_info[state_id_str] = PCAStateInfo(
+                    state_id=int(state_id_str),
+                    label=label_dict.get("label", f"state_{state_id_str}"),
+                    short_label=label_dict.get("short_label", f"S{state_id_str}"),
+                    color=label_dict.get("color", "#6b7280"),
+                    description=label_dict.get("description", f"State {state_id_str}"),
+                )
+        else:
+            # Generate default labels
+            default_colors = ["#22c55e", "#ef4444", "#3b82f6", "#f59e0b", "#8b5cf6"]
+            for i in range(engine.metadata.n_states):
+                state_info[str(i)] = PCAStateInfo(
+                    state_id=i,
+                    label=f"state_{i}",
+                    short_label=f"S{i}",
+                    color=default_colors[i % len(default_colors)],
+                    description=f"PCA State {i}",
+                )
+
+        # Add unknown state
+        state_info["-1"] = PCAStateInfo(
+            state_id=-1,
+            label="unknown",
+            short_label="UNK",
+            color="#6b7280",
+            description="Out-of-distribution observation",
+        )
+
+        return PCARegimeResponse(
+            timestamps=[ts.strftime("%Y-%m-%d %H:%M:%S") for ts in state_df.index],
+            state_ids=state_df["state_id"].tolist(),
+            distances=state_df["distance"].tolist(),
+            state_info=state_info,
+            model_id=model_id,
+            n_components=engine.metadata.n_components,
+            n_states=engine.metadata.n_states,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get PCA regimes for {symbol}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

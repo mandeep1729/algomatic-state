@@ -113,6 +113,25 @@ export async function fetchRegimes(
   return response.data;
 }
 
+export async function fetchPCARegimes(
+  symbol: string,
+  timeframe: string = '1Min',
+  modelId?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<RegimeData> {
+  const params = new URLSearchParams();
+  params.append('timeframe', timeframe);
+  if (modelId) params.append('model_id', modelId);
+  if (startDate) params.append('start_date', startDate);
+  if (endDate) params.append('end_date', endDate);
+
+  const response = await axios.get<RegimeData>(
+    `${API_BASE}/pca/regimes/${symbol}?${params.toString()}`
+  );
+  return response.data;
+}
+
 export interface AnalyzeResponse {
   symbol: string;
   timeframe: string;

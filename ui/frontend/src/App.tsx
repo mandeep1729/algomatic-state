@@ -7,7 +7,7 @@ import {
   fetchOHLCVData,
   fetchFeatures,
   fetchStatistics,
-  fetchRegimes,
+  fetchPCARegimes,
   analyzeSymbol,
 } from './api';
 import type { AnalyzeResponse } from './api';
@@ -146,13 +146,13 @@ function App() {
       const stats = await fetchStatistics(ticker, tf, start, end);
       setStatistics(stats);
 
-      // Load regimes (if model is available)
+      // Load PCA regimes (if model is available)
       try {
-        const regimes = await fetchRegimes(ticker, tf, undefined, start, end);
+        const regimes = await fetchPCARegimes(ticker, tf, undefined, start, end);
         setRegimeData(regimes);
       } catch (regimeErr) {
-        // Regime data is optional - model may not be trained yet
-        console.warn('Regimes not available:', regimeErr);
+        // Regime data is optional - PCA model may not be trained yet
+        console.warn('PCA regimes not available:', regimeErr);
         setRegimeData(null);
       }
 
