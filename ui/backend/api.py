@@ -58,10 +58,14 @@ from src.features.pipeline import FeaturePipeline, get_minimal_features
 from src.hmm.artifacts import get_model_path, list_models
 from src.hmm.inference import InferenceEngine
 from src.hmm.labeling import state_mapping_to_labels, StateLabel as HMMStateLabel
+from src.trading_buddy.api import router as trading_buddy_router
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Regime State Visualization API", version="1.0.0")
+
+# Include Trading Buddy router
+app.include_router(trading_buddy_router)
 
 # Enable CORS for React frontend
 app.add_middleware(
