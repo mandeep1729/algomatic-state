@@ -8,9 +8,9 @@ import {
   fetchFeatures,
   fetchStatistics,
   fetchPCARegimes,
-  analyzeSymbol,
+  analyzePCASymbol,
 } from './api';
-import type { AnalyzeResponse } from './api';
+import type { PCAAnalyzeResponse } from './api';
 import type { TickerSummary } from './api';
 import type {
   Ticker,
@@ -46,7 +46,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'charts' | 'features' | 'stats'>('charts');
   const [analyzing, setAnalyzing] = useState(false);
-  const [analyzeResult, setAnalyzeResult] = useState<AnalyzeResponse | null>(null);
+  const [analyzeResult, setAnalyzeResult] = useState<PCAAnalyzeResponse | null>(null);
 
   // Chart settings
   const [chartSettings, setChartSettings] = useState<ChartSettings>({
@@ -302,7 +302,7 @@ function App() {
     }));
   };
 
-  // Handle Analyze button click
+  // Handle Analyze button click - uses PCA state computation
   const handleAnalyze = async () => {
     if (!selectedTicker) return;
 
@@ -311,10 +311,11 @@ function App() {
     setError(null);
 
     try {
-      const result = await analyzeSymbol(selectedTicker, timeframe);
+      // Use PCA analyze endpoint to train model and compute states
+      const result = await analyzePCASymbol(selectedTicker, timeframe);
       setAnalyzeResult(result);
 
-      // Reload data to show updated states
+      // Reload data to show updated states (including refreshing regime data)
       if (tickerSummary) {
         const tfData = tickerSummary.timeframes[timeframe];
         if (tfData && tfData.earliest && tfData.latest) {
@@ -442,12 +443,13 @@ function App() {
                 fontSize: '0.75rem',
               }}>
                 <div style={{ color: '#3fb950', fontWeight: 500, marginBottom: '0.5rem' }}>
-                  Analysis Complete
+                  PCA Analysis Complete
                 </div>
                 <div style={{ color: '#8b949e' }}>
-                  <div>Features: {analyzeResult.features_computed.toLocaleString()}</div>
-                  <div>Model: {analyzeResult.model_trained ? 'Trained' : 'Using existing'}</div>
-                  <div>States: {analyzeResult.states_computed.toLocaleString()} / {analyzeResult.total_bars.toLocaleString()}</div>
+                  <div>States computed: {analyzeResult.states_computed.toLocaleString()}</div>
+                  <div>PCA components: {analyzeResult.n_components}</div>
+                  <div>State clusters: {analyzeResult.n_states}</div>
+                  <div>Variance explained: {(analyzeResult.total_variance_explained * 100).toFixed(1)}%</div>
                 </div>
               </div>
             )}

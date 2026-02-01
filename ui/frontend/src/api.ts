@@ -143,6 +143,19 @@ export interface AnalyzeResponse {
   message: string;
 }
 
+export interface PCAAnalyzeResponse {
+  symbol: string;
+  timeframe: string;
+  features_computed: number;
+  model_trained: boolean;
+  model_id: string | null;
+  states_computed: number;
+  n_components: number;
+  n_states: number;
+  total_variance_explained: number;
+  message: string;
+}
+
 export async function analyzeSymbol(
   symbol: string,
   timeframe: string = '1Min'
@@ -152,6 +165,19 @@ export async function analyzeSymbol(
 
   const response = await axios.post<AnalyzeResponse>(
     `${API_BASE}/analyze/${symbol}?${params.toString()}`
+  );
+  return response.data;
+}
+
+export async function analyzePCASymbol(
+  symbol: string,
+  timeframe: string = '1Min'
+): Promise<PCAAnalyzeResponse> {
+  const params = new URLSearchParams();
+  params.append('timeframe', timeframe);
+
+  const response = await axios.post<PCAAnalyzeResponse>(
+    `${API_BASE}/pca/analyze/${symbol}?${params.toString()}`
   );
   return response.data;
 }
