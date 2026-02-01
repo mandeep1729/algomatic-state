@@ -1,20 +1,22 @@
-Trading Buddy Platform – Master Roadmap, Modular Architecture, and Database Schema
-Generated: 2026-01-28 02:56 (America/Los_Angeles)
+# Trading Buddy Platform - Master Roadmap, Modular Architecture, and Database Schema
+
 Scope: A master implementation roadmap and combined phased TODO list to deliver the full Trading Buddy functionality (MTFA + Strategy Consistency + Regime/Entry/Risk/Exit/Exposure/Behavior/Missing Scanner/Post-Trade/Brainstorm + Guardrails). Design assumes the database already contains: tickers static data, OHLCV bars time series, and computed TA feature time series (TA-Lib + pandas-ta).
-Design Principles
+
+## Design Principles
 * Modular evaluators: each check is a plug-in module implementing a standard Evaluator interface.
 * Reusable ContextPack: compute once per request (user, symbol, timeframe, timestamp) and reuse across modules.
 * Separation of concerns: (1) data/feature retrieval, (2) scoring/flags, (3) LLM explanation layer.
 * Version everything: schemas, module configs, and scoring weights for safe iteration.
 * Evidence-first UX: every warning includes numeric evidence and an actionable mitigation.
 * No predictions: audit process/risk and historical fit; never claim certainty.
-Modular Architecture
-Core Building Blocks
+
+## Modular Architecture
+### Core Building Blocks
 * ContextPackBuilder: builds a reusable context object for evaluators (bars/features, vectors/HMM, levels, regime, portfolio, user profile).
 * Evaluator interface: Evaluator(TradeIntent, ContextPack) -> EvaluationResult (score, severity, issues, recommendations, explain_facts).
 * Orchestrator: runs a configured bundle of evaluators, deduplicates issues, ranks top items, and produces the Buddy Summary.
 * Explanation layer (LLM): transforms explain_facts into friendly language; never invents data.
-ContextPack (Reusable Object)
+### ContextPack (Reusable Object)
 * MarketData: latest OHLCV bars + derived TA features (already available in your feature store).
 * State: state vectors per timeframe + HMM state probabilities + transition probabilities.
 * MTFA: alignment score + HTF/MTF context notes (structure alignment, conflicts).
@@ -22,7 +24,7 @@ ContextPack (Reusable Object)
 * KeyLevelsSnapshot: prior day levels, pivots, rolling range, anchored VWAP levels, support/resistance.
 * UserStrategy: StrategyProfile (distributions) + Playbooks + explicit rules/risk limits.
 * Portfolio: positions, exposures, correlation clusters, portfolio heat score.
-Evaluator Modules (Pluggable)
+### Evaluator Modules (Pluggable)
 * StrategyConsistencyEvaluator (playbooks + OOD + rule drift + user-specific red flags).
 * RegimeFitEvaluator (regime label + compatibility with user playbooks + transition risk).
 * MTFAEvaluator (multi-timeframe alignment score + conflicts).
@@ -35,7 +37,7 @@ Evaluator Modules (Pluggable)
 * PostTradeReviewGenerator (process grading, lessons, profile updates).
 * BrainstormMode Router (conversation flow + tool orchestration).
 * Guardrails (trust/safety: no predictions, evidence, opt-outs, privacy, logging).
-Database Additions (New Tables)
+### Database Additions (New Tables)
 You already have: tickers static data, OHLCV bars, and TA feature time series. The following tables enable the Buddy system, personalization, logging, and learning loops.
 Users, Accounts, and Rules
 * user_accounts(user_id PK, base_currency, equity_snapshot, buying_power_snapshot, risk_defaults_json, updated_at)
@@ -44,35 +46,35 @@ Trade Intent + Evaluation Logging (Core)
 * trade_intents(intent_id PK, user_id, symbol, side, timeframe, proposed_entry, proposed_stop, proposed_target, proposed_size, proposed_risk_amount, holding_horizon, order_type, created_at, status)
 * trade_evaluations(eval_id PK, intent_id FK, user_id, symbol, timeframe, eval_ts, overall_score, overall_severity, modules_run_json, summary_json, created_at)
 * trade_evaluation_items(eval_item_id PK, eval_id FK, module_name, issue_code, severity, evidence_json, recommendation_json, created_at)
-Trades & Executions (Canonical)
+### Trades & Executions (Canonical)
 * trades(trade_id PK, user_id, symbol, side, open_ts, close_ts, avg_entry, avg_exit, qty, pnl, pnl_r, fees, slippage_est, outcome_label, tags_json, linked_intent_id FK)
 * trade_fills(fill_id PK, trade_id FK, ts, price, qty, fill_type, venue_optional)
-Strategy Profiles + Playbooks (Personalization)
+### Strategy Profiles + Playbooks (Personalization)
 * strategy_profiles(user_id PK, computed_at, profile_json, baseline_stats_json, version)
 * playbooks(playbook_id PK, user_id, name, centroid_vector, dispersion_metrics_json, stats_json, created_at, updated_at)
 * playbook_members(user_id, playbook_id, trade_id, distance_to_centroid, created_at)
-Regime + Levels Snapshots (Reusable Context)
+### Regime + Levels Snapshots (Reusable Context)
 * regime_snapshots(symbol, timeframe, ts PK, trend_state, trend_strength, vol_state, vol_z, vol_expansion_flag, liquidity_state, spread_proxy, relvol, hmm_state_id_optional, hmm_probs_json, computed_at, version)
 * key_levels(symbol, timeframe, ts PK, prior_day_high/low/close, pivots_json, anchored_vwap_levels_json, rolling_range_high/low, support_resistance_json, computed_at, version)
-Portfolio + Exposure
+### Portfolio + Exposure
 * positions(user_id, symbol PK, qty, avg_price, open_ts, unrealized_pnl, risk_est_optional, updated_at)
 * portfolio_exposure_snapshots(user_id, ts PK, gross_exposure, net_exposure, sector_exposure_json, benchmark_beta_json, correlation_clusters_json, portfolio_heat_score, computed_at, version)
-Behavior Nudges + Journaling
+### Behavior Nudges + Journaling
 * behavior_events(event_id PK, user_id, ts, event_type, severity, evidence_json, action_suggested_json, linked_intent_id_optional, linked_trade_id_optional)
 * trade_journal(journal_id PK, user_id, trade_id_optional, intent_id_optional, note_text, tags_json, created_at)
-Post-Trade Reviews + Learning
+### Post-Trade Reviews + Learning
 * post_trade_reviews(review_id PK, trade_id, user_id, generated_at, process_grade, key_lessons_json, what_went_well_json, what_to_improve_json, linked_eval_id_optional, version)
 Conversational Brainstorm Sessions
 * assistant_sessions(session_id PK, user_id, started_at, last_active_at, mode, session_state_json)
 * assistant_messages(msg_id PK, session_id FK, ts, role, content_or_ref, tool_calls_json_optional)
-Batch Jobs and Real-Time Services
+### Batch Jobs and Real-Time Services
 * RegimeSnapshot Job: compute regime_snapshots per symbol/timeframe on schedule (e.g., every bar close).
 * KeyLevels Job: compute key_levels per symbol/timeframe (prior-day levels, pivots, rolling ranges, anchored VWAP levels).
 * StrategyProfile Builder: daily/hourly rebuild of strategy_profiles, including conditional stats (win/loss) and playbook summaries.
 * Playbook Clustering Job: periodic clustering of trade embeddings and update playbooks/dispersion metrics.
 * Portfolio Exposure Builder: update exposure snapshots (beta, correlation clusters, heat score) at fixed cadence or on position change.
 * Post-Trade Review Job: generate review, compute MAE/MFE, update learning tables after trade close.
-API Contracts (Suggested)
+### API Contracts (Suggested)
 * POST /tradeIntents: create/update a trade intent (draft or submit).
 * POST /evaluateTradeIntent: run orchestrator; returns overall score + per-module results.
 * GET /regimeSnapshot?symbol=&tf=: returns latest regime snapshot + transition risk.
@@ -81,62 +83,62 @@ API Contracts (Suggested)
 * GET /portfolioExposure: returns correlation clusters + heat + incremental risk contribution.
 * POST /postTradeReview: generate/refresh post-trade review (or run as async job).
 * POST /assistantSession: start/update brainstorm session; returns next prompt + optional auto-evaluate.
-Master Roadmap (Phases)
-Phase 0 – Foundations (Core Platform)
+## Master Roadmap (Phases)
+### Phase 0 - Foundations (Core Platform)
 * Create trade_intents, trade_evaluations, trade_evaluation_items tables and wire logging.
 * Implement ContextPackBuilder with a stable schema and caching.
 * Implement Evaluator interface + Orchestrator (module registry + config).
 * Implement evidence utilities (z-scores, thresholds, ranking, dedupe).
 * Ship a minimal UI/API path: 'Evaluate Idea' returns top 3 issues + score.
-Phase 1 – Trust + Risk-First MVP
+### Phase 1 - Trust + Risk-First MVP
 * RiskRewardEvaluator (R:R, sizing, stop sanity vs ATR/noise, slippage proxy warnings).
 * ExitPlanEvaluator (MVP): stop/target/time stop presence and coherence checks.
 * Guardrails: no-prediction policy, safe phrasing templates, required stop/risk budget for execution guidance.
 * Add user_rules + user_accounts risk defaults and integrate into checks.
-Phase 2 – MTFA + Regime + Key Levels
+### Phase 2 - MTFA + Regime + Key Levels
 * Deploy key_levels snapshots and regime_snapshots jobs/services.
 * Integrate MTFA outputs into ContextPack (alignment + conflicts).
 * RegimeFitEvaluator: regime labels + transition risk + compatibility hooks.
 * UX: show regime badges + key level proximity + MTFA conflicts.
-Phase 3 – Entry Quality + Missing Scanner
+### Phase 3 - Entry Quality + Missing Scanner
 * EntryQualityEvaluator: location/extension/timing/microstructure scoring and mitigations.
 * MissingScannerEvaluator: checklist modules (levels, transition risk, liquidity, exposure, events).
-* Rank and cap outputs (3–6) to avoid overwhelming users.
-Phase 4 – Strategy Consistency + Playbooks (Personalization Moat)
+* Rank and cap outputs (3?6) to avoid overwhelming users.
+### Phase 4 - Strategy Consistency + Playbooks (Personalization Moat)
 * Build strategy_profiles job (behavior distributions + win/loss-conditioned stats).
 * Implement trade embeddings and playbook clustering (HDBSCAN or k-means initially).
 * StrategyConsistencyEvaluator: nearest playbook, similarity, OOD detection, user-specific red flags.
 * UX: 'This resembles your Playbook #2 (84%)' style explanations.
-Phase 5 – Correlation & Portfolio Exposure (Pro Risk)
+### Phase 5 - Correlation & Portfolio Exposure (Pro Risk)
 * Implement positions ingestion + portfolio_exposure_snapshots builder.
 * Correlation clusters + beta-to-benchmark + portfolio heat score.
 * CorrelationExposureEvaluator: stacking warnings and incremental risk contribution.
-Phase 6 – Behavioral Nudges (Retention Moat)
+### Phase 6 - Behavioral Nudges (Retention Moat)
 * Implement behavior detectors: overtrading, revenge, FOMO, fatigue, rule drift.
 * Create nudge library + user sensitivity controls.
 * Log behavior_events and tie to trade_intents/trades when applicable.
-Phase 7 – Post-Trade Review + Learning Loop
+### Phase 7 - Post-Trade Review + Learning Loop
 * Generate post-trade review: process grade vs outcome, MAE/MFE, lessons.
 * Update strategy_profiles/playbooks/regime compatibility + personal pitfalls.
 * Ship daily/weekly summaries and journal integration.
-Phase 8 – Conversational Brainstorm Mode (Full Agent UX)
+### Phase 8 - Conversational Brainstorm Mode (Full Agent UX)
 * assistant_sessions with TradeIdeaDraft slot-filling (instrument, thesis, entry/stop/target).
 * IntentRouter: brainstorm vs evaluate vs review.
 * One-click Evaluate runs orchestrator; save chat as journal entry.
 * Conversation regression tests and latency targets.
-Combined TODO List (Reusable-First)
-Foundations (must exist before everything)
+## Combined TODO List (Reusable-First)
+### Foundations (must exist before everything)
 * Implement ContextPack schema + builder with caching (Redis/in-memory).
 * Implement module registry + config (enable/disable modules, weights, thresholds).
 * Implement evidence formatting helpers (numeric facts, deltas, z-scores).
 * Implement evaluation logging (eval + eval_items) for every orchestrator run.
 * Add versioning to: schema, module config, scoring weights.
-Reusable Data Products
+### Reusable Data Products
 * key_levels snapshots (per symbol/tf) using existing OHLCV + feature store.
 * regime_snapshots (per symbol/tf) derived from features + HMM state/probs.
 * portfolio_exposure_snapshots derived from positions + returns/correlations.
 * strategy_profiles derived from completed trades and evaluation logs.
-Evaluator Modules (build in value order)
+### Evaluator Modules (build in value order)
 * RiskRewardEvaluator (hard safety and sizing).
 * ExitPlanEvaluator (presence + template fit).
 * MTFAEvaluator + RegimeFitEvaluator (context filtering).
@@ -145,11 +147,11 @@ Evaluator Modules (build in value order)
 * CorrelationExposureEvaluator (stacking + concentration).
 * BehaviorNudgesEvaluator (detectors + nudges).
 * PostTradeReviewGenerator (learning loop + profile updates).
-UX/Conversation
+### UX/Conversation
 * Unified 'Buddy Report' view: score + top issues + recommended actions + expandable evidence.
 * User controls: strictness, nudge sensitivity, opt-outs, disclosure toggles.
 * Brainstorm mode: TradeIdeaDraft + Evaluate button + journal save.
-Calibration & Testing
+### Calibration & Testing
 * Historical replay harness: recompute module outputs for past trades and plot outcome separation by score.
 * A/B tests for nudges and warnings; track dismiss/helpfulness metrics.
 * Safety test suite for guardrails and adversarial prompts.
