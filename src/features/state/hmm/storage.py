@@ -17,8 +17,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from src.hmm.artifacts import StatesPaths, get_states_path
-from src.hmm.contracts import HMMOutput, VALID_TIMEFRAMES
+from src.features.state.hmm.artifacts import StatesPaths, get_states_path
+from src.features.state.hmm.contracts import HMMOutput, VALID_TIMEFRAMES
 
 
 STATE_SCHEMA = pa.schema([

@@ -22,11 +22,11 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.hmm.artifacts import get_model_path, list_models, ArtifactPaths
-from src.hmm.encoders import BaseEncoder
-from src.hmm.hmm_model import GaussianHMMWrapper
-from src.hmm.scalers import BaseScaler
-from src.hmm.labeling import (
+from src.features.state.hmm.artifacts import get_model_path, list_models, ArtifactPaths
+from src.features.state.hmm.encoders import BaseEncoder
+from src.features.state.hmm.hmm_model import GaussianHMMWrapper
+from src.features.state.hmm.scalers import BaseScaler
+from src.features.state.hmm.labeling import (
     StateLabelingEngine,
     state_labels_to_mapping,
     StateLabel,

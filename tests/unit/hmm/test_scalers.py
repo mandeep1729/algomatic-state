@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.hmm.scalers import (
+from src.features.state.hmm.scalers import (
     CombinedScaler,
     FeatureScalerConfig,
     RobustScaler,

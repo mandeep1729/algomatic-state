@@ -55,10 +55,10 @@ from src.data.database.connection import get_db_manager
 from src.data.database.models import VALID_TIMEFRAMES
 from src.data.database.repository import OHLCVRepository
 from src.features.pipeline import FeaturePipeline, get_minimal_features
-from src.hmm.artifacts import get_model_path, list_models
-from src.hmm.inference import InferenceEngine
-from src.hmm.labeling import state_mapping_to_labels, StateLabel as HMMStateLabel
-from src.trading_buddy.api import router as trading_buddy_router
+from src.features.state.hmm.artifacts import get_model_path, list_models
+from src.features.state.hmm.inference import InferenceEngine
+from src.features.state.hmm.labeling import state_mapping_to_labels, StateLabel as HMMStateLabel
+from src.api import router as trading_buddy_router
 
 logger = logging.getLogger(__name__)
 
@@ -906,9 +906,9 @@ async def analyze_symbol(
     2. Train HMM model if none exists or last training was >30 days ago
     3. Compute states for bars without state entries
     """
-    from src.hmm.training import TrainingPipeline, TrainingConfig
-    from src.hmm.data_pipeline import GapHandler
-    from src.hmm.config import DEFAULT_FEATURE_SET
+    from src.features.state.hmm.training import TrainingPipeline, TrainingConfig
+    from src.features.state.hmm.data_pipeline import GapHandler
+    from src.features.state.hmm.config import DEFAULT_FEATURE_SET
 
     if timeframe not in VALID_TIMEFRAMES:
         raise HTTPException(
@@ -1182,7 +1182,7 @@ async def analyze_symbol_pca(
     2. Trains a PCA + K-means model
     3. Computes states for all bars
     """
-    from src.pca_states import (
+    from src.features.state.pca import (
         PCAStateTrainer,
         PCAStateEngine,
         get_pca_model_path,
@@ -1366,7 +1366,7 @@ async def get_pca_regimes(
     end_date: Optional[str] = Query(None),
 ):
     """Get PCA-based regime states for a symbol."""
-    from src.pca_states import PCAStateEngine, get_pca_model_path, list_pca_models
+    from src.features.state.pca import PCAStateEngine, get_pca_model_path, list_pca_models
 
     symbol = symbol.upper()
     models_root = Path(__file__).parent.parent.parent / "models"

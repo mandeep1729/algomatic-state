@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from src.hmm.encoders import (
+from src.features.state.hmm.encoders import (
     PCAEncoder,
     TemporalPCAEncoder,
     create_encoder,

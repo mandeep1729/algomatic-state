@@ -9,7 +9,7 @@ try:
 except ImportError:
     HAS_HMMLEARN = False
 
-from src.hmm.hmm_model import (
+from src.features.state.hmm.hmm_model import (
     GaussianHMMWrapper,
     match_states_hungarian,
     select_n_states,

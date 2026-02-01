@@ -89,7 +89,7 @@ python scripts/compute_features.py --symbols AAPL --timeframe 1Min
 ### 4. Train HMM Model
 
 ```python
-from src.hmm import (
+from src.features.state.hmm import (
     TrainingPipeline,
     TrainingConfig,
     create_default_config,
@@ -124,7 +124,7 @@ print(f"Metrics: {result.metrics}")
 ### 5. Run Inference
 
 ```python
-from src.hmm import InferenceEngine, get_model_path
+from src.features.state.hmm import InferenceEngine, get_model_path
 
 # Load model
 paths = get_model_path("1Min", "state_v001")

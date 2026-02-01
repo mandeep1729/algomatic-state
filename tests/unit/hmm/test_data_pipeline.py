@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.hmm.data_pipeline import (
+from src.features.state.hmm.data_pipeline import (
     DataSplit,
     GapHandler,
     TimeSplitter,

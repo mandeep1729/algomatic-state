@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.hmm.config import (
+from src.features.state.hmm.config import (
     DEFAULT_FEATURE_SET,
     FeatureSpecEntry,
     StateVectorConfig,

@@ -18,32 +18,32 @@ from typing import Any, Literal, Optional
 import numpy as np
 import pandas as pd
 
-from src.hmm.artifacts import ArtifactPaths, get_model_path, generate_model_id
-from src.hmm.config import (
+from src.features.state.hmm.artifacts import ArtifactPaths, get_model_path, generate_model_id
+from src.features.state.hmm.config import (
     StateVectorConfig,
     StateVectorFeatureSpec,
     load_feature_spec,
     save_config,
 )
-from src.hmm.contracts import ModelMetadata, VALID_TIMEFRAMES
-from src.hmm.data_pipeline import (
+from src.features.state.hmm.contracts import ModelMetadata, VALID_TIMEFRAMES
+from src.features.state.hmm.data_pipeline import (
     DataSplit,
     TimeSplitter,
     validate_no_leakage,
 )
-from src.hmm.encoders import (
+from src.features.state.hmm.encoders import (
     BaseEncoder,
     PCAEncoder,
     TemporalPCAEncoder,
     create_windows,
     select_latent_dim,
 )
-from src.hmm.hmm_model import (
+from src.features.state.hmm.hmm_model import (
     GaussianHMMWrapper,
     match_states_hungarian,
     select_n_states,
 )
-from src.hmm.scalers import (
+from src.features.state.hmm.scalers import (
     BaseScaler,
     RobustScaler,
     StandardScaler,

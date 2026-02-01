@@ -1,6 +1,6 @@
 """HMM-based state vector and regime tracking module."""
 
-from src.hmm.contracts import (
+from src.features.state.hmm.contracts import (
     FeatureVector,
     LatentStateVector,
     HMMOutput,
@@ -8,13 +8,13 @@ from src.hmm.contracts import (
     Timeframe,
     VALID_TIMEFRAMES,
 )
-from src.hmm.config import (
+from src.features.state.hmm.config import (
     StateVectorFeatureSpec,
     StateVectorConfig,
     load_feature_spec,
     create_default_config,
 )
-from src.hmm.artifacts import (
+from src.features.state.hmm.artifacts import (
     ArtifactPaths,
     StatesPaths,
     get_model_path,
@@ -23,7 +23,7 @@ from src.hmm.artifacts import (
     list_models,
     get_latest_model,
 )
-from src.hmm.scalers import (
+from src.features.state.hmm.scalers import (
     BaseScaler,
     RobustScaler,
     StandardScaler,
@@ -31,7 +31,7 @@ from src.hmm.scalers import (
     CombinedScaler,
     create_scaler,
 )
-from src.hmm.encoders import (
+from src.features.state.hmm.encoders import (
     BaseEncoder,
     PCAEncoder,
     TemporalPCAEncoder,
@@ -39,19 +39,19 @@ from src.hmm.encoders import (
     create_windows,
     select_latent_dim,
 )
-from src.hmm.hmm_model import (
+from src.features.state.hmm.hmm_model import (
     GaussianHMMWrapper,
     select_n_states,
     match_states_hungarian,
 )
-from src.hmm.inference import (
+from src.features.state.hmm.inference import (
     InferenceEngine,
     MultiTimeframeInferenceEngine,
     TemporalInferenceEngine,
     RollingFeatureBuffer,
     create_inference_engine,
 )
-from src.hmm.data_pipeline import (
+from src.features.state.hmm.data_pipeline import (
     FeatureLoader,
     GapHandler,
     TimeSplitter,
@@ -59,7 +59,7 @@ from src.hmm.data_pipeline import (
     validate_no_leakage,
     create_feature_vectors,
 )
-from src.hmm.training import (
+from src.features.state.hmm.training import (
     TrainingPipeline,
     TrainingConfig,
     TrainingResult,
@@ -68,13 +68,13 @@ from src.hmm.training import (
     HyperparameterGrid,
     train_model,
 )
-from src.hmm.storage import (
+from src.features.state.hmm.storage import (
     StateWriter,
     StateReader,
     StateRecord,
     validate_state_dataframe,
 )
-from src.hmm.validation import (
+from src.features.state.hmm.validation import (
     ModelValidator,
     ValidationReport,
     DwellTimeAnalyzer,
@@ -85,7 +85,7 @@ from src.hmm.validation import (
     WalkForwardBacktest,
     generate_validation_report,
 )
-from src.hmm.monitoring import (
+from src.features.state.hmm.monitoring import (
     MetricsCollector,
     MonitoringMetrics,
     DriftDetector,

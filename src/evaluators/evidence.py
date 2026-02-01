@@ -9,7 +9,7 @@ from typing import Literal, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.trading_buddy.domain import Evidence, Severity
+from src.domain import Evidence, Severity
 
 
 # Numerical stability constant

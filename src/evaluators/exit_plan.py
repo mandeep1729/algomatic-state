@@ -12,17 +12,17 @@ exit plan before entering a trade.
 import logging
 from typing import Optional
 
-from src.trading_buddy.domain import (
+from src.domain import (
     TradeIntent,
     TradeDirection,
     EvaluationItem,
     Evidence,
     Severity,
 )
-from src.trading_buddy.context import ContextPack
-from src.trading_buddy.evaluators.base import Evaluator, EvaluatorConfig
-from src.trading_buddy.evaluators.registry import register_evaluator
-from src.trading_buddy.evaluators.evidence import format_currency, format_percentage
+from src.context import ContextPack
+from src.evaluators.base import Evaluator, EvaluatorConfig
+from src.evaluators.registry import register_evaluator
+from src.evaluators.evidence import format_currency, format_percentage
 
 logger = logging.getLogger(__name__)
 

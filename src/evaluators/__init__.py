@@ -4,14 +4,14 @@ Provides base classes, registry, and utilities for building
 trade evaluation modules.
 """
 
-from src.trading_buddy.evaluators.base import Evaluator, EvaluatorConfig
-from src.trading_buddy.evaluators.registry import (
+from src.evaluators.base import Evaluator, EvaluatorConfig
+from src.evaluators.registry import (
     register_evaluator,
     get_evaluator,
     get_all_evaluators,
     list_evaluators,
 )
-from src.trading_buddy.evaluators.evidence import (
+from src.evaluators.evidence import (
     check_threshold,
     compute_zscore,
     compare_to_atr,
@@ -21,8 +21,8 @@ from src.trading_buddy.evaluators.evidence import (
 )
 
 # Import evaluators to trigger registration
-from src.trading_buddy.evaluators.risk_reward import RiskRewardEvaluator
-from src.trading_buddy.evaluators.exit_plan import ExitPlanEvaluator
+from src.evaluators.risk_reward import RiskRewardEvaluator
+from src.evaluators.exit_plan import ExitPlanEvaluator
 
 __all__ = [
     # Base

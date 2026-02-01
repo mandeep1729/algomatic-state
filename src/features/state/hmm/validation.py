@@ -18,8 +18,8 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from src.hmm.contracts import HMMOutput
-from src.hmm.hmm_model import GaussianHMMWrapper
+from src.features.state.hmm.contracts import HMMOutput
+from src.features.state.hmm.hmm_model import GaussianHMMWrapper
 
 
 @dataclass

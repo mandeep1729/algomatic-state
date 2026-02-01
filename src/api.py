@@ -14,14 +14,14 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.data.database.connection import get_db_manager
-from src.trading_buddy.domain import (
+from src.domain import (
     TradeDirection,
     TradeIntentStatus,
     TradeIntent as DomainTradeIntent,
     Severity,
 )
-from src.trading_buddy.context import ContextPackBuilder
-from src.trading_buddy.orchestrator import EvaluatorOrchestrator, OrchestratorConfig
+from src.context import ContextPackBuilder
+from src.orchestrator import EvaluatorOrchestrator, OrchestratorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +343,7 @@ async def list_evaluators():
     Returns metadata about registered evaluators including
     name, description, and default configuration.
     """
-    from src.trading_buddy.evaluators.registry import list_evaluators as _list
+    from src.evaluators.registry import list_evaluators as _list
 
     return {"evaluators": _list()}
 

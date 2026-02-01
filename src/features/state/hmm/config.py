@@ -13,7 +13,7 @@ from typing import Any, Literal, Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator
 
-from src.hmm.contracts import VALID_TIMEFRAMES
+from src.features.state.hmm.contracts import VALID_TIMEFRAMES
 
 
 # Default feature set for state vector training (from implementation plan)

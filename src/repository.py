@@ -19,7 +19,7 @@ from src.data.database.trading_buddy_models import (
     TradeEvaluation as TradeEvaluationModel,
     TradeEvaluationItem as TradeEvaluationItemModel,
 )
-from src.trading_buddy.domain import (
+from src.domain import (
     TradeIntent,
     TradeDirection,
     TradeIntentStatus,
@@ -29,7 +29,7 @@ from src.trading_buddy.domain import (
     Severity,
     SEVERITY_PRIORITY,
 )
-from src.trading_buddy.evaluators.base import EvaluatorConfig
+from src.evaluators.base import EvaluatorConfig
 
 logger = logging.getLogger(__name__)
 

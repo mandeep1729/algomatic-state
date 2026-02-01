@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from src.hmm.contracts import ModelMetadata, VALID_TIMEFRAMES
+from src.features.state.hmm.contracts import ModelMetadata, VALID_TIMEFRAMES
 
 logger = logging.getLogger(__name__)
 

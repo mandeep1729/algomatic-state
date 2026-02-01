@@ -18,11 +18,11 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from src.hmm.artifacts import ArtifactPaths
-from src.hmm.contracts import HMMOutput, LatentStateVector, ModelMetadata, VALID_TIMEFRAMES
-from src.hmm.encoders import BaseEncoder, TemporalPCAEncoder
-from src.hmm.hmm_model import GaussianHMMWrapper
-from src.hmm.scalers import BaseScaler
+from src.features.state.hmm.artifacts import ArtifactPaths
+from src.features.state.hmm.contracts import HMMOutput, LatentStateVector, ModelMetadata, VALID_TIMEFRAMES
+from src.features.state.hmm.encoders import BaseEncoder, TemporalPCAEncoder
+from src.features.state.hmm.hmm_model import GaussianHMMWrapper
+from src.features.state.hmm.scalers import BaseScaler
 
 logger = logging.getLogger(__name__)
 

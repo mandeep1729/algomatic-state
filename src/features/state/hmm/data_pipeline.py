@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.data.database.models import ComputedFeature, OHLCVBar, Ticker
-from src.hmm.contracts import FeatureVector, VALID_TIMEFRAMES
+from src.features.state.hmm.contracts import FeatureVector, VALID_TIMEFRAMES
 
 
 @dataclass

@@ -7,7 +7,7 @@ Pipeline:
     Raw Features → Scaler → PCA → K-means → State IDs
 
 Quick Start:
-    >>> from src.pca_states import PCAStateEngine, train_pca_states
+    >>> from src.features.state.pca import PCAStateEngine, train_pca_states
     >>>
     >>> # Train a model
     >>> result = train_pca_states(train_df, n_components=6, n_states=5)

@@ -10,16 +10,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from src.trading_buddy.domain import (
+from src.domain import (
     TradeIntent,
     EvaluationItem,
     EvaluationResult,
     Severity,
     SEVERITY_PRIORITY,
 )
-from src.trading_buddy.context import ContextPack, ContextPackBuilder, get_context_builder
-from src.trading_buddy.evaluators.base import Evaluator, EvaluatorConfig
-from src.trading_buddy.evaluators.registry import get_all_evaluators, get_evaluator
+from src.context import ContextPack, ContextPackBuilder, get_context_builder
+from src.evaluators.base import Evaluator, EvaluatorConfig
+from src.evaluators.registry import get_all_evaluators, get_evaluator
 
 logger = logging.getLogger(__name__)
 

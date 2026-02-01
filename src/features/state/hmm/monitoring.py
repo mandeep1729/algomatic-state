@@ -17,9 +17,9 @@ from typing import Any, Callable, Optional
 import numpy as np
 import pandas as pd
 
-from src.hmm.artifacts import ArtifactPaths, get_model_path, list_models
-from src.hmm.contracts import HMMOutput, VALID_TIMEFRAMES
-from src.hmm.inference import InferenceEngine, create_inference_engine
+from src.features.state.hmm.artifacts import ArtifactPaths, get_model_path, list_models
+from src.features.state.hmm.contracts import HMMOutput, VALID_TIMEFRAMES
+from src.features.state.hmm.inference import InferenceEngine, create_inference_engine
 
 
 logger = logging.getLogger(__name__)

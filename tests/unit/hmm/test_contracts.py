@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import numpy as np
 import pytest
 
-from src.hmm.contracts import (
+from src.features.state.hmm.contracts import (
     FeatureVector,
     HMMOutput,
     LatentStateVector,

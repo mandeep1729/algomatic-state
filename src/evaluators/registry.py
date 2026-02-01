@@ -7,7 +7,7 @@ similar to the feature calculator registry pattern.
 import logging
 from typing import Optional, Type
 
-from src.trading_buddy.evaluators.base import Evaluator, EvaluatorConfig
+from src.evaluators.base import Evaluator, EvaluatorConfig
 
 logger = logging.getLogger(__name__)
 

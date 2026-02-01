@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-from src.trading_buddy.domain import (
+from src.domain import (
     EvaluationResult,
     EvaluationItem,
     Severity,

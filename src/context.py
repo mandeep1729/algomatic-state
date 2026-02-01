@@ -15,7 +15,7 @@ import pandas as pd
 
 from src.data.database.connection import get_db_manager
 from src.data.database.repository import OHLCVRepository
-from src.hmm.contracts import Timeframe, VALID_TIMEFRAMES
+from src.features.state.hmm.contracts import Timeframe, VALID_TIMEFRAMES
 
 logger = logging.getLogger(__name__)
 

@@ -10,9 +10,9 @@ from typing import Optional
 
 import numpy as np
 
-from src.hmm.encoders import BaseEncoder
-from src.hmm.hmm_model import GaussianHMMWrapper
-from src.hmm.scalers import BaseScaler
+from src.features.state.hmm.encoders import BaseEncoder
+from src.features.state.hmm.hmm_model import GaussianHMMWrapper
+from src.features.state.hmm.scalers import BaseScaler
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.hmm.artifacts import (
+from src.features.state.hmm.artifacts import (
     ArtifactPaths,
     StatesPaths,
     generate_model_id,
@@ -16,7 +16,7 @@ from src.hmm.artifacts import (
     get_states_path,
     list_models,
 )
-from src.hmm.contracts import ModelMetadata
+from src.features.state.hmm.contracts import ModelMetadata
 
 
 class TestArtifactPaths:

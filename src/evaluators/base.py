@@ -9,13 +9,13 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from src.trading_buddy.domain import (
+from src.domain import (
     TradeIntent,
     EvaluationItem,
     Evidence,
     Severity,
 )
-from src.trading_buddy.context import ContextPack
+from src.context import ContextPack
 
 logger = logging.getLogger(__name__)
 

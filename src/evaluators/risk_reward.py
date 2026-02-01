@@ -12,16 +12,16 @@ with trade sizing and risk management.
 import logging
 from typing import Optional
 
-from src.trading_buddy.domain import (
+from src.domain import (
     TradeIntent,
     EvaluationItem,
     Evidence,
     Severity,
 )
-from src.trading_buddy.context import ContextPack
-from src.trading_buddy.evaluators.base import Evaluator, EvaluatorConfig
-from src.trading_buddy.evaluators.registry import register_evaluator
-from src.trading_buddy.evaluators.evidence import (
+from src.context import ContextPack
+from src.evaluators.base import Evaluator, EvaluatorConfig
+from src.evaluators.registry import register_evaluator
+from src.evaluators.evidence import (
     check_threshold,
     compare_to_atr,
     format_ratio,
