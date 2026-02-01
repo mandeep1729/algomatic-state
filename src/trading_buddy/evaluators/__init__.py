@@ -20,6 +20,10 @@ from src.trading_buddy.evaluators.evidence import (
     format_ratio,
 )
 
+# Import evaluators to trigger registration
+from src.trading_buddy.evaluators.risk_reward import RiskRewardEvaluator
+from src.trading_buddy.evaluators.exit_plan import ExitPlanEvaluator
+
 __all__ = [
     # Base
     "Evaluator",
@@ -36,4 +40,7 @@ __all__ = [
     "format_percentage",
     "format_currency",
     "format_ratio",
+    # Evaluators
+    "RiskRewardEvaluator",
+    "ExitPlanEvaluator",
 ]
