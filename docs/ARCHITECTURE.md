@@ -47,11 +47,15 @@ Algomatic State follows a layered architecture with clear separation between dat
 │         └─────┬──────┘           └──────┬─────┘               │
 │               └──────────┬──────────────┘                     │
 │                          ▼                                    │
-│         ┌─────────────────────────────────────┐               │
-│         │         Gaussian HMM                │               │
-│         │    (Regime Inference + Filtering)   │               │
-│         └──────────────────┬──────────────────┘               │
-│                            ▼                                  │
+│    ┌─────────────────────────────────────────────────────┐   │
+│    │                 State Computation                    │   │
+│    │  ┌─────────────────────┐  ┌─────────────────────┐   │   │
+│    │  │    Gaussian HMM     │  │   PCA + K-means     │   │   │
+│    │  │ (Regime Inference)  │  │ (Simpler approach)  │   │   │
+│    │  └──────────┬──────────┘  └──────────┬──────────┘   │   │
+│    │             └──────────┬─────────────┘              │   │
+│    └─────────────────────────┼───────────────────────────┘   │
+│                              ▼                                │
 │                   State + Regime Output                       │
 │                                                               │
 │                      STATE LAYER                              │
@@ -140,6 +144,14 @@ algomatic-state/
 │   │   ├── storage.py          # Parquet state storage
 │   │   ├── validation.py       # Model validation and diagnostics
 │   │   └── monitoring.py       # Drift detection and operations
+│   │
+│   ├── pca_states/             # PCA-based State Computation (alternative to HMM)
+│   │   ├── __init__.py         # Module exports
+│   │   ├── contracts.py        # Data contracts (PCAStateOutput, PCAModelMetadata)
+│   │   ├── artifacts.py        # Model path management
+│   │   ├── training.py         # PCAStateTrainer with auto component/cluster selection
+│   │   ├── engine.py           # PCAStateEngine for inference
+│   │   └── labeling.py         # Semantic state labeling
 │   │
 │   ├── strategy/               # Trading logic (uses HMM states)
 │   │   └── (regime-gated signal generation)

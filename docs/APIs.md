@@ -154,6 +154,107 @@ Get comprehensive statistics summary.
 }
 ```
 
+## State Analysis
+
+### `POST /api/analyze/{symbol}`
+Analyze a symbol using HMM: load OHLCV data, compute features, train model if needed, compute states.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| timeframe | string | "1Min" | Timeframe to analyze |
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/api/analyze/AAPL?timeframe=1Hour"
+```
+
+**Response:**
+```json
+{
+  "symbol": "AAPL",
+  "timeframe": "1Hour",
+  "features_computed": 0,
+  "model_trained": true,
+  "model_id": "state_v001",
+  "states_computed": 803,
+  "total_bars": 803,
+  "message": "OHLCV data loaded; Trained new model state_v001 with 11 states; Computed 803 states"
+}
+```
+
+### `POST /api/pca/analyze/{symbol}`
+Analyze a symbol using PCA + K-means clustering (simpler alternative to HMM).
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| timeframe | string | "1Min" | Timeframe to analyze |
+| n_components | int | auto | Number of PCA components (auto = 95% variance) |
+| n_states | int | auto | Number of K-means clusters (auto = elbow method) |
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/api/pca/analyze/AAPL?timeframe=1Hour"
+```
+
+**Response:**
+```json
+{
+  "symbol": "AAPL",
+  "timeframe": "1Hour",
+  "features_computed": 0,
+  "model_trained": true,
+  "model_id": "pca_v001",
+  "states_computed": 803,
+  "n_components": 8,
+  "n_states": 4,
+  "total_variance_explained": 0.975,
+  "message": "OHLCV data loaded; Trained PCA model: 8 components, 4 states, 97.5% variance explained; Computed 803 states"
+}
+```
+
+### `GET /api/pca/regimes/{symbol}`
+Get PCA-based regime states for a symbol.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| timeframe | string | "1Min" | Timeframe |
+| model_id | string | latest | Model ID to use |
+| start_date | string | null | Start date (YYYY-MM-DD) |
+| end_date | string | null | End date (YYYY-MM-DD) |
+
+**Response:**
+```json
+{
+  "timestamps": ["2024-01-01 09:30:00", "2024-01-01 10:30:00"],
+  "state_ids": [0, 1],
+  "state_info": {
+    "0": {
+      "label": "up_trending",
+      "short_label": "UT-TRE",
+      "color": "#22c55e",
+      "description": "Upward movement with strong trend"
+    },
+    "1": {
+      "label": "down_trending",
+      "short_label": "DT-TRE",
+      "color": "#ef4444",
+      "description": "Downward movement with strong trend"
+    }
+  }
+}
+```
+
+**State Labels:**
+- `up_trending` / `up_volatile` / `up_breakout` - Bullish states (green)
+- `down_trending` / `down_volatile` / `down_breakout` - Bearish states (red)
+- `neutral_consolidation` / `neutral_ranging` - Sideways states (gray)
+
 ## Data Synchronization
 
 ### `GET /api/sync-status/{symbol}`

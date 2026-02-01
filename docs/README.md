@@ -121,10 +121,27 @@ After loading data, a **Time Range Selection** slider appears at the top of the 
 - **Reset button** - Return to the initial view (first 7,200 points)
 - Shows current time range and point count
 
+### State Analysis (Analyze Button)
+After loading data, click the **Analyze** button to compute market regime states:
+
+1. **Auto-fetches OHLCV data** from Alpaca if not in database
+2. **Computes 68 technical features** (returns, volatility, volume, TA indicators)
+3. **Trains a PCA + K-means model** with automatic parameter selection:
+   - PCA components: selected to capture 95% variance
+   - K-means clusters: selected using elbow method
+4. **Assigns semantic labels** to each state (up_trending, down_trending, etc.)
+5. **Displays colored state bars** below the candlestick chart
+
+State colors:
+- **Green** (#22c55e): Upward/bullish states
+- **Red** (#ef4444): Downward/bearish states
+- **Gray** (#6b7280): Neutral/sideways states
+
 ### Chart Interaction
 - **Drag to select** on the price chart to zoom into a time range
 - Selected range updates the slider and re-renders all charts
 - All charts (price, volume, features) stay synchronized to the same time range
+- **State bars** at the bottom show market regime for each bar
 
 ### Visual Indicators
 - **"Available: X bars"** - Shows how many bars exist in the database for the selected ticker/timeframe

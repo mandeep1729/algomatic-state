@@ -158,7 +158,7 @@ class Trade:
         """Convert trade to dictionary."""
         return {
             "symbol": self.symbol,
-            "direction": str(self.direction),
+            "direction": self.direction.value,
             "quantity": self.quantity,
             "entry_price": self.entry_price,
             "exit_price": self.exit_price,

@@ -5,7 +5,7 @@ from pathlib import Path
 from textwrap import dedent
 
 import pandas as pd
-import pandera.pandas.errors as pandera_errors
+import pandera.errors as pandera_errors
 import pytest
 
 from src.data.loaders.csv_loader import CSVLoader
