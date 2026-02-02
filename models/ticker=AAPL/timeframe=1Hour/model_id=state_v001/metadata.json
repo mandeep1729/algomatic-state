@@ -1,0 +1,51 @@
+{
+  "model_id": "state_v001",
+  "timeframe": "1Hour",
+  "version": "1.0.0",
+  "created_at": "2026-01-31T00:47:00.269232+00:00",
+  "training_start": "2025-11-17T16:00:00+00:00",
+  "training_end": "2026-01-15T23:00:00+00:00",
+  "n_states": 11,
+  "latent_dim": 10,
+  "feature_names": [
+    "clv",
+    "pullback_depth",
+    "r5",
+    "r15",
+    "r60",
+    "vwap_60",
+    "dist_vwap_60",
+    "tod_sin",
+    "macd",
+    "stoch_k",
+    "sma_20",
+    "ema_20",
+    "vol_of_vol",
+    "vol_z_60",
+    "range_1",
+    "rv_15",
+    "rv_60",
+    "relvol_60",
+    "range_z_60",
+    "bb_middle",
+    "bb_width"
+  ],
+  "symbols": [
+    "AAPL"
+  ],
+  "scaler_type": "robust",
+  "encoder_type": "pca",
+  "covariance_type": "diag",
+  "state_ttl_bars": 1,
+  "ood_threshold": -50.0,
+  "state_mapping": null,
+  "metrics": {
+    "train_log_likelihood": -6265.672743257875,
+    "train_aic": 13211.34548651575,
+    "train_bic": 14729.305509770336,
+    "mean_dwell_time": 90909104.50600304,
+    "val_log_likelihood": -4193.825302564971,
+    "explained_variance": 0.9578516621497214,
+    "reconstruction_error": 0.026549629381011606
+  }
+}

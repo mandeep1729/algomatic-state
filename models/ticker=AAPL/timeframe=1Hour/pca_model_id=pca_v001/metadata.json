@@ -1,0 +1,70 @@
+{
+  "model_id": "pca_v001",
+  "model_type": "pca_kmeans",
+  "timeframe": "1Hour",
+  "symbols": [
+    "AAPL"
+  ],
+  "n_components": 8,
+  "n_states": 4,
+  "feature_names": [
+    "r1",
+    "r5",
+    "r15",
+    "r60",
+    "rv_60",
+    "vol_z_60",
+    "rsi_14",
+    "macd",
+    "bb_pct",
+    "adx_14",
+    "atr_14",
+    "relvol_60"
+  ],
+  "explained_variance_ratio": [
+    0.3816392762692806,
+    0.18190401841608692,
+    0.12492427628380076,
+    0.10298011834481131,
+    0.07608736666703157,
+    0.04889101850485603,
+    0.03189200071703756,
+    0.026662970085593565
+  ],
+  "total_variance_explained": 0.9749810452884984,
+  "ood_threshold": 5.344459935749499,
+  "created_at": "2026-01-31T09:47:02.584172",
+  "train_start": "2025-11-17T16:00:00+00:00",
+  "train_end": "2026-01-31T00:00:00+00:00",
+  "n_train_samples": 803,
+  "state_mapping": {
+    "0": {
+      "state_id": 0,
+      "label": "down_trending",
+      "short_label": "DT-TRE",
+      "color": "#ef4444",
+      "description": "Downward movement with strong trend"
+    },
+    "1": {
+      "state_id": 1,
+      "label": "down_trending",
+      "short_label": "DT-TRE",
+      "color": "#ef4444",
+      "description": "Downward movement with strong trend"
+    },
+    "2": {
+      "state_id": 2,
+      "label": "up_trending",
+      "short_label": "UT-TRE",
+      "color": "#22c55e",
+      "description": "Upward movement with strong trend"
+    },
+    "3": {
+      "state_id": 3,
+      "label": "up_trending",
+      "short_label": "UT-TRE",
+      "color": "#22c55e",
+      "description": "Upward movement with strong trend"
+    }
+  }
+}
