@@ -5,6 +5,7 @@ description: Coding best practices for python programming.
 # Instructions
 
 - Must follow PEP 8 style guide
+- Ensure code has proper logging and error handling. All errors, potential issues and key progress steps should be logged.
 - Keep functions short and focused. Give them meaningful names.
 - Always commit and push after every meaningful change with meaningful commit messages
 
