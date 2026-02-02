@@ -169,38 +169,19 @@ class SnapTradeClient:
             return None
 
         try:
-            # Note: The SDK might require specific formatting for dates
-            params = {
+            # Build params
+            kwargs = {
                 "user_id": user_id,
                 "user_secret": user_secret,
             }
             if start_date:
-                params["start_date"] = start_date.strftime("%Y-%m-%d")
+                kwargs["start_date"] = start_date.strftime("%Y-%m-%d")
             if end_date:
-                params["end_date"] = end_date.strftime("%Y-%m-%d")
-                
-            # Usually we need to query per account, or use a "get_all" if available.
-            # SnapTrade docs usually suggest getting accounts first, then activities per account.
-            # But let's check if there's a global activities endpoint or we iterate.
-            # For now, let's assume we fetch accounts and then activities for each.
-            
-            accounts = self.client.account_information.list_user_accounts(
-                user_id=user_id,
-                user_secret=user_secret
-            )
-            
-            all_activities = []
-            for account in accounts.body:
-                activities = self.client.transactions_and_reporting.get_activities(
-                    user_id=user_id,
-                    user_secret=user_secret,
-                    account_id=account["id"],
-                    start_date=params.get("start_date"),
-                    end_date=params.get("end_date")
-                )
-                all_activities.extend(activities.body)
-                
-            return all_activities
+                kwargs["end_date"] = end_date.strftime("%Y-%m-%d")
+
+            # Get all activities for user (API returns all accounts)
+            response = self.client.transactions_and_reporting.get_activities(**kwargs)
+            return response.body
 
         except Exception as e:
             logger.error(f"Failed to get activities: {e}")

@@ -44,6 +44,7 @@ class ConnectRequest(BaseModel):
     user_id: int = 1  # Default to internal user ID 1
     redirect_url: Optional[str] = None  # URL to redirect after connection
     broker: Optional[str] = None  # Pre-select broker (e.g., 'ALPACA')
+    force: bool = False  # Force reconnect even if already connected
 
 class ConnectResponse(BaseModel):
     redirect_url: str
@@ -73,9 +74,28 @@ async def connect_broker(
     """Initiate broker connection.
 
     Registers user with SnapTrade if needed and returns a connection link.
+    Use force=true to reconnect even if already connected.
     """
     if not client.client:
          raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
+
+    # Check if user already has connections
+    snap_user = db.query(SnapTradeUser).filter(
+        SnapTradeUser.user_account_id == request.user_id
+    ).first()
+
+    if snap_user and not request.force:
+        # Check if already connected
+        accounts = client.get_accounts(
+            snap_user.snaptrade_user_id,
+            snap_user.snaptrade_user_secret
+        )
+        if accounts:
+            broker_names = [acc.get("institution_name", "broker") for acc in accounts]
+            raise HTTPException(
+                status_code=400,
+                detail=f"Already connected to: {', '.join(broker_names)}. Use GET /api/broker/status to check connections."
+            )
 
     # 1. Check if user exists
     snap_user = db.query(SnapTradeUser).filter(
@@ -134,23 +154,18 @@ async def sync_data(
     accounts = client.get_accounts(snap_user.snaptrade_user_id, snap_user.snaptrade_user_secret)
     if accounts:
         for acc in accounts:
-            # Check/Update connection
-            # Note: SnapTrade account structure is hierarchical (Broker -> Account)
-            # We treat each "Account" as a connection for simplicity or map them
-            # For now, let's just log or store simple connection info.
-            
-            # Find existing
-            broker_slug = acc.get("brokerage_authorization", {}).get("brokerage", {}).get("slug", "unknown")
-            broker_name = acc.get("brokerage_authorization", {}).get("brokerage", {}).get("name", "Unknown Broker")
-            auth_id = acc.get("brokerage_authorization", {}).get("id")
-            
-            if not auth_id:
+            # Extract broker info from account - brokerage_authorization is just an ID string
+            auth_id = acc.get("brokerage_authorization")
+            if not auth_id or not isinstance(auth_id, str):
                 continue
+
+            broker_name = acc.get("institution_name") or acc.get("name") or "Unknown Broker"
+            broker_slug = broker_name.lower().replace(" ", "_")
 
             conn = db.query(BrokerConnection).filter(
                 BrokerConnection.authorization_id == auth_id
             ).first()
-            
+
             if not conn:
                 conn = BrokerConnection(
                     snaptrade_user_id=snap_user.id,
@@ -169,62 +184,73 @@ async def sync_data(
             # Note: client.get_activities we implemented might list ALL activities.
             pass # We'll do it outside the loop if it fetches all
             
+    # Pre-load all user connections for matching
+    user_conns = db.query(BrokerConnection).filter(BrokerConnection.snaptrade_user_id == snap_user.id).all()
+
     # Fetch all activities
     activities = client.get_activities(snap_user.snaptrade_user_id, snap_user.snaptrade_user_secret)
     synced_count = 0
-    
+
     if activities:
         for activity in activities:
-            # Filter for trades
-            if activity.get("type") not in ["BUY", "SELL"]:
+            # Filter for actual trades (BUY, SELL) - skip journals, dividends, etc.
+            activity_type = activity.get("type", "").upper()
+            if activity_type not in ["BUY", "SELL"]:
                 continue
-                
-            # Find corresponding connection (we need account_id from activity)
-            # This part requires mapping account_id back to BrokerConnection
-            # For simplicity, we just pick the first connection or try to match
-            # activity['account']['id']
-            
-            account_id = activity.get("account", {}).get("id")
-            # We stored auth_id in BrokerConnection, but account_id is different (one auth can have multiple accounts)
-            # Ideally BrokerConnection should rely on authorization_id, and we might need an Account table.
-            # For this MVP, let's just link to the SnapTradeUser via a generic BrokerConnection lookup 
-            # OR just assume we attach to the first valid connection for that user, 
-            # OR better: fetch connection by matching account_id inside the meta JSONB we stored.
-            
-            # Simple fallback: find connection where meta->id == account_id
-            # This is slow in SQL but ok for MVP.
-            
+
+            # Get account ID from activity
+            account_data = activity.get("account")
+            if isinstance(account_data, dict):
+                account_id = account_data.get("id")
+            else:
+                account_id = None
+
+            # Find connection by matching account_id in meta
             conn = None
-            # Iterate loaded connections in session or query properly
-            # Optimization: Pre-load all user connections
-            user_conns = db.query(BrokerConnection).filter(BrokerConnection.snaptrade_user_id == snap_user.id).all()
             for c in user_conns:
-                # meta is the account object from SnapTrade
-                if c.meta.get("id") == account_id:
+                if c.meta and c.meta.get("id") == account_id:
                     conn = c
                     break
-            
+
+            if not conn and user_conns:
+                # Fallback to first connection if can't match
+                conn = user_conns[0]
+
             if not conn:
-                # If we can't find the connection, we skip or create a dummy one.
-                # Let's skip with warning
                 logger.warning(f"Could not find connection for account {account_id}")
                 continue
 
-            # Check if trade exists
+            # Check if trade already exists
             trade_id = str(activity.get("id"))
             exists = db.query(TradeHistory).filter(TradeHistory.external_trade_id == trade_id).first()
             if exists:
                 continue
-                
+
+            # Extract symbol - can be None for some activity types
+            symbol_data = activity.get("symbol")
+            if isinstance(symbol_data, dict):
+                symbol = symbol_data.get("symbol", "UNKNOWN")
+            elif isinstance(symbol_data, str):
+                symbol = symbol_data
+            else:
+                symbol = "UNKNOWN"
+
+            # Parse trade date
+            trade_date_str = activity.get("trade_date") or activity.get("settlement_date")
+            if trade_date_str:
+                executed_at = datetime.fromisoformat(trade_date_str.replace("Z", "+00:00"))
+            else:
+                executed_at = datetime.utcnow()
+
             # Create Trade
             trade = TradeHistory(
                 broker_connection_id=conn.id,
-                symbol=activity.get("symbol", {}).get("symbol", "UNKNOWN"),
-                side=activity.get("type", "UNKNOWN").lower(),
+                symbol=symbol,
+                side=activity_type.lower(),
                 quantity=float(activity.get("units", 0)),
                 price=float(activity.get("price", 0)),
-                fees=float(activity.get("fees", 0)),
-                executed_at=datetime.fromisoformat(activity.get("trade_date").replace("Z", "+00:00")),
+                fees=float(activity.get("fee", 0)),
+                executed_at=executed_at,
                 external_trade_id=trade_id,
                 raw_data=activity
             )
