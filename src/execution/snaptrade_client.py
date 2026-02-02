@@ -82,12 +82,20 @@ class SnapTradeClient:
             logger.error(f"Failed to register SnapTrade user: {e}")
             return None
 
-    def generate_connection_link(self, user_id: str, user_secret: str) -> Optional[str]:
+    def generate_connection_link(
+        self,
+        user_id: str,
+        user_secret: str,
+        custom_redirect: Optional[str] = None,
+        broker: Optional[str] = None,
+    ) -> Optional[str]:
         """Generate a connection link for the user to connect a broker.
 
         Args:
             user_id: SnapTrade user ID
             user_secret: SnapTrade user secret
+            custom_redirect: URL to redirect to after connection completes
+            broker: Optional broker slug to pre-select (e.g., 'ALPACA')
 
         Returns:
             Redirect URI string or None.
@@ -96,11 +104,16 @@ class SnapTradeClient:
             return None
 
         try:
-            response = self.client.authentication.login_snap_trade_user(
-                user_id=user_id,
-                user_secret=user_secret,
-                immediate_redirect=True # Optional, depends on desired flow
-            )
+            kwargs = {
+                "user_id": user_id,
+                "user_secret": user_secret,
+            }
+            if custom_redirect:
+                kwargs["custom_redirect"] = custom_redirect
+            if broker:
+                kwargs["broker"] = broker
+
+            response = self.client.authentication.login_snap_trade_user(**kwargs)
             return response.body.get("redirectURI")
         except Exception as e:
             logger.error(f"Failed to generate connection link: {e}")

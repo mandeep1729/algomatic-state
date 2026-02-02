@@ -42,6 +42,8 @@ def get_snaptrade_client():
 
 class ConnectRequest(BaseModel):
     user_id: int = 1  # Default to internal user ID 1
+    redirect_url: Optional[str] = None  # URL to redirect after connection
+    broker: Optional[str] = None  # Pre-select broker (e.g., 'ALPACA')
 
 class ConnectResponse(BaseModel):
     redirect_url: str
@@ -100,7 +102,9 @@ async def connect_broker(
     # 3. Generate link
     redirect_url = client.generate_connection_link(
         snap_user.snaptrade_user_id,
-        snap_user.snaptrade_user_secret
+        snap_user.snaptrade_user_secret,
+        custom_redirect=request.redirect_url,
+        broker=request.broker,
     )
 
     if not redirect_url:
@@ -260,4 +264,61 @@ async def get_trades(
         )
         for t in trades
     ]
+
+
+class ConnectionStatusResponse(BaseModel):
+    connected: bool
+    brokerages: List[str] = []
+
+
+@router.get("/status", response_model=ConnectionStatusResponse)
+async def get_connection_status(
+    user_id: int = 1,
+    db: Session = Depends(get_db),
+    client: SnapTradeClient = Depends(get_snaptrade_client)
+):
+    """Check if user has any connected brokerages."""
+    snap_user = db.query(SnapTradeUser).filter(
+        SnapTradeUser.user_account_id == user_id
+    ).first()
+
+    if not snap_user:
+        return ConnectionStatusResponse(connected=False, brokerages=[])
+
+    # Check with SnapTrade for connected accounts
+    if client.client:
+        accounts = client.get_accounts(
+            snap_user.snaptrade_user_id,
+            snap_user.snaptrade_user_secret
+        )
+        if accounts:
+            brokerages = []
+            for acc in accounts:
+                try:
+                    if isinstance(acc, dict):
+                        # Use institution_name or name field
+                        name = acc.get("institution_name") or acc.get("name") or "Unknown"
+                        brokerages.append(name)
+                except Exception as e:
+                    logger.warning(f"Error parsing account: {e}")
+                    continue
+            return ConnectionStatusResponse(connected=len(brokerages) > 0, brokerages=list(set(brokerages)))
+
+    return ConnectionStatusResponse(connected=False, brokerages=[])
+
+
+@router.get("/callback")
+async def broker_callback(
+    status: str = "success",
+    db: Session = Depends(get_db),
+):
+    """Handle callback from SnapTrade after broker connection.
+
+    This endpoint is called when the user completes (or cancels) the broker connection.
+    The frontend should poll /status to check connection state.
+    """
+    return {
+        "status": status,
+        "message": "Connection process completed. Check /api/broker/status for connection state."
+    }
 
