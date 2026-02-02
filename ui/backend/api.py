@@ -59,13 +59,15 @@ from src.features.state.hmm.artifacts import get_model_path, list_models
 from src.features.state.hmm.inference import InferenceEngine
 from src.features.state.hmm.labeling import state_mapping_to_labels, StateLabel as HMMStateLabel
 from src.trading_buddy_api import router as trading_buddy_router
+from src.api.broker import router as broker_router
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Regime State Visualization API", version="1.0.0")
 
-# Include Trading Buddy router
+# Include routers
 app.include_router(trading_buddy_router)
+app.include_router(broker_router)
 
 # Enable CORS for React frontend
 app.add_middleware(

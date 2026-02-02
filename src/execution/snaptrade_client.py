@@ -40,6 +40,8 @@ class SnapTradeClient:
     def register_user(self, user_id: str) -> Optional[Dict[str, str]]:
         """Register a new user with SnapTrade.
 
+        If the user already exists, deletes and re-registers them.
+
         Args:
             user_id: Internal user ID (will be used as SnapTrade userId)
 
@@ -55,10 +57,28 @@ class SnapTradeClient:
                 user_id=user_id
             )
             return {
-                "user_id": response.body["user_id"],
-                "user_secret": response.body["user_secret"],
+                "user_id": response.body["userId"],
+                "user_secret": response.body["userSecret"],
             }
         except Exception as e:
+            error_str = str(e)
+            # Handle "user already exists" error
+            if "already exist" in error_str or "1010" in error_str:
+                logger.info(f"User {user_id} already exists in SnapTrade, deleting and re-registering")
+                try:
+                    # Delete existing user
+                    self.client.authentication.delete_snap_trade_user(user_id=user_id)
+                    # Re-register
+                    response = self.client.authentication.register_snap_trade_user(
+                        user_id=user_id
+                    )
+                    return {
+                        "user_id": response.body["userId"],
+                        "user_secret": response.body["userSecret"],
+                    }
+                except Exception as e2:
+                    logger.error(f"Failed to re-register SnapTrade user after deletion: {e2}")
+                    return None
             logger.error(f"Failed to register SnapTrade user: {e}")
             return None
 
@@ -81,7 +101,7 @@ class SnapTradeClient:
                 user_secret=user_secret,
                 immediate_redirect=True # Optional, depends on desired flow
             )
-            return response.body.get("login_redirect_url")
+            return response.body.get("redirectURI")
         except Exception as e:
             logger.error(f"Failed to generate connection link: {e}")
             return None

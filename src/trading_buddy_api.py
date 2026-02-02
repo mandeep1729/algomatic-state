@@ -23,13 +23,10 @@ from src.domain import (
 from src.context import ContextPackBuilder
 from src.orchestrator import EvaluatorOrchestrator, OrchestratorConfig
 
-from src.api.broker import router as broker_router
-
 logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(prefix="/api/trading-buddy", tags=["trading-buddy"])
-router.include_router(broker_router)
 
 
 # =============================================================================

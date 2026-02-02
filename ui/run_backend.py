@@ -11,11 +11,10 @@ sys.path.insert(0, str(project_root))
 
 if __name__ == "__main__":
     import uvicorn
-    from ui.backend.api import app
 
     print("Starting Regime State Visualization API...")
     print("API will be available at: http://localhost:8000")
     print("API docs available at: http://localhost:8000/docs")
     print()
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("ui.backend.api:app", host="0.0.0.0", port=8000, reload=True)
