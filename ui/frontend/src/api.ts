@@ -181,3 +181,40 @@ export async function analyzePCASymbol(
   );
   return response.data;
 }
+
+// -----------------------------------------------------------------------------
+// Broker Integration
+// -----------------------------------------------------------------------------
+
+export interface ConnectResponse {
+  redirect_url: string;
+}
+
+export interface SyncResponse {
+  status: string;
+  trades_synced: number;
+}
+
+export interface Trade {
+  symbol: string;
+  side: string;
+  quantity: number;
+  price: number;
+  executed_at: string;
+  brokerage: string;
+}
+
+export async function connectBroker(userId: number = 1): Promise<ConnectResponse> {
+  const response = await axios.post<ConnectResponse>(`${API_BASE}/broker/connect`, { user_id: userId });
+  return response.data;
+}
+
+export async function syncBroker(userId: number = 1): Promise<SyncResponse> {
+  const response = await axios.post<SyncResponse>(`${API_BASE}/broker/sync?user_id=${userId}`);
+  return response.data;
+}
+
+export async function fetchTrades(userId: number = 1): Promise<Trade[]> {
+  const response = await axios.get<Trade[]>(`${API_BASE}/broker/trades?user_id=${userId}`);
+  return response.data;
+}

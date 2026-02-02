@@ -373,3 +373,43 @@ All endpoints return standard HTTP error codes:
   "detail": "Error message describing what went wrong"
 }
 ```
+
+## Broker Integration
+
+### `POST /api/trading-buddy/connect`
+Initiate a broker connection using SnapTrade.
+
+**Response:**
+```json
+{
+  "redirect_url": "https://app.snaptrade.com/..."
+}
+```
+
+### `POST /api/trading-buddy/sync`
+Sync trade history from connected brokers.
+
+**Response:**
+```json
+{
+  "status": "success",
+  "trades_synced": 50
+}
+```
+
+### `GET /api/trading-buddy/trades`
+Get trade history.
+
+**Response:**
+```json
+[
+  {
+    "symbol": "AAPL",
+    "side": "BUY",
+    "quantity": 10,
+    "price": 150.0,
+    "executed_at": "2024-01-01T10:00:00",
+    "brokerage": "Robinhood"
+  }
+]
+```

@@ -291,6 +291,7 @@ pytest tests/unit/hmm/ --cov=src/hmm --cov-report=html
 - [Architecture](docs/ARCHITECTURE.md): System design and data flow
 - [Implementation Plan](docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md): Phase-by-phase implementation details
 - [Technical Design](docs/MULTI_TIMEFRAME_STATE_VECTORS_HMM_REGIME_TRACKING.md): HMM design document
+- [SnapTrade Integration](docs/SNAPTRADE.md): Brokerage integration details
 
 ## License
 
