@@ -44,7 +44,16 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Analyze HMM states and generate semantic labels",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=_get_epilog(),
+    )
+    _add_model_args(parser)
+    _add_output_args(parser)
+    return parser.parse_args()
+
+
+def _get_epilog() -> str:
+    """Return command help epilog with examples."""
+    return """
 Examples:
     # List available models
     python scripts/analyze_hmm_states.py --list-models
@@ -57,58 +66,61 @@ Examples:
 
     # Show detailed statistics for each state
     python scripts/analyze_hmm_states.py --symbol AAPL --model-id state_v001 --verbose
-        """
-    )
+    """
 
-    parser.add_argument(
-        "--symbol", "-s",
-        default=None,
-        help="Ticker symbol (e.g., AAPL)"
-    )
-    parser.add_argument(
-        "--model-id", "-m",
-        default=None,
-        help="Model ID to analyze (e.g., state_v001)"
-    )
-    parser.add_argument(
-        "--timeframe", "-t",
-        default="1Min",
-        choices=["1Min", "5Min", "15Min", "1Hour", "1Day"],
-        help="Timeframe (default: 1Min)"
-    )
-    parser.add_argument(
-        "--models-dir",
-        default="models",
-        help="Models directory (default: models)"
-    )
-    parser.add_argument(
-        "--list-models",
-        action="store_true",
-        help="List available models and exit"
-    )
-    parser.add_argument(
-        "--save",
-        action="store_true",
-        help="Save labels to metadata.json"
-    )
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="Show detailed statistics for each state"
-    )
 
-    return parser.parse_args()
+def _add_model_args(parser: argparse.ArgumentParser) -> None:
+    """Add model identification arguments."""
+    parser.add_argument("--symbol", "-s", default=None, help="Ticker symbol (e.g., AAPL)")
+    parser.add_argument("--model-id", "-m", default=None, help="Model ID to analyze (e.g., state_v001)")
+    parser.add_argument("--timeframe", "-t", default="1Min", choices=["1Min", "5Min", "15Min", "1Hour", "1Day"])
+    parser.add_argument("--models-dir", default="models", help="Models directory")
+
+
+def _add_output_args(parser: argparse.ArgumentParser) -> None:
+    """Add output control arguments."""
+    parser.add_argument("--list-models", action="store_true", help="List available models and exit")
+    parser.add_argument("--save", action="store_true", help="Save labels to metadata.json")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed statistics")
+
+
+def _list_ticker_models(models_root: Path) -> None:
+    """List all available models organized by ticker."""
+    print("\nAvailable models:")
+    print("-" * 50)
+
+    if not models_root.exists():
+        print("No models directory found")
+        return
+
+    for ticker_dir in sorted(models_root.iterdir()):
+        if ticker_dir.is_dir() and ticker_dir.name.startswith("ticker="):
+            _print_ticker_models(ticker_dir, models_root)
+    print()
+
+
+def _print_ticker_models(ticker_dir: Path, models_root: Path) -> None:
+    """Print all models for a single ticker."""
+    symbol = ticker_dir.name.replace("ticker=", "")
+    print(f"\n{symbol}:")
+
+    for tf in ["1Min", "5Min", "15Min", "1Hour", "1Day"]:
+        model_ids = list_models(symbol, tf, models_root)
+        if model_ids:
+            _print_timeframe_models(tf, model_ids, symbol, models_root)
+
+
+def _print_timeframe_models(tf: str, model_ids: list, symbol: str, models_root: Path) -> None:
+    """Print models for a specific timeframe."""
+    print(f"  {tf}:")
+    for model_id in model_ids:
+        paths = get_model_path(symbol, tf, model_id, models_root)
+        status = "OK" if paths.exists() else "incomplete"
+        print(f"    - {model_id} [{status}]")
 
 
 def load_model_artifacts(paths: ArtifactPaths):
-    """Load all model artifacts.
-
-    Args:
-        paths: ArtifactPaths instance
-
-    Returns:
-        Tuple of (scaler, encoder, hmm, metadata)
-    """
+    """Load all model artifacts. Returns (scaler, encoder, hmm, metadata)."""
     if not paths.exists():
         raise FileNotFoundError(f"Model artifacts not found at {paths.model_dir}")
 
@@ -116,17 +128,11 @@ def load_model_artifacts(paths: ArtifactPaths):
     scaler = BaseScaler.load(paths.scaler_path)
     encoder = BaseEncoder.load(paths.encoder_path)
     hmm = GaussianHMMWrapper.load(paths.hmm_path)
-
     return scaler, encoder, hmm, metadata
 
 
-def print_state_labels(labels: dict[int, StateLabel], verbose: bool = False):
-    """Print state labels in a formatted table.
-
-    Args:
-        labels: Dictionary of state_id -> StateLabel
-        verbose: Whether to show detailed info
-    """
+def print_state_labels(labels: dict[int, StateLabel], verbose: bool = False) -> None:
+    """Print state labels in a formatted table."""
     print("\n" + "=" * 70)
     print("STATE LABELS")
     print("=" * 70)
@@ -138,16 +144,27 @@ def print_state_labels(labels: dict[int, StateLabel], verbose: bool = False):
         print(f"{state_id:<8} {label.label:<25} {label.short_label:<8} {label.color:<10}")
         if verbose:
             print(f"         {label.description}")
-
     print("=" * 70)
 
 
-def print_state_statistics(engine: StateLabelingEngine):
-    """Print detailed statistics for each state.
+def _print_state_feature_stats(state_id: int, s: dict) -> None:
+    """Print feature statistics for a single state."""
+    print(f"\nState {state_id}:")
+    print(f"  Return features (r5, r15, r60):")
+    for feat in ["r5", "r15", "r60"]:
+        if feat in s:
+            print(f"    {feat}: {s[feat]:+.4f}")
+    print(f"  Volatility features:")
+    for feat in ["vol_z_60"]:
+        if feat in s:
+            print(f"    {feat}: {s[feat]:+.4f}")
+    print(f"  Transition dynamics:")
+    print(f"    Self-transition prob: {s['self_transition_prob']:.3f}")
+    print(f"    Expected duration: {s['expected_duration']:.1f} bars")
 
-    Args:
-        engine: StateLabelingEngine instance
-    """
+
+def print_state_statistics(engine: StateLabelingEngine) -> None:
+    """Print detailed statistics for each state."""
     stats = engine.get_state_statistics()
     if not stats:
         print("\nStatistics not available (inverse transform failed)")
@@ -158,74 +175,25 @@ def print_state_statistics(engine: StateLabelingEngine):
     print("=" * 70)
 
     for state_id in sorted(stats.keys()):
-        s = stats[state_id]
-        print(f"\nState {state_id}:")
-        print(f"  Return features (r5, r15, r60):")
-        for feat in ["r5", "r15", "r60"]:
-            if feat in s:
-                print(f"    {feat}: {s[feat]:+.4f}")
-        print(f"  Volatility features:")
-        for feat in ["vol_z_60"]:
-            if feat in s:
-                print(f"    {feat}: {s[feat]:+.4f}")
-        print(f"  Transition dynamics:")
-        print(f"    Self-transition prob: {s['self_transition_prob']:.3f}")
-        print(f"    Expected duration: {s['expected_duration']:.1f} bars")
-
+        _print_state_feature_stats(state_id, stats[state_id])
     print("=" * 70)
 
 
-def save_labels_to_metadata(paths: ArtifactPaths, labels: dict[int, StateLabel]):
-    """Save state labels to metadata.json.
-
-    Args:
-        paths: ArtifactPaths instance
-        labels: Dictionary of state_id -> StateLabel
-    """
-    # Load existing metadata
+def save_labels_to_metadata(paths: ArtifactPaths, labels: dict[int, StateLabel]) -> None:
+    """Save state labels to metadata.json."""
     with open(paths.metadata_path) as f:
         metadata_dict = json.load(f)
 
-    # Convert labels to mapping format
-    state_mapping = state_labels_to_mapping(labels)
+    metadata_dict["state_mapping"] = state_labels_to_mapping(labels)
 
-    # Update metadata
-    metadata_dict["state_mapping"] = state_mapping
-
-    # Save back
     with open(paths.metadata_path, "w") as f:
         json.dump(metadata_dict, f, indent=2)
 
     logger.info(f"Saved state labels to {paths.metadata_path}")
 
 
-def main():
-    """Main entry point."""
-    args = parse_args()
-    models_root = Path(args.models_dir)
-
-    # Handle --list-models
-    if args.list_models:
-        print("\nAvailable models:")
-        print("-" * 50)
-        # List all ticker directories
-        if models_root.exists():
-            for ticker_dir in sorted(models_root.iterdir()):
-                if ticker_dir.is_dir() and ticker_dir.name.startswith("ticker="):
-                    symbol = ticker_dir.name.replace("ticker=", "")
-                    print(f"\n{symbol}:")
-                    for tf in ["1Min", "5Min", "15Min", "1Hour", "1Day"]:
-                        model_ids = list_models(symbol, tf, models_root)
-                        if model_ids:
-                            print(f"  {tf}:")
-                            for model_id in model_ids:
-                                paths = get_model_path(symbol, tf, model_id, models_root)
-                                status = "OK" if paths.exists() else "incomplete"
-                                print(f"    - {model_id} [{status}]")
-        print()
-        return
-
-    # Validate symbol and model-id are provided
+def _validate_args(args) -> None:
+    """Validate required arguments for analysis."""
     if not args.symbol:
         logger.error("--symbol is required. Use --list-models to see available models.")
         sys.exit(1)
@@ -234,15 +202,9 @@ def main():
         logger.error("--model-id is required. Use --list-models to see available models.")
         sys.exit(1)
 
-    # Get model paths
-    paths = get_model_path(args.symbol, args.timeframe, args.model_id, models_root)
 
-    if not paths.exists():
-        logger.error(f"Model not found: {paths.model_dir}")
-        logger.info("Use --list-models to see available models")
-        sys.exit(1)
-
-    # Load model artifacts
+def _load_and_log_model(paths):
+    """Load model artifacts and log info. Returns (scaler, encoder, hmm, metadata)."""
     logger.info(f"Loading model from {paths.model_dir}")
     try:
         scaler, encoder, hmm, metadata = load_model_artifacts(paths)
@@ -254,31 +216,11 @@ def main():
     logger.info(f"States: {metadata.n_states}")
     logger.info(f"Latent dim: {metadata.latent_dim}")
     logger.info(f"Features: {len(metadata.feature_names)}")
+    return scaler, encoder, hmm, metadata
 
-    # Create labeling engine
-    engine = StateLabelingEngine(
-        hmm=hmm,
-        scaler=scaler,
-        encoder=encoder,
-        feature_names=metadata.feature_names,
-    )
 
-    # Generate labels
-    labels = engine.label_states()
-
-    # Print labels
-    print_state_labels(labels, verbose=args.verbose)
-
-    # Print statistics if verbose
-    if args.verbose:
-        print_state_statistics(engine)
-
-    # Save if requested
-    if args.save:
-        save_labels_to_metadata(paths, labels)
-        logger.info("Labels saved to metadata.json")
-
-    # Print color legend
+def _print_color_legend() -> None:
+    """Print the color legend for state labels."""
     print("\nColor Legend:")
     print("-" * 40)
     print("  Greens: Bullish states")
@@ -290,6 +232,47 @@ def main():
     print("  -V: Volatile (high volatility)")
     print("  -B: Breakout (very high volatility)")
     print("  -C: Consolidation (low volatility)")
+
+
+def _analyze_model(args, paths) -> None:
+    """Perform model analysis and optionally save labels."""
+    scaler, encoder, hmm, metadata = _load_and_log_model(paths)
+
+    engine = StateLabelingEngine(
+        hmm=hmm, scaler=scaler, encoder=encoder, feature_names=metadata.feature_names
+    )
+    labels = engine.label_states()
+
+    print_state_labels(labels, verbose=args.verbose)
+
+    if args.verbose:
+        print_state_statistics(engine)
+
+    if args.save:
+        save_labels_to_metadata(paths, labels)
+        logger.info("Labels saved to metadata.json")
+
+    _print_color_legend()
+
+
+def main():
+    """Main entry point."""
+    args = parse_args()
+    models_root = Path(args.models_dir)
+
+    if args.list_models:
+        _list_ticker_models(models_root)
+        return
+
+    _validate_args(args)
+    paths = get_model_path(args.symbol, args.timeframe, args.model_id, models_root)
+
+    if not paths.exists():
+        logger.error(f"Model not found: {paths.model_dir}")
+        logger.info("Use --list-models to see available models")
+        sys.exit(1)
+
+    _analyze_model(args, paths)
 
 
 if __name__ == "__main__":

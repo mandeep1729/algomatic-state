@@ -8,14 +8,6 @@ Usage:
     python scripts/import_csv_to_db.py AAPL --file data/raw/AAPL_1Min.parquet
     python scripts/import_csv_to_db.py AAPL --file data/AAPL.csv --timeframe 1Min
     python scripts/import_csv_to_db.py --all --dir data/raw  # Import all files
-
-Options:
-    symbol              Stock symbol to associate with the data
-    --file PATH         Path to CSV or Parquet file
-    --timeframe TF      Timeframe of the data (default: 1Min)
-    --all               Import all files in directory
-    --dir PATH          Directory containing files to import
-    --pattern GLOB      Glob pattern for file matching (default: *.parquet)
 """
 
 import argparse
@@ -31,94 +23,89 @@ from src.data.database.models import VALID_TIMEFRAMES
 from src.data.loaders.database_loader import DatabaseLoader
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Import CSV or Parquet files into the PostgreSQL database")
+    _add_symbol_args(parser)
+    _add_file_args(parser)
+    _add_directory_args(parser)
+    return parser.parse_args()
+
+
+def _add_symbol_args(parser: argparse.ArgumentParser) -> None:
+    """Add symbol-related arguments."""
+    parser.add_argument("symbol", nargs="?", help="Stock symbol to associate with the data")
+    parser.add_argument("--timeframe", default="1Min", choices=list(VALID_TIMEFRAMES), help="Timeframe (default: 1Min)")
+
+
+def _add_file_args(parser: argparse.ArgumentParser) -> None:
+    """Add file-related arguments."""
+    parser.add_argument("--file", type=Path, help="Path to CSV or Parquet file")
+
+
+def _add_directory_args(parser: argparse.ArgumentParser) -> None:
+    """Add directory import arguments."""
+    parser.add_argument("--all", action="store_true", help="Import all files in directory")
+    parser.add_argument("--dir", type=Path, default=project_root / "data" / "raw", help="Directory containing files")
+    parser.add_argument("--pattern", default="*.parquet", help="Glob pattern for file matching")
+
+
 def extract_symbol_timeframe(filename: str) -> tuple[str, str]:
-    """Extract symbol and timeframe from filename.
-
-    Expected format: SYMBOL_TIMEFRAME.parquet or SYMBOL_TIMEFRAME.csv
-    Examples: AAPL_1Min.parquet, SPY_1Hour.csv
-
-    Args:
-        filename: Name of the file (without directory)
-
-    Returns:
-        Tuple of (symbol, timeframe)
-    """
-    stem = Path(filename).stem  # Remove extension
+    """Extract symbol and timeframe from filename."""
+    stem = Path(filename).stem
     parts = stem.split("_")
 
-    if len(parts) >= 2:
-        symbol = parts[0].upper()
-        timeframe = parts[1]
-
-        # Validate timeframe
-        if timeframe in VALID_TIMEFRAMES:
-            return symbol, timeframe
-
-    # Default: use entire stem as symbol, assume 1Min timeframe
+    if len(parts) >= 2 and parts[1] in VALID_TIMEFRAMES:
+        return parts[0].upper(), parts[1]
     return stem.upper(), "1Min"
 
 
-def import_file(
-    file_path: Path,
-    symbol: str | None = None,
-    timeframe: str | None = None,
-    loader: DatabaseLoader | None = None,
-) -> int:
-    """Import a single file into the database.
+def _check_database_connection() -> None:
+    """Check database connection and exit on failure."""
+    try:
+        db_manager = get_db_manager()
+        if not db_manager.health_check():
+            print("Error: Cannot connect to database")
+            print("Make sure PostgreSQL is running: docker-compose up -d postgres")
+            sys.exit(1)
+        print("Database connection: OK")
+    except Exception as e:
+        print(f"Database error: {e}")
+        sys.exit(1)
 
-    Args:
-        file_path: Path to the file
-        symbol: Symbol to use (extracted from filename if not provided)
-        timeframe: Timeframe to use (extracted from filename if not provided)
-        loader: Optional DatabaseLoader instance to reuse
 
-    Returns:
-        Number of rows imported
-    """
+def _import_file_with_loader(file_path: Path, symbol: str, timeframe: str, loader: DatabaseLoader) -> int:
+    """Import a file using an existing loader. Returns rows imported."""
+    try:
+        if file_path.suffix.lower() == ".parquet":
+            rows = loader.import_parquet(file_path, symbol, timeframe)
+        else:
+            rows = loader.import_csv(file_path, symbol, timeframe)
+        print(f"    Imported {rows} rows")
+        return rows
+    except Exception as e:
+        print(f"    Error: {e}")
+        return 0
+
+
+def import_file(file_path: Path, symbol: str | None = None, timeframe: str | None = None, loader: DatabaseLoader | None = None) -> int:
+    """Import a single file into the database. Returns rows imported."""
     if not file_path.exists():
         print(f"  Error: File not found: {file_path}")
         return 0
 
-    # Extract symbol and timeframe from filename if not provided
     if symbol is None or timeframe is None:
         extracted_symbol, extracted_timeframe = extract_symbol_timeframe(file_path.name)
         symbol = symbol or extracted_symbol
         timeframe = timeframe or extracted_timeframe
 
     print(f"  Importing {file_path.name} as {symbol}/{timeframe}...")
-
-    if loader is None:
-        loader = DatabaseLoader(validate=True, auto_fetch=False)
-
-    try:
-        if file_path.suffix.lower() == ".parquet":
-            rows = loader.import_parquet(file_path, symbol, timeframe)
-        else:
-            rows = loader.import_csv(file_path, symbol, timeframe)
-
-        print(f"    Imported {rows} rows")
-        return rows
-
-    except Exception as e:
-        print(f"    Error: {e}")
-        return 0
+    loader = loader or DatabaseLoader(validate=True, auto_fetch=False)
+    return _import_file_with_loader(file_path, symbol, timeframe, loader)
 
 
-def import_directory(
-    directory: Path,
-    pattern: str = "*.parquet",
-    timeframe: str | None = None,
-) -> tuple[int, int]:
-    """Import all matching files from a directory.
-
-    Args:
-        directory: Directory containing files
-        pattern: Glob pattern for file matching
-        timeframe: Optional timeframe override for all files
-
-    Returns:
-        Tuple of (files_imported, total_rows)
-    """
+def import_directory(directory: Path, pattern: str = "*.parquet", timeframe: str | None = None) -> tuple[int, int]:
+    """Import all matching files from a directory. Returns (files_imported, total_rows)."""
     if not directory.exists():
         print(f"Error: Directory not found: {directory}")
         return 0, 0
@@ -129,7 +116,11 @@ def import_directory(
         return 0, 0
 
     print(f"Found {len(files)} files to import")
+    return _import_file_list(files, timeframe)
 
+
+def _import_file_list(files: list[Path], timeframe: str | None) -> tuple[int, int]:
+    """Import a list of files. Returns (files_imported, total_rows)."""
     loader = DatabaseLoader(validate=True, auto_fetch=False)
     files_imported = 0
     total_rows = 0
@@ -143,92 +134,56 @@ def import_directory(
     return files_imported, total_rows
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Import CSV or Parquet files into the PostgreSQL database"
-    )
-    parser.add_argument(
-        "symbol",
-        nargs="?",
-        help="Stock symbol to associate with the data",
-    )
-    parser.add_argument(
-        "--file",
-        type=Path,
-        help="Path to CSV or Parquet file",
-    )
-    parser.add_argument(
-        "--timeframe",
-        default="1Min",
-        choices=list(VALID_TIMEFRAMES),
-        help="Timeframe of the data (default: 1Min)",
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Import all files in directory",
-    )
-    parser.add_argument(
-        "--dir",
-        type=Path,
-        default=project_root / "data" / "raw",
-        help="Directory containing files to import (default: data/raw)",
-    )
-    parser.add_argument(
-        "--pattern",
-        default="*.parquet",
-        help="Glob pattern for file matching (default: *.parquet)",
-    )
-
-    args = parser.parse_args()
-
+def _print_header() -> None:
+    """Print script header."""
     print("=" * 60)
     print("Algomatic State - Data Import")
     print("=" * 60)
 
-    # Check database connection
-    try:
-        db_manager = get_db_manager()
-        if not db_manager.health_check():
-            print("Error: Cannot connect to database")
-            print("Make sure PostgreSQL is running: docker-compose up -d postgres")
-            sys.exit(1)
-        print("Database connection: OK")
-    except Exception as e:
-        print(f"Database error: {e}")
+
+def _handle_directory_import(args) -> None:
+    """Handle --all directory import mode."""
+    timeframe_override = args.timeframe if args.timeframe != "1Min" else None
+    files_imported, total_rows = import_directory(args.dir, args.pattern, timeframe_override)
+    print()
+    print(f"Import complete: {files_imported} files, {total_rows} total rows")
+
+
+def _handle_single_file_import(args) -> None:
+    """Handle single file import mode."""
+    if not args.symbol:
+        args.symbol, _ = extract_symbol_timeframe(args.file.name)
+
+    rows = import_file(args.file, args.symbol, args.timeframe)
+    print()
+    if rows > 0:
+        print(f"Import complete: {rows} rows imported for {args.symbol}/{args.timeframe}")
+    else:
+        print("Import failed")
         sys.exit(1)
 
+
+def _print_usage(parser: argparse.ArgumentParser) -> None:
+    """Print help and usage examples."""
+    parser.print_help()
+    print("\nExamples:")
+    print("  python scripts/import_csv_to_db.py AAPL --file data/raw/AAPL_1Min.parquet")
+    print("  python scripts/import_csv_to_db.py --all --dir data/raw --pattern '*.parquet'")
+
+
+def main():
+    """Main entry point."""
+    args = parse_args()
+    _print_header()
+    _check_database_connection()
     print()
 
     if args.all:
-        # Import all files from directory
-        files_imported, total_rows = import_directory(
-            args.dir,
-            args.pattern,
-            args.timeframe if args.timeframe != "1Min" else None,
-        )
-        print()
-        print(f"Import complete: {files_imported} files, {total_rows} total rows")
-
+        _handle_directory_import(args)
     elif args.file:
-        # Import single file
-        if not args.symbol:
-            # Extract symbol from filename
-            args.symbol, _ = extract_symbol_timeframe(args.file.name)
-
-        rows = import_file(args.file, args.symbol, args.timeframe)
-        print()
-        if rows > 0:
-            print(f"Import complete: {rows} rows imported for {args.symbol}/{args.timeframe}")
-        else:
-            print("Import failed")
-            sys.exit(1)
-
+        _handle_single_file_import(args)
     else:
-        parser.print_help()
-        print("\nExamples:")
-        print("  python scripts/import_csv_to_db.py AAPL --file data/raw/AAPL_1Min.parquet")
-        print("  python scripts/import_csv_to_db.py --all --dir data/raw --pattern '*.parquet'")
+        _print_usage(argparse.ArgumentParser())
         sys.exit(1)
 
 

@@ -9,7 +9,8 @@ Usage:
     python scripts/init_db.py [--seed]
 
 Options:
-    --seed    Seed database with common ticker symbols
+    --seed              Seed database with common ticker symbols
+    --skip-migrations   Skip Alembic migrations (use direct table creation)
 """
 
 import argparse
@@ -40,45 +41,60 @@ COMMON_TICKERS = [
 ]
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Initialize the PostgreSQL database")
+    parser.add_argument("--seed", action="store_true", help="Seed database with common ticker symbols")
+    parser.add_argument("--skip-migrations", action="store_true", help="Skip Alembic migrations")
+    return parser.parse_args()
+
+
+def _print_header() -> None:
+    """Print initialization header."""
+    print("=" * 60)
+    print("Algomatic State - Database Initialization")
+    print("=" * 60)
+
+
 def check_database_connection() -> bool:
-    """Check if database is accessible."""
+    """Check if database is accessible. Returns True if successful."""
     try:
         settings = get_settings()
         print(f"Checking database connection to: {settings.database.host}:{settings.database.port}/{settings.database.name}")
-
         db_manager = get_db_manager()
         if db_manager.health_check():
             print("Database connection successful!")
             return True
-        else:
-            print("Database connection failed!")
-            return False
+        print("Database connection failed!")
+        return False
     except Exception as e:
         print(f"Database connection error: {e}")
         return False
 
 
-def run_migrations():
-    """Run Alembic migrations."""
+def _run_alembic_command() -> subprocess.CompletedProcess:
+    """Run alembic upgrade command."""
+    return subprocess.run(
+        ["alembic", "upgrade", "head"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+    )
+
+
+def run_migrations() -> bool:
+    """Run Alembic migrations. Returns True if successful."""
     print("\nRunning Alembic migrations...")
-
     try:
-        result = subprocess.run(
-            ["alembic", "upgrade", "head"],
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-        )
-
+        result = _run_alembic_command()
         if result.returncode == 0:
             print("Migrations completed successfully!")
             if result.stdout:
                 print(result.stdout)
-        else:
-            print(f"Migration failed with error:")
-            print(result.stderr)
-            return False
-
+            return True
+        print(f"Migration failed with error:")
+        print(result.stderr)
+        return False
     except FileNotFoundError:
         print("Alembic not found. Please install it: pip install alembic")
         return False
@@ -86,39 +102,32 @@ def run_migrations():
         print(f"Migration error: {e}")
         return False
 
-    return True
+
+def _seed_ticker(repo: OHLCVRepository, symbol: str, name: str, exchange: str, asset_type: str) -> None:
+    """Seed a single ticker."""
+    ticker = repo.get_or_create_ticker(symbol=symbol, name=name, exchange=exchange, asset_type=asset_type)
+    print(f"  Added/verified ticker: {ticker.symbol} ({ticker.name})")
 
 
-def seed_tickers():
-    """Seed database with common tickers."""
+def seed_tickers() -> bool:
+    """Seed database with common tickers. Returns True if successful."""
     print("\nSeeding database with common tickers...")
-
     try:
         db_manager = get_db_manager()
         with db_manager.get_session() as session:
             repo = OHLCVRepository(session)
-
             for symbol, name, exchange, asset_type in COMMON_TICKERS:
-                ticker = repo.get_or_create_ticker(
-                    symbol=symbol,
-                    name=name,
-                    exchange=exchange,
-                    asset_type=asset_type,
-                )
-                print(f"  Added/verified ticker: {ticker.symbol} ({ticker.name})")
-
+                _seed_ticker(repo, symbol, name, exchange, asset_type)
         print(f"Seeding completed! Added {len(COMMON_TICKERS)} tickers.")
         return True
-
     except Exception as e:
         print(f"Seeding error: {e}")
         return False
 
 
-def create_tables_directly():
-    """Create tables directly using SQLAlchemy (alternative to Alembic)."""
+def create_tables_directly() -> bool:
+    """Create tables directly using SQLAlchemy. Returns True if successful."""
     print("\nCreating tables directly...")
-
     try:
         db_manager = get_db_manager()
         db_manager.create_tables()
@@ -129,48 +138,47 @@ def create_tables_directly():
         return False
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Initialize the PostgreSQL database")
-    parser.add_argument(
-        "--seed",
-        action="store_true",
-        help="Seed database with common ticker symbols",
-    )
-    parser.add_argument(
-        "--skip-migrations",
-        action="store_true",
-        help="Skip Alembic migrations (use direct table creation)",
-    )
-    args = parser.parse_args()
+def _print_connection_hint() -> None:
+    """Print hint for starting PostgreSQL."""
+    print("\nMake sure PostgreSQL is running:")
+    print("  docker-compose up -d postgres")
 
-    print("=" * 60)
-    print("Algomatic State - Database Initialization")
-    print("=" * 60)
 
-    # Check database connection
-    if not check_database_connection():
-        print("\nMake sure PostgreSQL is running:")
-        print("  docker-compose up -d postgres")
-        sys.exit(1)
-
-    # Run migrations or create tables directly
-    if args.skip_migrations:
-        if not create_tables_directly():
-            sys.exit(1)
-    else:
-        if not run_migrations():
-            print("\nTrying direct table creation as fallback...")
-            if not create_tables_directly():
-                sys.exit(1)
-
-    # Seed if requested
-    if args.seed:
-        if not seed_tickers():
-            sys.exit(1)
-
+def _print_footer() -> None:
+    """Print completion footer."""
     print("\n" + "=" * 60)
     print("Database initialization completed!")
     print("=" * 60)
+
+
+def _handle_migrations(args) -> bool:
+    """Handle migration or direct table creation. Returns True if successful."""
+    if args.skip_migrations:
+        return create_tables_directly()
+
+    if run_migrations():
+        return True
+
+    print("\nTrying direct table creation as fallback...")
+    return create_tables_directly()
+
+
+def main() -> None:
+    """Main entry point."""
+    args = parse_args()
+    _print_header()
+
+    if not check_database_connection():
+        _print_connection_hint()
+        sys.exit(1)
+
+    if not _handle_migrations(args):
+        sys.exit(1)
+
+    if args.seed and not seed_tickers():
+        sys.exit(1)
+
+    _print_footer()
 
 
 if __name__ == "__main__":
