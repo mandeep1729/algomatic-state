@@ -204,6 +204,16 @@ export interface Trade {
   brokerage: string;
 }
 
+export interface BrokerStatus {
+  connected: boolean;
+  brokerages: string[];
+}
+
+export async function fetchBrokerStatus(userId: number = 1): Promise<BrokerStatus> {
+  const response = await axios.get<BrokerStatus>(`${API_BASE}/broker/status?user_id=${userId}`);
+  return response.data;
+}
+
 export async function connectBroker(userId: number = 1): Promise<ConnectResponse> {
   const response = await axios.post<ConnectResponse>(`${API_BASE}/broker/connect`, { user_id: userId });
   return response.data;

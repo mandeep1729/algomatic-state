@@ -79,23 +79,6 @@ async def connect_broker(
     if not client.client:
          raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
 
-    # Check if user already has connections
-    snap_user = db.query(SnapTradeUser).filter(
-        SnapTradeUser.user_account_id == request.user_id
-    ).first()
-
-    if snap_user and not request.force:
-        # Check if already connected
-        accounts = client.get_accounts(
-            snap_user.snaptrade_user_id,
-            snap_user.snaptrade_user_secret
-        )
-        if accounts:
-            broker_names = [acc.get("institution_name", "broker") for acc in accounts]
-            raise HTTPException(
-                status_code=400,
-                detail=f"Already connected to: {', '.join(broker_names)}. Use GET /api/broker/status to check connections."
-            )
 
     # 1. Check if user exists
     snap_user = db.query(SnapTradeUser).filter(
