@@ -20,7 +20,7 @@ import type {
   ChartSettings,
   RegimeData,
 } from './types';
-import { OHLCVChart, FeatureFilter } from './components';
+import { OHLCVChart, FeatureFilter, BrokerConnect, TradeHistoryTable } from './components';
 
 // Constants
 const MAX_DISPLAY_POINTS = 7200;
@@ -44,7 +44,7 @@ function App() {
   // UI state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'charts' | 'features' | 'stats'>('charts');
+  const [activeTab, setActiveTab] = useState<'charts' | 'features' | 'stats' | 'trades'>('charts');
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeResult, setAnalyzeResult] = useState<PCAAnalyzeResponse | null>(null);
 
@@ -455,6 +455,9 @@ function App() {
             )}
           </div>
 
+          {/* Broker Connection */}
+          <BrokerConnect />
+
           {/* Feature Filter */}
           {featureData && (
             <div className="section">
@@ -491,10 +494,16 @@ function App() {
             >
               Statistics
             </button>
+            <button
+              className={`tab ${activeTab === 'trades' ? 'active' : ''}`}
+              onClick={() => setActiveTab('trades')}
+            >
+              Trades
+            </button>
           </div>
 
           {/* Range Slider - shown when data is loaded */}
-          {ohlcvData && ohlcvData.timestamps.length > 0 && (() => {
+          {ohlcvData && ohlcvData.timestamps.length > 0 && activeTab === 'charts' && (() => {
             const windowSize = constrainedViewRange[1] - constrainedViewRange[0];
             const windowWidthPercent = (windowSize / totalPoints) * 100;
             const windowPositionPercent = (constrainedViewRange[0] / totalPoints) * 100;
@@ -636,9 +645,8 @@ function App() {
                       {visibleFeatureData.feature_names.map((feature) => (
                         <button
                           key={feature}
-                          className={`toggle-btn ${
-                            chartSettings.selectedFeatures.includes(feature) ? 'active' : ''
-                          }`}
+                          className={`toggle-btn ${chartSettings.selectedFeatures.includes(feature) ? 'active' : ''
+                            }`}
                           onClick={() => toggleFeature(feature)}
                         >
                           {feature}
@@ -703,11 +711,10 @@ function App() {
                       <div className="stat-item">
                         <div className="stat-label">Total Return</div>
                         <div
-                          className={`stat-value ${
-                            statistics.ohlcv_stats.returns.total_return >= 0
+                          className={`stat-value ${statistics.ohlcv_stats.returns.total_return >= 0
                               ? 'positive'
                               : 'negative'
-                          }`}
+                            }`}
                         >
                           {statistics.ohlcv_stats.returns.total_return >= 0 ? '+' : ''}
                           {statistics.ohlcv_stats.returns.total_return.toFixed(2)}%
@@ -767,6 +774,12 @@ function App() {
               )}
             </>
           )}
+
+          {/* Trades Tab */}
+          {activeTab === 'trades' && (
+            <TradeHistoryTable />
+          )}
+
         </main>
       </div>
     </div>
