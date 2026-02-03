@@ -5,6 +5,7 @@ for assembling market context data used by evaluators.
 """
 
 import logging
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from functools import lru_cache
@@ -52,6 +53,29 @@ class RegimeContext:
             "entropy": self.entropy,
             "transition_risk": self.transition_risk,
             "is_ood": self.is_ood,
+        }
+
+
+@dataclass
+class MTFAContext:
+    """Multi-timeframe alignment context.
+
+    Attributes:
+        alignment_score: Fraction of timeframes agreeing (0-1), None if insufficient data
+        conflicts: List of conflict descriptions between timeframes
+        htf_trend: Trend from the highest available timeframe
+    """
+
+    alignment_score: Optional[float] = None
+    conflicts: list[str] = field(default_factory=list)
+    htf_trend: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return {
+            "alignment_score": self.alignment_score,
+            "conflicts": self.conflicts,
+            "htf_trend": self.htf_trend,
         }
 
 
@@ -114,6 +138,7 @@ class KeyLevels:
             "prior_day_high": self.prior_day_high,
             "prior_day_low": self.prior_day_low,
             "prior_day_close": self.prior_day_close,
+            "vwap": self.vwap,
         }
 
         nearest_level = None
@@ -166,6 +191,7 @@ class ContextPack:
     current_price: Optional[float] = None
     current_volume: Optional[int] = None
     atr: Optional[float] = None
+    mtfa: Optional[MTFAContext] = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -265,6 +291,7 @@ class ContextPack:
             "current_price": self.current_price,
             "current_volume": self.current_volume,
             "atr": self.atr,
+            "mtfa": self.mtfa.to_dict() if self.mtfa else None,
             "metadata": self.metadata,
         }
 
@@ -369,15 +396,25 @@ class ContextPackBuilder:
 
                 # Get regime states
                 if self.include_regimes:
-                    # Try to get latest state from database
-                    states_df = repo.get_states(symbol, tf, model_id="%")  # Any model
+                    states_df = repo.get_latest_states(symbol, tf)
                     if not states_df.empty:
-                        latest = states_df.iloc[-1]
+                        latest = states_df.iloc[0]
+                        state_id = int(latest.get("state_id", -1))
+                        state_prob = float(latest.get("state_prob", 0.0))
+                        model_id = latest.get("model_id")
+
+                        state_label, transition_risk, entropy = self._load_regime_enrichment(
+                            symbol, tf, state_id, state_prob, model_id
+                        )
+
                         regimes[tf] = RegimeContext(
                             timeframe=tf,
-                            state_id=int(latest.get("state_id", -1)),
-                            state_prob=float(latest.get("state_prob", 0.0)),
-                            is_ood=int(latest.get("state_id", -1)) == -1,
+                            state_id=state_id,
+                            state_prob=state_prob,
+                            state_label=state_label,
+                            entropy=entropy,
+                            transition_risk=transition_risk,
+                            is_ood=state_id == -1,
                         )
 
         # Compute key levels
@@ -387,6 +424,17 @@ class ContextPackBuilder:
         elif self.include_key_levels and timeframe in bars:
             # Fall back to primary timeframe
             key_levels = self._compute_key_levels(bars[timeframe])
+
+        # Populate VWAP from features if available
+        if key_levels is not None and timeframe in features and not features[timeframe].empty:
+            tf_features = features[timeframe]
+            if "vwap_60" in tf_features.columns:
+                vwap_val = tf_features["vwap_60"].iloc[-1]
+                if not pd.isna(vwap_val):
+                    key_levels.vwap = float(vwap_val)
+
+        # Compute MTFA alignment
+        mtfa = self._compute_mtfa(regimes, timeframe)
 
         # Get current price and volume
         current_price = None
@@ -416,6 +464,7 @@ class ContextPackBuilder:
             current_price=current_price,
             current_volume=current_volume,
             atr=atr,
+            mtfa=mtfa,
         )
 
         # Cache result
@@ -470,6 +519,162 @@ class ContextPackBuilder:
             s2=s2,
             rolling_high_20=rolling_high,
             rolling_low_20=rolling_low,
+        )
+
+    @staticmethod
+    def _compute_approximate_entropy(state_prob: float, n_states: int) -> Optional[float]:
+        """Approximate posterior entropy from the max state probability.
+
+        Since only the argmax probability is stored in the DB (not the full
+        posterior), we approximate entropy assuming maximum-entropy distribution
+        consistent with the observed max probability:
+            H = -p*log(p) - (n-1)*q*log(q)  where q = (1-p)/(n-1)
+
+        Args:
+            state_prob: Probability of the most likely state
+            n_states: Number of HMM states
+
+        Returns:
+            Approximate entropy in nats, or None if inputs are invalid
+        """
+        if n_states < 2 or state_prob <= 0 or state_prob > 1:
+            return None
+
+        p = min(state_prob, 1.0 - 1e-10)
+        q = (1.0 - p) / (n_states - 1)
+
+        entropy = -p * math.log(p)
+        if q > 1e-10:
+            entropy -= (n_states - 1) * q * math.log(q)
+
+        return entropy
+
+    def _load_regime_enrichment(
+        self,
+        symbol: str,
+        timeframe: str,
+        state_id: int,
+        state_prob: float,
+        model_id: Optional[str],
+    ) -> tuple[Optional[str], Optional[float], Optional[float]]:
+        """Best-effort loading of regime enrichment from HMM model artifacts.
+
+        Loads state labels, transition risk, and computes approximate entropy.
+        Degrades gracefully if model artifacts are unavailable.
+
+        Args:
+            symbol: Ticker symbol
+            timeframe: Bar timeframe
+            state_id: Current regime state ID
+            state_prob: Probability of current state
+            model_id: Model identifier from the DB
+
+        Returns:
+            Tuple of (state_label, transition_risk, entropy)
+        """
+        state_label: Optional[str] = None
+        transition_risk: Optional[float] = None
+        n_states = 8  # Default if metadata unavailable
+
+        try:
+            from src.features.state.hmm.artifacts import get_latest_model
+
+            artifact_paths = get_latest_model(symbol, timeframe)
+            if artifact_paths is not None and artifact_paths.exists():
+                metadata = artifact_paths.load_metadata()
+                n_states = metadata.n_states
+
+                # State label from metadata mapping
+                if metadata.state_mapping and str(state_id) in metadata.state_mapping:
+                    mapping = metadata.state_mapping[str(state_id)]
+                    if isinstance(mapping, dict):
+                        state_label = mapping.get("label", f"state_{state_id}")
+                    else:
+                        state_label = str(mapping)
+
+                # Transition risk from HMM transition matrix
+                if state_id >= 0:
+                    try:
+                        from src.features.state.hmm.hmm_model import GaussianHMMWrapper
+
+                        hmm_model = GaussianHMMWrapper.load(artifact_paths.hmm_path)
+                        transmat = hmm_model.transition_matrix
+                        if state_id < transmat.shape[0]:
+                            row = transmat[state_id].copy()
+                            row[state_id] = 0.0  # Zero out self-transition
+                            transition_risk = float(row.max())
+                    except Exception as e:
+                        logger.debug(f"Could not load HMM transition matrix for {symbol}/{timeframe}: {e}")
+
+        except Exception as e:
+            logger.debug(f"Could not load model artifacts for {symbol}/{timeframe}: {e}")
+
+        # Fall back to generic label
+        if state_label is None and state_id >= 0:
+            state_label = f"state_{state_id}"
+
+        # Entropy is always computable from state_prob
+        entropy = self._compute_approximate_entropy(state_prob, n_states)
+
+        return state_label, transition_risk, entropy
+
+    # Timeframe ordering for MTFA (lowest to highest)
+    _TF_ORDER = ["1Min", "5Min", "15Min", "1Hour", "1Day"]
+
+    def _compute_mtfa(
+        self,
+        regimes: dict[str, RegimeContext],
+        primary_timeframe: str,
+    ) -> MTFAContext:
+        """Compute multi-timeframe alignment from regime data.
+
+        Args:
+            regimes: Regime context by timeframe
+            primary_timeframe: The primary trading timeframe
+
+        Returns:
+            MTFAContext with alignment score, conflicts, and HTF trend
+        """
+        # Filter to regimes with valid (non-OOD) state data
+        valid_regimes = {
+            tf: r for tf, r in regimes.items()
+            if r.state_id != -1
+        }
+
+        if len(valid_regimes) < 2:
+            return MTFAContext()
+
+        # Extract directional labels for each timeframe
+        directions: dict[str, str] = {}
+        for tf, regime in valid_regimes.items():
+            directions[tf] = regime.state_label or f"state_{regime.state_id}"
+
+        # Determine majority direction
+        label_counts: dict[str, int] = {}
+        for label in directions.values():
+            label_counts[label] = label_counts.get(label, 0) + 1
+
+        majority_label = max(label_counts, key=label_counts.get)
+        agreeing = sum(1 for label in directions.values() if label == majority_label)
+        alignment_score = agreeing / len(directions)
+
+        # Build conflict list
+        conflicts = []
+        for tf in self._TF_ORDER:
+            if tf in directions and directions[tf] != majority_label:
+                conflicts.append(f"{tf}: {directions[tf]} (vs majority: {majority_label})")
+
+        # HTF trend = trend from highest available timeframe
+        htf_trend = None
+        for tf in reversed(self._TF_ORDER):
+            if tf in directions:
+                htf_trend = directions[tf]
+                break
+
+        return MTFAContext(
+            alignment_score=alignment_score,
+            conflicts=conflicts,
+            htf_trend=htf_trend,
         )
 
     def clear_cache(self) -> None:
