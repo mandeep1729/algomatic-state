@@ -777,6 +777,54 @@ class OHLCVRepository:
         logger.debug(f"Retrieved {len(df)} states for {symbol}/{timeframe} model={model_id}")
         return df
 
+    def get_latest_states(
+        self,
+        symbol: str,
+        timeframe: str,
+    ) -> pd.DataFrame:
+        """Retrieve the most recent state row for a symbol/timeframe.
+
+        Unlike get_states(), this does not filter by model_id, returning
+        whichever model produced the latest state assignment.
+
+        Args:
+            symbol: Stock symbol
+            timeframe: Bar timeframe
+
+        Returns:
+            DataFrame with columns: state_id, state_prob, log_likelihood, model_id
+            (single row or empty)
+        """
+        query = self.session.query(
+            ComputedFeature.timestamp,
+            ComputedFeature.state_id,
+            ComputedFeature.state_prob,
+            ComputedFeature.log_likelihood,
+            ComputedFeature.model_id,
+        ).join(
+            Ticker, ComputedFeature.ticker_id == Ticker.id
+        ).filter(
+            Ticker.symbol == self._normalize_symbol(symbol),
+            ComputedFeature.timeframe == timeframe,
+            ComputedFeature.state_id.isnot(None),
+        ).order_by(
+            ComputedFeature.timestamp.desc()
+        ).limit(1)
+
+        results = query.all()
+
+        if not results:
+            logger.debug(f"No states found for {symbol}/{timeframe}")
+            return pd.DataFrame(columns=["state_id", "state_prob", "log_likelihood", "model_id"])
+
+        df = pd.DataFrame(
+            results,
+            columns=["timestamp", "state_id", "state_prob", "log_likelihood", "model_id"],
+        )
+        df.set_index("timestamp", inplace=True)
+        logger.debug(f"Retrieved latest state for {symbol}/{timeframe}: state_id={df.iloc[0]['state_id']}, model={df.iloc[0]['model_id']}")
+        return df
+
     def get_state_counts(
         self,
         symbol: str,

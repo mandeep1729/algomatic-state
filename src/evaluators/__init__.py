@@ -23,6 +23,8 @@ from src.evaluators.evidence import (
 # Import evaluators to trigger registration
 from src.evaluators.risk_reward import RiskRewardEvaluator
 from src.evaluators.exit_plan import ExitPlanEvaluator
+from src.evaluators.regime_fit import RegimeFitEvaluator
+from src.evaluators.mtfa import MTFAEvaluator
 
 __all__ = [
     # Base
@@ -43,4 +45,6 @@ __all__ = [
     # Evaluators
     "RiskRewardEvaluator",
     "ExitPlanEvaluator",
+    "RegimeFitEvaluator",
+    "MTFAEvaluator",
 ]
