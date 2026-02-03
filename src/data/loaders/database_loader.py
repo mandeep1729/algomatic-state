@@ -9,7 +9,7 @@ import pandas as pd
 
 from src.data.database.connection import DatabaseManager, get_db_manager
 from src.data.database.models import VALID_TIMEFRAMES
-from src.data.database.repository import OHLCVRepository
+from src.data.database.market_repository import OHLCVRepository
 from src.data.loaders.base import BaseDataLoader
 from src.data.schemas import validate_ohlcv
 

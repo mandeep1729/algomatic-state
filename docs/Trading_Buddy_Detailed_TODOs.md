@@ -13,7 +13,7 @@ The following existing infrastructure will be **reused** (no need to rebuild):
 | **Ticker Management** | `src/data/database/models.py::Ticker` | Used by `ContextPackBuilder` to resolve symbols |
 | **OHLCV Bars** | `src/data/database/models.py::OHLCVBar` | Primary market data source for all evaluators |
 | **Computed Features (TA)** | `src/data/database/models.py::ComputedFeature` | TA features + HMM states already stored here |
-| **OHLCVRepository** | `src/data/database/repository.py` | Data access layer for bars, features, states |
+| **OHLCVRepository** | `src/data/database/market_repository.py` | Data access layer for bars, features, states |
 | **Feature Pipeline** | `src/features/pipeline.py::FeaturePipeline` | Compute TA features on-the-fly if needed |
 | **HMM Inference** | `src/hmm/inference.py::InferenceEngine` | State vectors, regime probabilities, OOD detection |
 | **Multi-TF Inference** | `src/hmm/inference.py::MultiTimeframeInferenceEngine` | HTF state carry-forward with TTL |
@@ -49,12 +49,12 @@ The following existing infrastructure will be **reused** (no need to rebuild):
     - [ ] `TradeEvaluationItem` (`trade_evaluation_items`)
   - [ ] Run migration to apply changes.
 
-- [ ] **Core Domain Objects (`src/domain.py`)**
-  - [ ] Define `TradeIntent` Pydantic model (input for evaluation).
-  - [ ] Define `EvaluationResult` dataclass/Pydantic model (score, severity, issues, findings).
-  - [ ] Define `Evidence` structure for standardized reporting.
+- [ ] **Core Domain Objects (`src/trade/`)**
+  - [ ] Define `TradeIntent` Pydantic model in `src/trade/intent.py`.
+  - [ ] Define `EvaluationResult` dataclass in `src/trade/evaluation.py`.
+  - [ ] Define `Evidence` structure in `src/trade/evaluation.py`.
 
-- [ ] **ContextPack Infrastructure (`src/context.py`)**
+- [ ] **ContextPack Infrastructure (`src/evaluators/context.py`)**
   - [ ] Implement `ContextPack` class (data container).
   - [ ] Implement `ContextPackBuilder` class.
     - [ ] Use `OHLCVRepository.get_bars()` and `OHLCVRepository.get_features()` for OHLCV + TA data.
@@ -98,7 +98,7 @@ The following existing infrastructure will be **reused** (no need to rebuild):
 - [ ] **User Configuration**
   - [ ] Implement logic to load/apply `UserRules` and `UserAccount` risk defaults during evaluation.
 
-- [ ] **Guardrails**
+- [ ] **Guardrails (`src/rules/guardrails.py`)**
   - [ ] Implement output sanitization (ensure no deterministic predictions).
   - [ ] Add warning templates for high-risk flags.
 

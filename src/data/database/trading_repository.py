@@ -19,10 +19,12 @@ from src.data.database.trading_buddy_models import (
     TradeEvaluation as TradeEvaluationModel,
     TradeEvaluationItem as TradeEvaluationItemModel,
 )
-from src.domain import (
+from src.trade.intent import (
     TradeIntent,
     TradeDirection,
     TradeIntentStatus,
+)
+from src.trade.evaluation import (
     EvaluationResult,
     EvaluationItem,
     Evidence,

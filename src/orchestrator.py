@@ -10,14 +10,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from src.domain import (
-    TradeIntent,
+from src.trade.intent import TradeIntent
+from src.trade.evaluation import (
     EvaluationItem,
     EvaluationResult,
     Severity,
     SEVERITY_PRIORITY,
 )
-from src.context import ContextPack, ContextPackBuilder, get_context_builder
+from src.evaluators.context import ContextPack, ContextPackBuilder, get_context_builder
 from src.evaluators.base import Evaluator, EvaluatorConfig
 from src.evaluators.registry import get_all_evaluators, get_evaluator
 
