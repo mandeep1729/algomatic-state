@@ -50,3 +50,6 @@ const api = USE_MOCKS
     };
 
 export default api;
+
+// Re-export mock chart data helpers (always mocked — no backend endpoint)
+export { fetchMockOHLCVData, fetchMockFeatures } from '../mocks/mockApi';

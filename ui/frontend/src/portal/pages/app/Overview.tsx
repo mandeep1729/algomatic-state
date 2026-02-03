@@ -1,9 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
-import api from '../../api';
-import { fetchOHLCVData, fetchFeatures } from '../../../api';
-import type { OHLCVData, FeatureData } from '../../../types';
+import api, { fetchMockOHLCVData, fetchMockFeatures } from '../../api';
 import type { TradeSummary, InsightsSummary, BrokerStatus, JournalEntry, BehavioralInsight } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
@@ -20,8 +18,8 @@ export default function Overview() {
 
   // Chart state
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
-  const [featureData, setFeatureData] = useState<FeatureData | null>(null);
+  const [ohlcvData, setOhlcvData] = useState<{ timestamps: string[]; open: number[]; high: number[]; low: number[]; close: number[]; volume: number[] } | null>(null);
+  const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
 
   const { setChartActive, setFeatureNames, selectedFeatures } = useChartContext();
@@ -55,8 +53,8 @@ export default function Overview() {
     setChartActive(true);
     try {
       const [ohlcv, features] = await Promise.all([
-        fetchOHLCVData(symbol, '5Min'),
-        fetchFeatures(symbol, '5Min'),
+        fetchMockOHLCVData(symbol),
+        fetchMockFeatures(symbol),
       ]);
       setOhlcvData(ohlcv);
       setFeatureData(features);
