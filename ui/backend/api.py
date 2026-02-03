@@ -58,7 +58,7 @@ from src.features.pipeline import FeaturePipeline, get_minimal_features
 from src.features.state.hmm.artifacts import get_model_path, list_models
 from src.features.state.hmm.inference import InferenceEngine
 from src.features.state.hmm.labeling import state_mapping_to_labels, StateLabel as HMMStateLabel
-from src.trading_buddy_api import router as trading_buddy_router
+from src.api.trading_buddy import router as trading_buddy_router
 from src.api.broker import router as broker_router
 
 logger = logging.getLogger(__name__)
