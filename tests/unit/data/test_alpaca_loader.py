@@ -30,15 +30,18 @@ def sample_bars_df():
 @pytest.fixture
 def mock_alpaca_client(sample_bars_df):
     """Create a mocked Alpaca client."""
-    with patch("src.data.loaders.alpaca_loader.StockHistoricalDataClient") as mock:
+    with patch("src.marketdata.alpaca_provider.StockHistoricalDataClient") as mock:
         client_instance = MagicMock()
 
-        # Create mock response
-        mock_response = MagicMock()
-        mock_response.df = sample_bars_df
-        mock_response.data = {"AAPL": [MagicMock()]}  # Non-empty data
+        def _make_response(request):
+            """Return a response that matches any requested symbol."""
+            symbol = request.symbol_or_symbols
+            resp = MagicMock()
+            resp.df = sample_bars_df
+            resp.data = {symbol: [MagicMock()]}
+            return resp
 
-        client_instance.get_stock_bars.return_value = mock_response
+        client_instance.get_stock_bars.side_effect = _make_response
         mock.return_value = client_instance
 
         yield mock
@@ -158,13 +161,13 @@ class TestAlpacaLoader:
         df1 = loader.load("AAPL", start=start, end=end)
 
         # Reset mock call count
-        loader.client.get_stock_bars.reset_mock()
+        loader._provider.client.get_stock_bars.reset_mock()
 
         # Second call - should use cache
         df2 = loader.load("AAPL", start=start, end=end)
 
         # API should not have been called again
-        loader.client.get_stock_bars.assert_not_called()
+        loader._provider.client.get_stock_bars.assert_not_called()
 
         # Results should be equal
         pd.testing.assert_frame_equal(df1, df2)
@@ -241,7 +244,7 @@ class TestAlpacaLoader:
             mock_response.data = {"AAPL": [MagicMock()]}
             return mock_response
 
-        loader.client.get_stock_bars.side_effect = side_effect
+        loader._provider.client.get_stock_bars.side_effect = side_effect
 
         # Should eventually succeed
         df = loader.load("AAPL", start=datetime(2024, 1, 2), end=datetime(2024, 1, 3))
@@ -260,9 +263,9 @@ class TestAlpacaLoader:
         )
 
         # Make all calls fail
-        loader.client.get_stock_bars.side_effect = Exception("API Error")
+        loader._provider.client.get_stock_bars.side_effect = Exception("API Error")
 
-        with pytest.raises(RuntimeError, match="Failed to fetch"):
+        with pytest.raises(RuntimeError, match="Failed after"):
             loader.load("AAPL", start=datetime(2024, 1, 2), end=datetime(2024, 1, 3))
 
     def test_empty_response_handled(self, mock_alpaca_client, tmp_path):
@@ -276,10 +279,11 @@ class TestAlpacaLoader:
             rate_limit=60000,
         )
 
-        # Mock empty response
+        # Mock empty response — clear side_effect so return_value is used
         mock_response = MagicMock()
         mock_response.data = {}
-        loader.client.get_stock_bars.return_value = mock_response
+        loader._provider.client.get_stock_bars.side_effect = None
+        loader._provider.client.get_stock_bars.return_value = mock_response
 
         df = loader.load("AAPL", start=datetime(2024, 1, 2), end=datetime(2024, 1, 3))
 

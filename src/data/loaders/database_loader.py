@@ -1,9 +1,11 @@
 """Database-backed data loader with smart incremental fetching."""
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import pandas as pd
 
@@ -12,6 +14,9 @@ from src.data.database.models import VALID_TIMEFRAMES
 from src.data.database.repository import OHLCVRepository
 from src.data.loaders.base import BaseDataLoader
 from src.data.schemas import validate_ohlcv
+
+if TYPE_CHECKING:
+    from src.marketdata.base import MarketDataProvider
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +83,7 @@ class DatabaseLoader(BaseDataLoader):
         self,
         db_manager: Optional[DatabaseManager] = None,
         alpaca_loader: Optional["AlpacaLoader"] = None,
+        provider: Optional["MarketDataProvider"] = None,
         validate: bool = True,
         auto_fetch: bool = True,
     ):
@@ -85,14 +91,29 @@ class DatabaseLoader(BaseDataLoader):
 
         Args:
             db_manager: Database manager instance (uses singleton if not provided)
-            alpaca_loader: Optional Alpaca loader for fetching new data
+            alpaca_loader: Deprecated — use *provider* instead.  Kept for
+                backward compatibility; when set, an ``AlpacaProvider``-compatible
+                adapter wraps it automatically.
+            provider: A :class:`MarketDataProvider` used to fetch missing data.
             validate: Whether to validate data against OHLCV schema
-            auto_fetch: Automatically fetch missing data from Alpaca
+            auto_fetch: Automatically fetch missing data from the provider
         """
         self.db_manager = db_manager or get_db_manager()
-        self.alpaca_loader = alpaca_loader
         self.validate = validate
         self.auto_fetch = auto_fetch
+
+        # Backward compat: if caller passed the legacy alpaca_loader but no
+        # provider, wrap it so the rest of the class only talks to provider.
+        if provider is not None:
+            self.provider: MarketDataProvider | None = provider
+        elif alpaca_loader is not None:
+            self.provider = _AlpacaLoaderAdapter(alpaca_loader)
+        else:
+            self.provider = None
+
+        # Keep the legacy attribute so existing call-sites that read it
+        # directly keep working (e.g. ``if self.alpaca_loader:``).
+        self.alpaca_loader = alpaca_loader
 
     def load(
         self,
@@ -128,7 +149,7 @@ class DatabaseLoader(BaseDataLoader):
             repo = OHLCVRepository(session)
 
             # Smart fetch: check what we have vs what we need
-            if self.auto_fetch and self.alpaca_loader:
+            if self.auto_fetch and self.provider:
                 self._sync_missing_data(repo, symbol, timeframe, start, end)
 
             # Load from database
@@ -192,8 +213,8 @@ class DatabaseLoader(BaseDataLoader):
             start: Requested start datetime
             end: Requested end datetime
         """
-        if self.alpaca_loader is None:
-            logger.info(f"No Alpaca loader configured, skipping sync for {symbol}")
+        if self.provider is None:
+            logger.info(f"No market data provider configured, skipping sync for {symbol}")
             return
 
         logger.info(f"Checking missing data for {symbol}/{timeframe} from {start} to {end}")
@@ -235,13 +256,13 @@ class DatabaseLoader(BaseDataLoader):
             end: End datetime
         """
         try:
-            # Step 1: Fetch 1Min data from Alpaca
+            # Step 1: Fetch 1Min data from provider
             logger.info(f"Fetching 1Min data for {symbol} from {start} to {end}")
-            df_1min = self.alpaca_loader.load(symbol, start=start, end=end)
-            logger.info(f"Alpaca returned {len(df_1min)} 1Min bars for {symbol}")
+            df_1min = self.provider.fetch_1min_bars(symbol, start, end)
+            logger.info(f"Provider returned {len(df_1min)} 1Min bars for {symbol}")
 
             if df_1min.empty:
-                logger.warning(f"No 1Min data available from Alpaca for {symbol}")
+                logger.warning(f"No 1Min data available from provider for {symbol}")
                 return
 
             # Ensure timezone-naive timestamps
@@ -253,7 +274,7 @@ class DatabaseLoader(BaseDataLoader):
                 df=df_1min,
                 ticker_id=ticker.id,
                 timeframe="1Min",
-                source="alpaca",
+                source=self.provider.source_name,
             )
             logger.info(f"Inserted {rows_1min} 1Min bars for {symbol}")
 
@@ -319,10 +340,10 @@ class DatabaseLoader(BaseDataLoader):
         start: Optional[datetime],
         end: datetime,
     ) -> None:
-        """Fetch 1Day data from Alpaca.
+        """Fetch 1Day data from the configured provider.
 
-        Daily data is fetched directly from Alpaca rather than aggregated
-        from 1Min data to ensure accuracy with market hours.
+        Daily data is fetched directly from the provider rather than
+        aggregated from 1Min data to ensure accuracy with market hours.
 
         Args:
             repo: OHLCV repository instance
@@ -331,60 +352,27 @@ class DatabaseLoader(BaseDataLoader):
             start: Start datetime
             end: End datetime
         """
-        try:
-            # Import here to avoid circular imports
-            from alpaca.data.historical import StockHistoricalDataClient
-            from alpaca.data.requests import StockBarsRequest
-            from alpaca.data.timeframe import TimeFrame
-            import os
+        if self.provider is None:
+            logger.warning("No provider configured for daily data fetch")
+            return
 
+        try:
             logger.info(f"Fetching 1Day data for {symbol} from {start} to {end}")
 
-            # Use Alpaca client directly for daily bars
-            api_key = os.environ.get("ALPACA_API_KEY")
-            secret_key = os.environ.get("ALPACA_SECRET_KEY")
+            df_daily = self.provider.fetch_daily_bars(symbol, start, end)
 
-            if not api_key or not secret_key:
-                logger.warning("Alpaca credentials not available for daily data fetch")
-                return
-
-            client = StockHistoricalDataClient(api_key, secret_key)
-
-            request = StockBarsRequest(
-                symbol_or_symbols=symbol,
-                timeframe=TimeFrame.Day,
-                start=start,
-                end=end,
-            )
-
-            bars = client.get_stock_bars(request)
-
-            if symbol not in bars.data or not bars.data[symbol]:
-                logger.info(f"No 1Day data available from Alpaca for {symbol}")
-                return
-
-            df_daily = bars.df
-
-            # Handle multi-index if present
-            if isinstance(df_daily.index, pd.MultiIndex):
-                df_daily = df_daily.xs(symbol, level="symbol")
-
-            # Ensure timezone-naive
-            if df_daily.index.tz is not None:
-                df_daily.index = df_daily.index.tz_localize(None)
-
-            # Select only OHLCV columns
-            df_daily = df_daily[["open", "high", "low", "close", "volume"]]
-            df_daily.index.name = "timestamp"
-
-            logger.info(f"Alpaca returned {len(df_daily)} 1Day bars for {symbol}")
+            logger.info(f"Provider returned {len(df_daily)} 1Day bars for {symbol}")
 
             if not df_daily.empty:
+                # Ensure timezone-naive
+                if df_daily.index.tz is not None:
+                    df_daily.index = df_daily.index.tz_localize(None)
+
                 rows_daily = repo.bulk_insert_bars(
                     df=df_daily,
                     ticker_id=ticker.id,
                     timeframe="1Day",
-                    source="alpaca",
+                    source=self.provider.source_name,
                 )
                 logger.info(f"Inserted {rows_daily} 1Day bars for {symbol}")
 
@@ -502,10 +490,10 @@ class DatabaseLoader(BaseDataLoader):
             DataFrame with fetched 1Min data
         """
         try:
-            logger.info(f"Fetching 1Min from Alpaca: {symbol} from {start} to {end}")
+            logger.info(f"Fetching 1Min from provider: {symbol} from {start} to {end}")
 
-            df = self.alpaca_loader.load(symbol, start=start, end=end)
-            logger.info(f"Alpaca returned {len(df)} 1Min rows for {symbol}")
+            df = self.provider.fetch_1min_bars(symbol, start, end)
+            logger.info(f"Provider returned {len(df)} 1Min rows for {symbol}")
 
             if not df.empty:
                 # Ensure timezone-naive timestamps
@@ -517,7 +505,7 @@ class DatabaseLoader(BaseDataLoader):
                     df=df,
                     ticker_id=ticker.id,
                     timeframe="1Min",
-                    source="alpaca",
+                    source=self.provider.source_name,
                 )
 
                 repo.update_sync_log(
@@ -533,7 +521,7 @@ class DatabaseLoader(BaseDataLoader):
                 return df
 
         except Exception as e:
-            logger.error(f"Failed to fetch 1Min data from Alpaca for {symbol}: {e}")
+            logger.error(f"Failed to fetch 1Min data from provider for {symbol}: {e}")
             repo.update_sync_log(
                 ticker_id=ticker.id,
                 timeframe="1Min",
@@ -972,3 +960,36 @@ class DatabaseLoader(BaseDataLoader):
 
             except Exception as e:
                 logger.error(f"Failed to compute features for {symbol}/{timeframe}: {e}")
+
+
+class _AlpacaLoaderAdapter:
+    """Thin adapter that wraps a legacy ``AlpacaLoader`` as a ``MarketDataProvider``.
+
+    This is *not* a full ``MarketDataProvider`` subclass — it only provides
+    the three attributes / methods that ``DatabaseLoader`` actually calls:
+    ``source_name``, ``fetch_1min_bars``, and ``fetch_daily_bars``.
+    """
+
+    source_name = "alpaca"
+
+    def __init__(self, loader):
+        self._loader = loader
+
+    def fetch_1min_bars(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
+        return self._loader.load(symbol, start=start, end=end)
+
+    def fetch_daily_bars(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
+        # The legacy AlpacaLoader only fetches 1Min bars.  Daily bars
+        # require a separate provider call, so we return empty here and
+        # rely on the caller to handle it (matching old behaviour where
+        # _fetch_daily_data created its own client).
+        try:
+            from src.marketdata.alpaca_provider import AlpacaProvider
+            provider = AlpacaProvider(
+                api_key=self._loader.api_key,
+                secret_key=self._loader.secret_key,
+            )
+            return provider.fetch_daily_bars(symbol, start, end)
+        except Exception:
+            logger.warning("Could not fetch daily bars via AlpacaProvider adapter")
+            return pd.DataFrame()
