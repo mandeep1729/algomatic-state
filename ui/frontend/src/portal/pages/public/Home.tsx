@@ -8,132 +8,208 @@ import {
   BookOpen,
   X,
   ArrowRight,
+  CheckCircle2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
-const FEATURES: { title: string; desc: string; icon: LucideIcon; color: string }[] = [
+const FEATURES: { title: string; desc: string; icon: LucideIcon; color: string; gradient: string }[] = [
   {
     title: 'Risk Guardian',
-    desc: 'Checks every trade against your risk rules — stop loss placement, position sizing, risk:reward ratio.',
+    desc: 'Automated checks for stop loss placement, position sizing, and risk:reward ratios before you execute.',
     icon: ShieldAlert,
-    color: 'text-[var(--accent-red)]',
+    color: 'text-red-400',
+    gradient: 'from-red-500/20 to-orange-500/5',
   },
   {
     title: 'Behavioral Coach',
-    desc: 'Detects patterns like revenge trading, FOMO entries, and overconfidence before they cost you money.',
+    desc: 'Real-time detection of revenge trading, FOMO, and tilt. Get alerted before emotions cost you money.',
     icon: Brain,
-    color: 'text-[var(--accent-purple)]',
+    color: 'text-purple-400',
+    gradient: 'from-purple-500/20 to-pink-500/5',
   },
   {
     title: 'Regime Awareness',
-    desc: 'Evaluates whether your trade direction aligns with the current market regime.',
+    desc: 'Align your trades with current market conditions. Don\'t fight the trend or chop.',
     icon: Activity,
-    color: 'text-[var(--accent-blue)]',
+    color: 'text-blue-400',
+    gradient: 'from-blue-500/20 to-cyan-500/5',
   },
   {
     title: 'Strategy Consistency',
-    desc: 'Compares each trade against your declared strategies to catch drift and improvisation.',
+    desc: 'Drift detection ensures you stick to your playbook. No more random improvisation.',
     icon: GitCompare,
-    color: 'text-[var(--accent-yellow)]',
+    color: 'text-yellow-400',
+    gradient: 'from-yellow-500/20 to-amber-500/5',
   },
   {
     title: 'Timing Review',
-    desc: 'Flags rushed entries, trades during extreme volatility, and suboptimal timing windows.',
+    desc: 'Analysis of entry timing relative to volatility and session opens.',
     icon: Clock,
-    color: 'text-[var(--accent-green)]',
+    color: 'text-green-400',
+    gradient: 'from-green-500/20 to-emerald-500/5',
   },
   {
     title: 'Trade Journal',
-    desc: 'Built-in journaling with mood tracking, behavioral tags, and trade linking for self-reflection.',
+    desc: 'Automatic journaling with mood tracking and deep performance analytics.',
     icon: BookOpen,
-    color: 'text-[var(--accent-blue)]',
+    color: 'text-indigo-400',
+    gradient: 'from-indigo-500/20 to-violet-500/5',
   },
 ];
 
 export default function Home() {
   return (
-    <div>
+    <div className="flex flex-col gap-24">
       {/* Hero */}
-      <section className="py-16 text-center">
-        <h1 className="text-4xl font-bold leading-tight sm:text-5xl">
-          Your Trading Second Opinion
+      <section className="relative flex flex-col items-center text-center">
+        {/* Background Gradients */}
+        <div className="absolute -top-32 -z-10 h-[500px] w-[500px] rounded-full bg-[var(--accent-blue)]/20 blur-[100px]" />
+        <div className="absolute -bottom-32 -right-32 -z-10 h-[500px] w-[500px] rounded-full bg-[var(--accent-purple)]/10 blur-[100px]" />
+
+        <div className="inline-flex items-center gap-2 rounded-full border border-[var(--accent-blue)]/30 bg-[var(--accent-blue)]/10 px-3 py-1 text-xs font-medium text-[var(--accent-blue)]">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--accent-blue)] opacity-75"></span>
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-[var(--accent-blue)]"></span>
+          </span>
+          AI-Powered Trading Assistant
+        </div>
+
+        <h1 className="mt-8 max-w-4xl text-5xl font-bold tracking-tight sm:text-7xl">
+          Your Trading <br />
+          <span className="bg-gradient-to-r from-[var(--accent-blue)] to-[var(--accent-purple)] bg-clip-text text-transparent">
+            Second Opinion
+          </span>
         </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-lg text-[var(--text-secondary)]">
-          Trading Buddy reviews your trades before you execute. We surface risk, flag behavioral mistakes,
-          and help you build discipline — without predicting prices or selling signals.
+
+        <p className="mt-6 max-w-2xl text-lg text-[var(--text-secondary)]">
+          Trading Buddy reviews your trades <strong>before</strong> you execute. Surface hidden risks, flag behavioral flaws, and build discipline without reliable logic.
         </p>
-        <div className="mt-8 flex justify-center gap-4">
+
+        <div className="mt-10 flex gap-4">
           <Link
             to="/app"
-            className="flex items-center gap-2 rounded-md bg-[var(--accent-blue)] px-6 py-3 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90"
+            className="group flex items-center gap-2 rounded-full bg-[var(--accent-blue)] px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-blue)]/25 transition-all hover:bg-[var(--accent-blue)]/90 hover:shadow-[var(--accent-blue)]/40 hover:-translate-y-0.5"
           >
             Open App
-            <ArrowRight size={16} />
+            <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
           </Link>
           <Link
             to="/how-it-works"
-            className="rounded-md border border-[var(--border-color)] px-6 py-3 text-sm font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:text-[var(--text-primary)]"
+            className="flex items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] px-8 py-3.5 text-sm font-semibold text-[var(--text-secondary)] transition-all hover:border-[var(--text-primary)] hover:text-[var(--text-primary)]"
           >
             How It Works
           </Link>
         </div>
+
+        {/* Hero Stats/Social Proof (Mock) */}
+        <div className="mt-16 grid grid-cols-2 gap-8 border-t border-[var(--border-color)] pt-8 sm:grid-cols-4 lg:w-full lg:max-w-4xl">
+          {[
+            { label: 'Trades Analyzed', value: '10k+' },
+            { label: 'Risk Detected', value: '$2M+' },
+            { label: 'Active Traders', value: '500+' },
+            { label: 'Uptime', value: '99.9%' },
+          ].map((stat) => (
+            <div key={stat.label}>
+              <div className="text-2xl font-bold text-[var(--text-primary)]">{stat.value}</div>
+              <div className="text-xs uppercase tracking-wider text-[var(--text-secondary)]">{stat.label}</div>
+            </div>
+          ))}
+        </div>
       </section>
 
       {/* What we do */}
-      <section className="border-t border-[var(--border-color)] py-12">
-        <h2 className="mb-8 text-center text-2xl font-semibold">What Trading Buddy Does</h2>
+      <section>
+        <div className="mb-12 text-center">
+          <h2 className="text-3xl font-bold tracking-tight">Everything you need to stay disciplined</h2>
+          <p className="mt-4 text-[var(--text-secondary)]">Automated checks that act as your risk manager.</p>
+        </div>
+
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((item) => {
             const Icon = item.icon;
             return (
-              <div key={item.title} className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5 transition-colors duration-150 hover:border-[var(--accent-blue)]/40">
-                <div className="mb-3 flex items-center gap-2.5">
-                  <Icon size={18} className={item.color} />
-                  <h3 className="text-sm font-semibold">{item.title}</h3>
+              <div key={item.title} className="group relative overflow-hidden rounded-2xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-6 transition-all hover:border-[var(--text-secondary)]/30 hover:shadow-xl">
+                <div className={`absolute inset-0 bg-gradient-to-br ${item.gradient} opacity-0 transition-opacity group-hover:opacity-100`} />
+                <div className="relative z-10">
+                  <div className={`mb-4 inline-flex rounded-lg bg-[var(--bg-tertiary)] p-3 ${item.color}`}>
+                    <Icon size={24} />
+                  </div>
+                  <h3 className="mb-2 text-lg font-semibold">{item.title}</h3>
+                  <p className="text-sm leading-relaxed text-[var(--text-secondary)]">{item.desc}</p>
                 </div>
-                <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{item.desc}</p>
               </div>
             );
           })}
         </div>
       </section>
 
-      {/* What we don't do */}
-      <section className="border-t border-[var(--border-color)] py-12">
-        <h2 className="mb-4 text-center text-2xl font-semibold">What We Don't Do</h2>
-        <p className="mx-auto mb-8 max-w-xl text-center text-sm text-[var(--text-secondary)]">
-          We're not a signal service. We don't predict prices. We don't tell you what to trade.
-        </p>
-        <div className="mx-auto grid max-w-3xl gap-3 sm:grid-cols-2">
-          {[
-            'Predict price direction',
-            'Generate buy/sell signals',
-            'Claim high-probability outcomes',
-            'Replace your judgment',
-            'Optimize for win rate alone',
-            'Automate trade execution',
-          ].map((item) => (
-            <div key={item} className="flex items-center gap-2.5 text-sm text-[var(--text-secondary)]">
-              <X size={14} className="flex-shrink-0 text-[var(--accent-red)]" />
-              {item}
+      {/* Comparison / What we don't do */}
+      <section className="rounded-3xl border border-[var(--border-color)] bg-[var(--bg-secondary)]/30 p-8 sm:p-12">
+        <div className="grid gap-12 lg:grid-cols-2 lg:gap-24">
+          <div>
+            <h2 className="text-3xl font-bold tracking-tight">We are NOT a signal provider.</h2>
+            <p className="mt-4 text-lg text-[var(--text-secondary)]">
+              Most tools try to predict the market. We try to predict <strong>you</strong>. Trading Buddy focuses entirely on your execution, risk management, and psychology.
+            </p>
+            <div className="mt-8 space-y-4">
+              {[
+                'We do NOT predict price direction.',
+                'We do NOT generate buy/sell signals.',
+                'We do NOT promise accurate forecasts.',
+              ].map((text) => (
+                <div key={text} className="flex items-center gap-3 text-[var(--text-secondary)]">
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[var(--accent-red)]/10 text-[var(--accent-red)]">
+                    <X size={14} strokeWidth={3} />
+                  </div>
+                  <span>{text}</span>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
+
+          <div className="space-y-6">
+            <h3 className="text-xl font-semibold">What we actually do:</h3>
+            <div className="space-y-4">
+              {[
+                'Flag unplanned trades immediately',
+                'Calculate max position size based on volatility',
+                'Detect "revenge trading" patterns',
+                'Force you to verify checklist before entry',
+                'Track emotional state alongside P&L'
+              ].map((text) => (
+                <div key={text} className="flex items-center gap-3">
+                  <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[var(--accent-green)]/10 text-[var(--accent-green)]">
+                    <CheckCircle2 size={14} strokeWidth={3} />
+                  </div>
+                  <span className="text-[var(--text-primary)]">{text}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
       {/* CTA */}
-      <section className="border-t border-[var(--border-color)] py-12 text-center">
-        <h2 className="text-xl font-semibold">Slow down. Trade better.</h2>
-        <p className="mt-2 text-sm text-[var(--text-secondary)]">
-          Start evaluating your trades today.
-        </p>
-        <Link
-          to="/app/evaluate"
-          className="mt-6 inline-flex items-center gap-2 rounded-md bg-[var(--accent-blue)] px-6 py-3 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90"
-        >
-          Evaluate a Trade
-          <ArrowRight size={16} />
-        </Link>
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--accent-blue)] via-blue-600 to-[var(--accent-purple)] px-6 py-16 text-center text-white sm:px-12 lg:py-24">
+        {/* Abstract shapes */}
+        <div className="absolute left-0 top-0 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/10 blur-3xl"></div>
+        <div className="absolute bottom-0 right-0 h-64 w-64 translate-x-1/2 translate-y-1/2 rounded-full bg-purple-500/20 blur-3xl"></div>
+
+        <div className="relative z-10 mx-auto max-w-2xl">
+          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Slow down. Trade better.</h2>
+          <p className="mt-4 text-lg text-blue-100">
+            Join disciplined traders who use Trading Buddy to protect their capital from themselves.
+          </p>
+          <div className="mt-10 flex justify-center gap-4">
+            <Link
+              to="/app/evaluate"
+              className="group inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-bold text-blue-600 shadow-xl transition-all hover:bg-blue-50 hover:shadow-2xl hover:-translate-y-0.5"
+            >
+              Start Evaluating
+              <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+            </Link>
+          </div>
+        </div>
       </section>
     </div>
   );

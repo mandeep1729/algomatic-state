@@ -1,21 +1,36 @@
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+@import "tailwindcss";
 
 :root {
-  --bg-primary: #0d1117;
-  --bg-secondary: #161b22;
-  --bg-tertiary: #21262d;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --border-color: #30363d;
-  --accent-blue: #58a6ff;
-  --accent-green: #3fb950;
-  --accent-red: #f85149;
-  --accent-yellow: #d29922;
-  --accent-purple: #a371f7;
+  /* Premium Dark Theme Palette (Slate/Zinc inspired) */
+  --bg-primary: #020617;
+  /* Slate 950 - Main background */
+  --bg-secondary: #0f172a;
+  /* Slate 900 - Secondary/Sidebar/Cards */
+  --bg-tertiary: #1e293b;
+  /* Slate 800 - Hovers/Inputs */
+
+  --text-primary: #f8fafc;
+  /* Slate 50 */
+  --text-secondary: #94a3b8;
+  /* Slate 400 */
+
+  --border-color: #1e293b;
+  /* Slate 800 */
+
+  /* Vibrant Accents */
+  --accent-blue: #3b82f6;
+  /* Blue 500 */
+  --accent-green: #22c55e;
+  /* Green 500 */
+  --accent-red: #ef4444;
+  /* Red 500 */
+  --accent-yellow: #eab308;
+  /* Yellow 500 */
+  --accent-purple: #a855f7;
+  /* Purple 500 */
+
+  /* Font Family */
+  font-family: 'Inter', sans-serif;
 }
 
 body {
@@ -311,6 +326,7 @@ body {
 .slider-container input[type="range"] {
   width: 100%;
   -webkit-appearance: none;
+  appearance: none;
   background: var(--bg-primary);
   height: 4px;
   border-radius: 2px;
@@ -319,6 +335,7 @@ body {
 
 .slider-container input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
+  appearance: none;
   width: 16px;
   height: 16px;
   background: var(--accent-blue);

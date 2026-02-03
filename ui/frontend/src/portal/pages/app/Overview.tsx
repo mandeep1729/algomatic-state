@@ -172,53 +172,52 @@ export default function Overview() {
         <div className="space-y-6">
           {/* Recent trades */}
           <Section title="Recent Trades" action={{ label: 'View All', to: '/app/trades' }}>
-            <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+            <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-sm">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium text-[var(--text-secondary)]">
-                    <th className="px-4 py-2.5">Symbol</th>
-                    <th className="px-4 py-2.5">Dir</th>
-                    <th className="px-4 py-2.5">Entry</th>
-                    <th className="px-4 py-2.5">Source</th>
-                    <th className="px-4 py-2.5">Status</th>
-                    <th className="px-4 py-2.5">Flags</th>
+                  <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                    <th className="px-6 py-4">Symbol</th>
+                    <th className="px-6 py-4">Dir</th>
+                    <th className="px-6 py-4">Entry</th>
+                    <th className="px-6 py-4">Source</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Flags</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[var(--border-color)]">
                   {recentTrades.map((trade) => (
-                    <tr key={trade.id} className="border-b border-[var(--border-color)] last:border-0 hover:bg-[var(--bg-primary)] transition-colors">
-                      <td className="px-4 py-2.5">
+                    <tr key={trade.id} className="transition-colors hover:bg-[var(--bg-tertiary)]/50">
+                      <td className="px-6 py-4">
                         <button
                           onClick={() => handleTickerClick(trade.symbol)}
-                          className={`font-medium hover:underline ${
-                            selectedTicker === trade.symbol
+                          className={`font-medium hover:underline ${selectedTicker === trade.symbol
                               ? 'text-[var(--accent-green)]'
                               : 'text-[var(--accent-blue)]'
-                          }`}
+                            }`}
                         >
                           {trade.symbol}
                         </button>
                       </td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-6 py-4">
                         <DirectionBadge direction={trade.direction} />
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-xs">${trade.entry_price.toFixed(2)}</td>
-                      <td className="px-4 py-2.5"><SourceBadge source={trade.source} /></td>
-                      <td className="px-4 py-2.5"><StatusBadge status={trade.status} /></td>
-                      <td className="px-4 py-2.5">
+                      <td className="px-6 py-4 font-mono text-xs text-[var(--text-secondary)]">${trade.entry_price.toFixed(2)}</td>
+                      <td className="px-6 py-4"><SourceBadge source={trade.source} /></td>
+                      <td className="px-6 py-4"><StatusBadge status={trade.status} /></td>
+                      <td className="px-6 py-4">
                         {trade.is_flagged ? (
-                          <span className="rounded bg-[var(--accent-red)]/10 px-2 py-0.5 text-xs text-[var(--accent-red)]">
-                            {trade.flag_count}
+                          <span className="rounded-full bg-[var(--accent-red)]/10 px-2.5 py-1 text-xs font-medium text-[var(--accent-red)]">
+                            {trade.flag_count} Flags
                           </span>
                         ) : (
-                          <span className="text-[var(--text-secondary)]">--</span>
+                          <span className="text-[var(--text-secondary)]">-</span>
                         )}
                       </td>
                     </tr>
                   ))}
                   {recentTrades.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-sm text-[var(--text-secondary)]">
+                      <td colSpan={6} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
                         No trades yet. <Link to="/app/evaluate" className="text-[var(--accent-blue)] hover:underline">Evaluate your first trade</Link>
                       </td>
                     </tr>
@@ -352,10 +351,10 @@ function StatCard({
   const colorClass = accent === 'red'
     ? 'text-[var(--accent-red)]'
     : accent === 'green'
-    ? 'text-[var(--accent-green)]'
-    : accent === 'yellow'
-    ? 'text-[var(--accent-yellow)]'
-    : 'text-[var(--text-primary)]';
+      ? 'text-[var(--accent-green)]'
+      : accent === 'yellow'
+        ? 'text-[var(--accent-yellow)]'
+        : 'text-[var(--text-primary)]';
 
   return (
     <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3">
