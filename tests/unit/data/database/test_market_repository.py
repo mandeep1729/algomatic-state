@@ -14,7 +14,7 @@ from src.data.database.models import (
     VALID_TIMEFRAMES,
     VALID_SOURCES,
 )
-from src.data.database.repository import OHLCVRepository
+from src.data.database.market_repository import OHLCVRepository
 
 
 @pytest.fixture

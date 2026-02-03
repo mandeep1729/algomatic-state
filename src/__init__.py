@@ -17,16 +17,18 @@ Supporting Modules:
 - execution: Order execution
 """
 
-from src.domain import (
+from src.trade.intent import (
     TradeDirection,
     TradeIntentStatus,
-    Severity,
     TradeIntent,
+)
+from src.trade.evaluation import (
+    Severity,
     Evidence,
     EvaluationItem,
     EvaluationResult,
 )
-from src.context import (
+from src.evaluators.context import (
     ContextPack,
     ContextPackBuilder,
     RegimeContext,
@@ -38,8 +40,8 @@ from src.orchestrator import (
     OrchestratorConfig,
     evaluate_trade,
 )
-from src.repository import TradingBuddyRepository
-from src.guardrails import (
+from src.data.database.trading_repository import TradingBuddyRepository
+from src.rules.guardrails import (
     validate_evaluation_result,
     sanitize_evaluation_result,
     contains_prediction,

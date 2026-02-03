@@ -12,14 +12,13 @@ exit plan before entering a trade.
 import logging
 from typing import Optional
 
-from src.domain import (
-    TradeIntent,
-    TradeDirection,
+from src.trade.intent import TradeIntent, TradeDirection
+from src.trade.evaluation import (
     EvaluationItem,
     Evidence,
     Severity,
 )
-from src.context import ContextPack
+from src.evaluators.context import ContextPack
 from src.evaluators.base import Evaluator, EvaluatorConfig
 from src.evaluators.registry import register_evaluator
 from src.evaluators.evidence import format_currency, format_percentage
