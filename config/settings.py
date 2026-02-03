@@ -9,6 +9,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
 
+class FinnhubConfig(BaseSettings):
+    """Finnhub API configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="FINNHUB_")
+
+    api_key: str = Field(default="", description="Finnhub API key")
+    rate_limit: int = Field(default=60, description="API calls per minute (free tier)")
+    max_retries: int = Field(default=3, description="Maximum retry attempts on failure")
+
+
 class AlpacaConfig(BaseSettings):
     """Alpaca API configuration."""
 
@@ -227,6 +237,7 @@ class Settings(BaseSettings):
         description="Environment type",
     )
 
+    finnhub: FinnhubConfig = Field(default_factory=FinnhubConfig)
     alpaca: AlpacaConfig = Field(default_factory=AlpacaConfig)
     data: DataConfig = Field(default_factory=DataConfig)
     features: FeatureConfig = Field(default_factory=FeatureConfig)
