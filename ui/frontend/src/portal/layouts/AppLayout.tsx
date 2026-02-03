@@ -129,100 +129,100 @@ export default function AppLayout() {
           </button>
         </div>
 
-        {/* Nav */}
-        <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3">
-          {appNavSections.map((item) => {
-            const Icon = ICON_MAP[item.icon] ?? LayoutDashboard;
+        {/* Nav + Feature Filter (shared scrollable area) */}
+        <div className="flex-1 overflow-y-auto">
+          <nav className="space-y-0.5 px-2 py-3">
+            {appNavSections.map((item) => {
+              const Icon = ICON_MAP[item.icon] ?? LayoutDashboard;
 
-            // Settings with sub-nav
-            if (item.children) {
-              return (
-                <div key={item.path} className="mt-2">
-                  <button
-                    onClick={() => setSettingsOpen(!settingsOpen)}
-                    className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
-                      isSettingsActive
-                        ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
-                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
-                    }`}
-                  >
-                    <span className="flex w-5 justify-center">
-                      <Icon size={18} />
-                    </span>
-                    {!sidebarCollapsed && (
-                      <>
-                        <span className="flex-1 text-left">{item.label}</span>
-                        {settingsOpen || isSettingsActive ? (
-                          <ChevronUp size={14} className="text-[var(--text-secondary)]" />
-                        ) : (
-                          <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-                        )}
-                      </>
+              // Settings with sub-nav
+              if (item.children) {
+                return (
+                  <div key={item.path} className="mt-2">
+                    <button
+                      onClick={() => setSettingsOpen(!settingsOpen)}
+                      className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
+                        isSettingsActive
+                          ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
+                          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                      }`}
+                    >
+                      <span className="flex w-5 justify-center">
+                        <Icon size={18} />
+                      </span>
+                      {!sidebarCollapsed && (
+                        <>
+                          <span className="flex-1 text-left">{item.label}</span>
+                          {settingsOpen || isSettingsActive ? (
+                            <ChevronUp size={14} className="text-[var(--text-secondary)]" />
+                          ) : (
+                            <ChevronDown size={14} className="text-[var(--text-secondary)]" />
+                          )}
+                        </>
+                      )}
+                    </button>
+
+                    {(settingsOpen || isSettingsActive) && !sidebarCollapsed && (
+                      <div className="ml-8 mt-1 space-y-0.5 border-l border-[var(--border-color)] pl-3">
+                        {item.children.map((child) => {
+                          const ChildIcon = ICON_MAP[child.icon];
+                          return (
+                            <NavLink
+                              key={child.path}
+                              to={child.path}
+                              className={({ isActive }) =>
+                                `flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 ${
+                                  isActive
+                                    ? 'text-[var(--accent-blue)]'
+                                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                }`
+                              }
+                            >
+                              {ChildIcon && <ChildIcon size={14} />}
+                              {child.label}
+                            </NavLink>
+                          );
+                        })}
+                      </div>
                     )}
-                  </button>
+                  </div>
+                );
+              }
 
-                  {(settingsOpen || isSettingsActive) && !sidebarCollapsed && (
-                    <div className="ml-8 mt-1 space-y-0.5 border-l border-[var(--border-color)] pl-3">
-                      {item.children.map((child) => {
-                        const ChildIcon = ICON_MAP[child.icon];
-                        return (
-                          <NavLink
-                            key={child.path}
-                            to={child.path}
-                            className={({ isActive }) =>
-                              `flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 ${
-                                isActive
-                                  ? 'text-[var(--accent-blue)]'
-                                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                              }`
-                            }
-                          >
-                            {ChildIcon && <ChildIcon size={14} />}
-                            {child.label}
-                          </NavLink>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+              // Regular nav item
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  end={item.path === '/app'}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
+                      isActive
+                        ? 'bg-[var(--bg-tertiary)] text-[var(--accent-blue)]'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                    }`
+                  }
+                >
+                  <span className="flex w-5 justify-center">
+                    <Icon size={18} />
+                  </span>
+                  {!sidebarCollapsed && <span>{item.label}</span>}
+                </NavLink>
               );
-            }
+            })}
+          </nav>
 
-            // Regular nav item
-            return (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                end={item.path === '/app'}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
-                    isActive
-                      ? 'bg-[var(--bg-tertiary)] text-[var(--accent-blue)]'
-                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
-                  }`
-                }
-              >
-                <span className="flex w-5 justify-center">
-                  <Icon size={18} />
-                </span>
-                {!sidebarCollapsed && <span>{item.label}</span>}
-              </NavLink>
-            );
-          })}
-        </nav>
-
-        {/* Feature filter (contextual — only when chart is active) */}
-        {chartActive && !sidebarCollapsed && (
-          <div className="border-t border-[var(--border-color)] overflow-y-auto" style={{ maxHeight: '40vh' }}>
-            <div className="px-3 py-3">
+          {/* Feature filter (contextual — only when chart is active, sits right after nav) */}
+          {chartActive && !sidebarCollapsed && (
+            <div className="border-t border-[var(--border-color)] px-3 py-3">
               <FeatureFilter
                 selectedFeatures={selectedFeatures}
                 availableFeatures={featureNames}
                 onFeatureToggle={onFeatureToggle}
               />
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {/* User info */}
         <div className="border-t border-[var(--border-color)] px-3 py-3">
