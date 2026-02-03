@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { appNavSections } from '../lib/nav';
@@ -108,62 +107,65 @@ export default function AppLayout() {
   const isSettingsActive = location.pathname.startsWith('/app/settings');
 
   return (
-    <div className="flex h-screen bg-[var(--bg-primary)] text-[var(--text-primary)]">
+    <div className="flex h-screen w-full overflow-hidden bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans antialiased text-sm">
       {/* Sidebar */}
       <aside
-        className={`flex flex-shrink-0 flex-col border-r border-[var(--border-color)] bg-[var(--bg-secondary)] transition-all duration-200 ${
-          sidebarCollapsed ? 'w-16' : 'w-60'
-        }`}
+        className={`relative flex flex-shrink-0 flex-col border-r border-[var(--border-color)] bg-[var(--bg-primary)] transition-all duration-300 ease-in-out ${sidebarCollapsed ? 'w-[72px]' : 'w-64'
+          }`}
       >
         {/* Logo / brand */}
-        <div className="flex h-14 items-center justify-between border-b border-[var(--border-color)] px-4">
+        <div className={`flex h-16 items-center border-b border-[var(--border-color)] ${sidebarCollapsed ? 'justify-center' : 'justify-between px-6'}`}>
           {!sidebarCollapsed && (
-            <span className="text-sm font-semibold tracking-wide">Trading Buddy</span>
+            <div className="flex items-center gap-2 font-semibold tracking-tight text-base">
+              <div className="flex h-6 w-6 items-center justify-center rounded bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]">
+                <Shield size={14} />
+              </div>
+              Trading Buddy
+            </div>
           )}
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            className="flex h-7 w-7 items-center justify-center rounded text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+            className="flex h-6 w-6 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
             title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
           </button>
         </div>
 
         {/* Nav + Feature Filter (shared scrollable area) */}
-        <div className="flex-1 overflow-y-auto">
-          <nav className="space-y-0.5 px-2 py-3">
+        <div className="flex-1 overflow-y-auto py-4">
+          <nav className="space-y-1 px-3">
             {appNavSections.map((item) => {
               const Icon = ICON_MAP[item.icon] ?? LayoutDashboard;
 
               // Settings with sub-nav
               if (item.children) {
                 return (
-                  <div key={item.path} className="mt-2">
+                  <div key={item.path} className="group">
                     <button
                       onClick={() => setSettingsOpen(!settingsOpen)}
-                      className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
-                        isSettingsActive
-                          ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)]'
-                          : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
-                      }`}
+                      className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${isSettingsActive
+                        ? 'bg-[var(--bg-tertiary)]/50 text-[var(--text-primary)]'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]/30 hover:text-[var(--text-primary)]'
+                        } ${sidebarCollapsed ? 'justify-center px-2' : ''}`}
                     >
-                      <span className="flex w-5 justify-center">
+                      <span className="flex items-center justify-center">
                         <Icon size={18} />
                       </span>
                       {!sidebarCollapsed && (
                         <>
                           <span className="flex-1 text-left">{item.label}</span>
-                          {settingsOpen || isSettingsActive ? (
-                            <ChevronUp size={14} className="text-[var(--text-secondary)]" />
-                          ) : (
-                            <ChevronDown size={14} className="text-[var(--text-secondary)]" />
-                          )}
+                          <ChevronDown
+                            size={14}
+                            className={`transform transition-transform text-[var(--text-secondary)] ${settingsOpen || isSettingsActive ? 'rotate-180' : ''
+                              }`}
+                          />
                         </>
                       )}
                     </button>
 
                     {(settingsOpen || isSettingsActive) && !sidebarCollapsed && (
-                      <div className="ml-8 mt-1 space-y-0.5 border-l border-[var(--border-color)] pl-3">
+                      <div className="mt-1 space-y-0.5 pl-9 pr-2">
                         {item.children.map((child) => {
                           const ChildIcon = ICON_MAP[child.icon];
                           return (
@@ -171,10 +173,9 @@ export default function AppLayout() {
                               key={child.path}
                               to={child.path}
                               className={({ isActive }) =>
-                                `flex items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors duration-150 ${
-                                  isActive
-                                    ? 'text-[var(--accent-blue)]'
-                                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                `flex items-center gap-2 rounded-md px-2 py-1.5 text-xs font-medium transition-colors ${isActive
+                                  ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
+                                  : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                                 }`
                               }
                             >
@@ -196,14 +197,14 @@ export default function AppLayout() {
                   to={item.path}
                   end={item.path === '/app'}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors duration-150 ${
-                      isActive
-                        ? 'bg-[var(--bg-tertiary)] text-[var(--accent-blue)]'
-                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
-                    }`
+                    `flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors ${isActive
+                      ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
+                      : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]/30 hover:text-[var(--text-primary)]'
+                    } ${sidebarCollapsed ? 'justify-center px-2' : ''}`
                   }
+                  title={sidebarCollapsed ? item.label : undefined}
                 >
-                  <span className="flex w-5 justify-center">
+                  <span className="flex items-center justify-center">
                     <Icon size={18} />
                   </span>
                   {!sidebarCollapsed && <span>{item.label}</span>}
@@ -214,7 +215,8 @@ export default function AppLayout() {
 
           {/* Feature filter (contextual — only when chart is active, sits right after nav) */}
           {chartActive && !sidebarCollapsed && (
-            <div className="border-t border-[var(--border-color)] px-3 py-3">
+            <div className="mt-6 border-t border-[var(--border-color)] px-4 py-4">
+              <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Chart Features</h3>
               <FeatureFilter
                 selectedFeatures={selectedFeatures}
                 availableFeatures={featureNames}
@@ -225,55 +227,63 @@ export default function AppLayout() {
         </div>
 
         {/* User info */}
-        <div className="border-t border-[var(--border-color)] px-3 py-3">
+        <div className="border-t border-[var(--border-color)] p-4">
           {sidebarCollapsed ? (
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent-blue)] text-xs font-bold text-white" title={MOCK_USER.name}>
-              {MOCK_USER.name.charAt(0)}
-            </div>
-          ) : (
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[var(--accent-blue)] text-xs font-bold text-white">
+            <div className="flex justify-center">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] text-xs font-bold text-white shadow-md">
                 {MOCK_USER.name.charAt(0)}
               </div>
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">{MOCK_USER.name}</div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 rounded-lg border border-transparent p-2 transition-colors hover:border-[var(--border-color)] hover:bg-[var(--bg-secondary)]">
+              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] text-xs font-bold text-white shadow-sm">
+                {MOCK_USER.name.charAt(0)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-[var(--text-primary)]">{MOCK_USER.name}</div>
                 <div className="truncate text-xs text-[var(--text-secondary)]">{MOCK_USER.email}</div>
               </div>
+              <Settings size={14} className="text-[var(--text-secondary)]" />
             </div>
           )}
         </div>
       </aside>
 
       {/* Right side: topbar + content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden bg-[var(--bg-primary)]">
         {/* Top bar */}
-        <header className="flex h-14 flex-shrink-0 items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-secondary)] px-6">
+        <header className="flex h-16 flex-shrink-0 items-center justify-between border-b border-[var(--border-color)] bg-[var(--bg-primary)] px-8">
           <Breadcrumbs />
 
           <div className="flex items-center gap-4">
             {/* Search */}
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
+            <div className="relative group">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)] transition-colors group-focus-within:text-[var(--accent-blue)]" />
               <input
                 type="text"
-                placeholder="Search trades..."
-                className="h-8 w-56 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] pl-8 pr-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:border-[var(--accent-blue)] focus:outline-none"
+                placeholder="Search..."
+                className="h-9 w-64 rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)]/50 pl-9 pr-4 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] transition-all focus:w-72 focus:border-[var(--accent-blue)] focus:bg-[var(--bg-secondary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-blue)]"
               />
             </div>
 
+            <div className="h-6 w-px bg-[var(--border-color)]"></div>
+
             {/* Notification bell */}
             <button
-              className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+              className="relative flex h-9 w-9 items-center justify-center rounded-full text-[var(--text-secondary)] transition-all hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
               title="Notifications"
             >
               <Bell size={18} />
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[var(--accent-red)] ring-2 ring-[var(--bg-primary)]"></span>
             </button>
           </div>
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
-          <Outlet />
+        <main className="flex-1 overflow-y-auto bg-[var(--bg-secondary)]/30 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[var(--border-color)]">
+          <div className="mx-auto max-w-7xl">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
