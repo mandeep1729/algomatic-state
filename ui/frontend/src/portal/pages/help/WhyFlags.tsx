@@ -1,7 +1,12 @@
+import { Flag, Info, AlertTriangle, AlertOctagon, Ban, ListChecks, HandHelping } from 'lucide-react';
+
 export default function HelpWhyFlags() {
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-6 text-3xl font-bold">Why We Flag Trades</h1>
+      <div className="mb-6 flex items-center gap-3">
+        <Flag size={28} className="text-[var(--accent-yellow)]" />
+        <h1 className="text-3xl font-bold">Why We Flag Trades</h1>
+      </div>
 
       <div className="space-y-6 text-sm leading-relaxed text-[var(--text-secondary)]">
         <p>
@@ -24,7 +29,7 @@ export default function HelpWhyFlags() {
           <div className="space-y-3">
             <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
               <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[var(--accent-blue)]" />
+                <Info size={16} className="text-[var(--accent-blue)]" />
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Info</h3>
               </div>
               <p className="mt-1 text-xs">
@@ -35,7 +40,7 @@ export default function HelpWhyFlags() {
 
             <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
               <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[var(--accent-yellow)]" />
+                <AlertTriangle size={16} className="text-[var(--accent-yellow)]" />
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Warning</h3>
               </div>
               <p className="mt-1 text-xs">
@@ -47,7 +52,7 @@ export default function HelpWhyFlags() {
 
             <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
               <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[var(--accent-red)]" />
+                <AlertOctagon size={16} className="text-[var(--accent-red)]" />
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Critical</h3>
               </div>
               <p className="mt-1 text-xs">
@@ -58,7 +63,7 @@ export default function HelpWhyFlags() {
 
             <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
               <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-[var(--accent-red)]" />
+                <Ban size={16} className="text-[var(--accent-red)]" />
                 <h3 className="text-sm font-semibold text-[var(--text-primary)]">Blocker</h3>
               </div>
               <p className="mt-1 text-xs">
@@ -70,7 +75,10 @@ export default function HelpWhyFlags() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-lg font-medium text-[var(--text-primary)]">Common Reasons for Flags</h2>
+          <h2 className="mb-2 flex items-center gap-2 text-lg font-medium text-[var(--text-primary)]">
+            <ListChecks size={16} className="text-[var(--accent-blue)]" />
+            Common Reasons for Flags
+          </h2>
           <ul className="ml-4 list-disc space-y-1 text-xs">
             <li>Missing or poorly-placed stop loss</li>
             <li>Position size exceeding risk limits</li>
@@ -84,7 +92,10 @@ export default function HelpWhyFlags() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-lg font-medium text-[var(--text-primary)]">What To Do With a Flagged Trade</h2>
+          <h2 className="mb-2 flex items-center gap-2 text-lg font-medium text-[var(--text-primary)]">
+            <HandHelping size={16} className="text-[var(--accent-green)]" />
+            What To Do With a Flagged Trade
+          </h2>
           <ol className="ml-4 list-decimal space-y-1 text-xs">
             <li>Read each finding and its evidence carefully</li>
             <li>Determine if the flag represents a genuine risk you hadn't considered</li>

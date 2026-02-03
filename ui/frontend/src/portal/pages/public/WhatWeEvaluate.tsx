@@ -1,31 +1,46 @@
-const DIMENSIONS = [
+import { Activity, Clock, LogOut, ShieldAlert, Brain, GitCompare, AlertTriangle, Info, AlertOctagon, Ban } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+const DIMENSIONS: { name: string; desc: string; icon: LucideIcon; color: string; examples: string[] }[] = [
   {
     name: 'Regime Fit',
+    icon: Activity,
+    color: 'text-[var(--accent-blue)]',
     desc: 'Is the current market regime favorable for this trade direction? Trading against the regime is one of the most common causes of losses.',
     examples: ['Going long in a downtrend', 'Trading in choppy/consolidation when your strategy requires trend', 'Ignoring volatility regime shifts'],
   },
   {
     name: 'Entry Timing',
+    icon: Clock,
+    color: 'text-[var(--accent-green)]',
     desc: 'Is the entry well-timed given recent price action? Rushed entries and poor timing account for a large share of unnecessary losses.',
     examples: ['Entering in the first 15 minutes of market open', 'Chasing a move that already happened', 'Entering without waiting for confirmation'],
   },
   {
     name: 'Exit Logic',
+    icon: LogOut,
+    color: 'text-[var(--accent-yellow)]',
     desc: 'Are your stop loss and profit target well-placed? Proper exit planning is often more important than entry selection.',
     examples: ['Stop loss too tight (noise will trigger it)', 'Profit target beyond next major resistance', 'Risk:reward ratio below your minimum threshold'],
   },
   {
     name: 'Risk Positioning',
+    icon: ShieldAlert,
+    color: 'text-[var(--accent-red)]',
     desc: 'Is the position sized correctly relative to your account and risk rules? Oversizing is the fastest path to account blowup.',
     examples: ['Position exceeds max loss per trade limit', 'No stop loss defined', 'Already at maximum open positions'],
   },
   {
     name: 'Behavioral Signals',
+    icon: Brain,
+    color: 'text-[var(--accent-purple)]',
     desc: 'Are there signs of emotional or impulsive decision-making? These patterns recur across traders and are predictive of poor outcomes.',
     examples: ['Trading to recover a loss (revenge trade)', 'FOMO-driven entry', 'Overconfidence after a winning streak'],
   },
   {
     name: 'Strategy Consistency',
+    icon: GitCompare,
+    color: 'text-[var(--accent-yellow)]',
     desc: 'Does this trade match your declared strategy? Deviating from your own rules is one of the strongest indicators of a bad trade.',
     examples: ['Trade doesn\'t match any active strategy', 'Timeframe mismatch', 'Entry criteria not met per your own definition'],
   },
@@ -41,9 +56,14 @@ export default function WhatWeEvaluate() {
       </p>
 
       <div className="space-y-6">
-        {DIMENSIONS.map((dim) => (
+        {DIMENSIONS.map((dim) => {
+          const Icon = dim.icon;
+          return (
           <div key={dim.name} className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
-            <h2 className="text-lg font-medium">{dim.name}</h2>
+            <div className="flex items-center gap-2.5">
+              <Icon size={18} className={dim.color} />
+              <h2 className="text-lg font-medium">{dim.name}</h2>
+            </div>
             <p className="mt-2 text-sm text-[var(--text-secondary)]">{dim.desc}</p>
             <div className="mt-3">
               <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
@@ -52,23 +72,24 @@ export default function WhatWeEvaluate() {
               <ul className="space-y-1">
                 {dim.examples.map((ex) => (
                   <li key={ex} className="flex items-start gap-2 text-xs text-[var(--text-secondary)]">
-                    <span className="mt-0.5 text-[var(--accent-yellow)]">&#9679;</span>
+                    <AlertTriangle size={10} className="mt-0.5 flex-shrink-0 text-[var(--accent-yellow)]" />
                     {ex}
                   </li>
                 ))}
               </ul>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-10 rounded-lg border border-[var(--accent-blue)]/30 bg-[var(--accent-blue)]/5 p-5">
         <h3 className="text-sm font-semibold">Severity Levels</h3>
-        <div className="mt-3 space-y-2 text-xs">
-          <div className="flex gap-3"><span className="w-16 font-medium text-[var(--text-secondary)]">Info</span> <span>Observation — no action needed.</span></div>
-          <div className="flex gap-3"><span className="w-16 font-medium text-[var(--accent-yellow)]">Warning</span> <span>Worth reviewing before executing.</span></div>
-          <div className="flex gap-3"><span className="w-16 font-medium text-[var(--accent-red)]">Critical</span> <span>Significant concern — reconsider this trade.</span></div>
-          <div className="flex gap-3"><span className="w-16 font-medium text-[var(--accent-red)]">Blocker</span> <span>Do not take this trade as-is.</span></div>
+        <div className="mt-3 space-y-2.5 text-xs">
+          <div className="flex items-center gap-3"><Info size={14} className="flex-shrink-0 text-[var(--text-secondary)]" /><span className="w-16 font-medium text-[var(--text-secondary)]">Info</span> <span>Observation — no action needed.</span></div>
+          <div className="flex items-center gap-3"><AlertTriangle size={14} className="flex-shrink-0 text-[var(--accent-yellow)]" /><span className="w-16 font-medium text-[var(--accent-yellow)]">Warning</span> <span>Worth reviewing before executing.</span></div>
+          <div className="flex items-center gap-3"><AlertOctagon size={14} className="flex-shrink-0 text-[var(--accent-red)]" /><span className="w-16 font-medium text-[var(--accent-red)]">Critical</span> <span>Significant concern — reconsider this trade.</span></div>
+          <div className="flex items-center gap-3"><Ban size={14} className="flex-shrink-0 text-[var(--accent-red)]" /><span className="w-16 font-medium text-[var(--accent-red)]">Blocker</span> <span>Do not take this trade as-is.</span></div>
         </div>
       </div>
     </div>

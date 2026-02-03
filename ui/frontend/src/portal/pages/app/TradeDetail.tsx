@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
+import { ArrowLeft, AlertTriangle, Tag, StickyNote, ClipboardCheck } from 'lucide-react';
 import api from '../../api';
 import type { TradeDetail as TradeDetailType } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
@@ -43,7 +44,8 @@ export default function TradeDetail() {
         <div className="rounded-lg border border-[var(--accent-red)] bg-[var(--accent-red)]/5 p-4 text-sm text-[var(--accent-red)]">
           {error ?? 'Trade not found'}
         </div>
-        <Link to="/app/trades" className="mt-4 inline-block text-sm text-[var(--accent-blue)] hover:underline">
+        <Link to="/app/trades" className="mt-4 inline-flex items-center gap-1 text-sm text-[var(--accent-blue)] hover:underline">
+          <ArrowLeft size={14} />
           Back to Trades
         </Link>
       </div>
@@ -53,8 +55,9 @@ export default function TradeDetail() {
   return (
     <div className="p-6">
       {/* Back link */}
-      <Link to="/app/trades" className="mb-4 inline-block text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-        &larr; Back to Trades
+      <Link to="/app/trades" className="mb-4 inline-flex items-center gap-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+        <ArrowLeft size={14} />
+        Back to Trades
       </Link>
 
       {/* Header */}
@@ -65,7 +68,8 @@ export default function TradeDetail() {
           <SourceBadge source={trade.source} />
           <StatusBadge status={trade.status} />
           {trade.is_flagged && (
-            <span className="rounded bg-[var(--accent-red)]/10 px-2 py-0.5 text-xs text-[var(--accent-red)]">
+            <span className="inline-flex items-center gap-1 rounded bg-[var(--accent-red)]/10 px-2 py-0.5 text-xs text-[var(--accent-red)]">
+              <AlertTriangle size={12} />
               {trade.flag_count} flag{trade.flag_count !== 1 ? 's' : ''}
             </span>
           )}
@@ -123,8 +127,9 @@ export default function TradeDetail() {
           {trade.tags.map((tag) => (
             <span
               key={tag}
-              className="rounded-full border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-2.5 py-1 text-xs text-[var(--text-secondary)]"
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--border-color)] bg-[var(--bg-tertiary)] px-2.5 py-1 text-xs text-[var(--text-secondary)]"
             >
+              <Tag size={10} />
               {tag.replace(/_/g, ' ')}
             </span>
           ))}
@@ -134,14 +139,20 @@ export default function TradeDetail() {
       {/* Notes */}
       {trade.notes && (
         <div className="mb-6 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
-          <div className="mb-1 text-xs font-medium text-[var(--text-secondary)]">Notes</div>
+          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+            <StickyNote size={12} />
+            Notes
+          </div>
           <p className="text-sm">{trade.notes}</p>
         </div>
       )}
 
       {/* Evaluation */}
       <div className="mt-8">
-        <h2 className="mb-4 text-lg font-semibold">Evaluation</h2>
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold">
+          <ClipboardCheck size={18} className="text-[var(--accent-blue)]" />
+          Evaluation
+        </h2>
         {trade.evaluation ? (
           <EvaluationDisplay evaluation={trade.evaluation} />
         ) : (

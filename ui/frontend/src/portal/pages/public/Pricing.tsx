@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { Check } from 'lucide-react';
 
 const PLANS = [
   {
@@ -72,7 +73,7 @@ export default function Pricing() {
             <ul className="mt-4 space-y-2">
               {plan.features.map((f) => (
                 <li key={f} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
-                  <span className="mt-0.5 text-[var(--accent-green)]">&#10003;</span>
+                  <Check size={14} className="mt-0.5 flex-shrink-0 text-[var(--accent-green)]" />
                   {f}
                 </li>
               ))}

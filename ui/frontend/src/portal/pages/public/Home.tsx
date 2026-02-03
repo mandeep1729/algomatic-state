@@ -1,4 +1,54 @@
 import { Link } from 'react-router-dom';
+import {
+  ShieldAlert,
+  Brain,
+  Activity,
+  GitCompare,
+  Clock,
+  BookOpen,
+  X,
+  ArrowRight,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+
+const FEATURES: { title: string; desc: string; icon: LucideIcon; color: string }[] = [
+  {
+    title: 'Risk Guardian',
+    desc: 'Checks every trade against your risk rules — stop loss placement, position sizing, risk:reward ratio.',
+    icon: ShieldAlert,
+    color: 'text-[var(--accent-red)]',
+  },
+  {
+    title: 'Behavioral Coach',
+    desc: 'Detects patterns like revenge trading, FOMO entries, and overconfidence before they cost you money.',
+    icon: Brain,
+    color: 'text-[var(--accent-purple)]',
+  },
+  {
+    title: 'Regime Awareness',
+    desc: 'Evaluates whether your trade direction aligns with the current market regime.',
+    icon: Activity,
+    color: 'text-[var(--accent-blue)]',
+  },
+  {
+    title: 'Strategy Consistency',
+    desc: 'Compares each trade against your declared strategies to catch drift and improvisation.',
+    icon: GitCompare,
+    color: 'text-[var(--accent-yellow)]',
+  },
+  {
+    title: 'Timing Review',
+    desc: 'Flags rushed entries, trades during extreme volatility, and suboptimal timing windows.',
+    icon: Clock,
+    color: 'text-[var(--accent-green)]',
+  },
+  {
+    title: 'Trade Journal',
+    desc: 'Built-in journaling with mood tracking, behavioral tags, and trade linking for self-reflection.',
+    icon: BookOpen,
+    color: 'text-[var(--accent-blue)]',
+  },
+];
 
 export default function Home() {
   return (
@@ -15,13 +65,14 @@ export default function Home() {
         <div className="mt-8 flex justify-center gap-4">
           <Link
             to="/app"
-            className="rounded-md bg-[var(--accent-blue)] px-6 py-3 text-sm font-medium text-white hover:opacity-90"
+            className="flex items-center gap-2 rounded-md bg-[var(--accent-blue)] px-6 py-3 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90"
           >
             Open App
+            <ArrowRight size={16} />
           </Link>
           <Link
             to="/how-it-works"
-            className="rounded-md border border-[var(--border-color)] px-6 py-3 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            className="rounded-md border border-[var(--border-color)] px-6 py-3 text-sm font-medium text-[var(--text-secondary)] transition-colors duration-150 hover:text-[var(--text-primary)]"
           >
             How It Works
           </Link>
@@ -32,37 +83,18 @@ export default function Home() {
       <section className="border-t border-[var(--border-color)] py-12">
         <h2 className="mb-8 text-center text-2xl font-semibold">What Trading Buddy Does</h2>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {[
-            {
-              title: 'Risk Guardian',
-              desc: 'Checks every trade against your risk rules — stop loss placement, position sizing, risk:reward ratio.',
-            },
-            {
-              title: 'Behavioral Coach',
-              desc: 'Detects patterns like revenge trading, FOMO entries, and overconfidence before they cost you money.',
-            },
-            {
-              title: 'Regime Awareness',
-              desc: 'Evaluates whether your trade direction aligns with the current market regime.',
-            },
-            {
-              title: 'Strategy Consistency',
-              desc: 'Compares each trade against your declared strategies to catch drift and improvisation.',
-            },
-            {
-              title: 'Timing Review',
-              desc: 'Flags rushed entries, trades during extreme volatility, and suboptimal timing windows.',
-            },
-            {
-              title: 'Trade Journal',
-              desc: 'Built-in journaling with mood tracking, behavioral tags, and trade linking for self-reflection.',
-            },
-          ].map((item) => (
-            <div key={item.title} className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
-              <h3 className="text-sm font-semibold">{item.title}</h3>
-              <p className="mt-2 text-xs leading-relaxed text-[var(--text-secondary)]">{item.desc}</p>
-            </div>
-          ))}
+          {FEATURES.map((item) => {
+            const Icon = item.icon;
+            return (
+              <div key={item.title} className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5 transition-colors duration-150 hover:border-[var(--accent-blue)]/40">
+                <div className="mb-3 flex items-center gap-2.5">
+                  <Icon size={18} className={item.color} />
+                  <h3 className="text-sm font-semibold">{item.title}</h3>
+                </div>
+                <p className="text-xs leading-relaxed text-[var(--text-secondary)]">{item.desc}</p>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -81,8 +113,8 @@ export default function Home() {
             'Optimize for win rate alone',
             'Automate trade execution',
           ].map((item) => (
-            <div key={item} className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
-              <span className="text-[var(--accent-red)]">&times;</span>
+            <div key={item} className="flex items-center gap-2.5 text-sm text-[var(--text-secondary)]">
+              <X size={14} className="flex-shrink-0 text-[var(--accent-red)]" />
               {item}
             </div>
           ))}
@@ -97,9 +129,10 @@ export default function Home() {
         </p>
         <Link
           to="/app/evaluate"
-          className="mt-6 inline-block rounded-md bg-[var(--accent-blue)] px-6 py-3 text-sm font-medium text-white hover:opacity-90"
+          className="mt-6 inline-flex items-center gap-2 rounded-md bg-[var(--accent-blue)] px-6 py-3 text-sm font-medium text-white transition-opacity duration-150 hover:opacity-90"
         >
           Evaluate a Trade
+          <ArrowRight size={16} />
         </Link>
       </section>
     </div>

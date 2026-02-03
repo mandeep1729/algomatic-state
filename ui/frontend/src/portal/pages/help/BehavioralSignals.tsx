@@ -1,7 +1,12 @@
+import { Brain, Heart, Workflow, ShieldAlert, Clock, Lightbulb } from 'lucide-react';
+
 export default function HelpBehavioralSignals() {
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-6 text-3xl font-bold">Behavioral Signals</h1>
+      <div className="mb-6 flex items-center gap-3">
+        <Brain size={28} className="text-[var(--accent-purple)]" />
+        <h1 className="text-3xl font-bold">Behavioral Signals</h1>
+      </div>
 
       <div className="space-y-6 text-sm leading-relaxed text-[var(--text-secondary)]">
         <p>
@@ -11,7 +16,10 @@ export default function HelpBehavioralSignals() {
         </p>
 
         <section>
-          <h2 className="mb-3 text-lg font-medium text-[var(--text-primary)]">Emotional Signals</h2>
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-medium text-[var(--text-primary)]">
+            <Heart size={16} className="text-[var(--accent-yellow)]" />
+            Emotional Signals
+          </h2>
           <div className="space-y-2">
             {[
               { name: 'Revenge Trade', desc: 'Trading to recover a previous loss. Often leads to increased position sizing, lowered standards, and compounding losses.' },
@@ -25,7 +33,10 @@ export default function HelpBehavioralSignals() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-lg font-medium text-[var(--text-primary)]">Process Signals</h2>
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-medium text-[var(--text-primary)]">
+            <Workflow size={16} className="text-[var(--accent-blue)]" />
+            Process Signals
+          </h2>
           <div className="space-y-2">
             {[
               { name: 'Rushed Entry', desc: 'Entering without completing a pre-trade checklist. Often happens at market open or during fast-moving markets.' },
@@ -37,7 +48,10 @@ export default function HelpBehavioralSignals() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-lg font-medium text-[var(--text-primary)]">Risk Signals</h2>
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-medium text-[var(--text-primary)]">
+            <ShieldAlert size={16} className="text-[var(--accent-red)]" />
+            Risk Signals
+          </h2>
           <div className="space-y-2">
             {[
               { name: 'No Stop Loss', desc: 'Placing a trade without a defined stop loss. This is the single most dangerous risk signal.' },
@@ -49,7 +63,10 @@ export default function HelpBehavioralSignals() {
         </section>
 
         <section>
-          <h2 className="mb-3 text-lg font-medium text-[var(--text-primary)]">Timing Signals</h2>
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-medium text-[var(--text-primary)]">
+            <Clock size={16} className="text-[var(--accent-green)]" />
+            Timing Signals
+          </h2>
           <div className="space-y-2">
             {[
               { name: 'Poor Timing', desc: 'Entry at a suboptimal time based on recent price action or support/resistance levels.' },
@@ -62,7 +79,10 @@ export default function HelpBehavioralSignals() {
         </section>
 
         <section>
-          <h2 className="mb-2 text-lg font-medium text-[var(--text-primary)]">Using Behavioral Insights</h2>
+          <h2 className="mb-2 flex items-center gap-2 text-lg font-medium text-[var(--text-primary)]">
+            <Lightbulb size={16} className="text-[var(--accent-yellow)]" />
+            Using Behavioral Insights
+          </h2>
           <p>
             The Insights page tracks your behavioral signals over time. The most impactful thing
             you can do is identify your top recurring signal and focus on eliminating it. Most

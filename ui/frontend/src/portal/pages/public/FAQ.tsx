@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronDown, ChevronRight, MessageCircleQuestion } from 'lucide-react';
 
 const FAQS = [
   {
@@ -39,7 +40,10 @@ const FAQS = [
 export default function FAQ() {
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-4 text-3xl font-bold">Frequently Asked Questions</h1>
+      <div className="mb-4 flex items-center gap-3">
+        <MessageCircleQuestion size={28} className="text-[var(--accent-blue)]" />
+        <h1 className="text-3xl font-bold">Frequently Asked Questions</h1>
+      </div>
       <p className="mb-10 text-sm text-[var(--text-secondary)]">
         Common questions about Trading Buddy and how it works.
       </p>
@@ -70,7 +74,9 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
         className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-medium"
       >
         {question}
-        <span className="ml-2 text-[var(--text-secondary)]">{open ? '\u2212' : '+'}</span>
+        <span className="ml-2 text-[var(--text-secondary)]">
+          {open ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+        </span>
       </button>
       {open && (
         <div className="border-t border-[var(--border-color)] px-4 py-3 text-sm text-[var(--text-secondary)]">

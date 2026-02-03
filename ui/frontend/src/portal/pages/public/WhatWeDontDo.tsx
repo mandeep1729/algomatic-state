@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { X, ShieldCheck, ArrowRight } from 'lucide-react';
 
 const DONT_LIST = [
   {
@@ -39,8 +40,8 @@ export default function WhatWeDontDo() {
       <div className="space-y-4">
         {DONT_LIST.map((item) => (
           <div key={item.title} className="flex gap-4 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
-            <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[var(--accent-red)]/10 text-sm text-[var(--accent-red)]">
-              &times;
+            <span className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[var(--accent-red)]/10 text-[var(--accent-red)]">
+              <X size={14} />
             </span>
             <div>
               <h2 className="text-sm font-medium">{item.title}</h2>
@@ -51,16 +52,20 @@ export default function WhatWeDontDo() {
       </div>
 
       <div className="mt-10 rounded-lg border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/5 p-5">
-        <h3 className="text-sm font-semibold">What We Are</h3>
+        <div className="mb-2 flex items-center gap-2">
+          <ShieldCheck size={16} className="text-[var(--accent-green)]" />
+          <h3 className="text-sm font-semibold">What We Are</h3>
+        </div>
         <p className="mt-2 text-sm text-[var(--text-secondary)]">
           A risk guardian. A behavioral coach. A process enforcer. We help you make fewer
           preventable mistakes — one trade at a time.
         </p>
         <Link
           to="/how-it-works"
-          className="mt-3 inline-block text-xs text-[var(--accent-blue)] hover:underline"
+          className="mt-3 inline-flex items-center gap-1 text-xs text-[var(--accent-blue)] hover:underline"
         >
           Learn how it works
+          <ArrowRight size={12} />
         </Link>
       </div>
     </div>

@@ -1,7 +1,12 @@
+import { Mail, Bug, Send, MessageSquare } from 'lucide-react';
+
 export default function HelpContact() {
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-6 text-3xl font-bold">Contact Support</h1>
+      <div className="mb-6 flex items-center gap-3">
+        <Mail size={28} className="text-[var(--accent-green)]" />
+        <h1 className="text-3xl font-bold">Contact Support</h1>
+      </div>
 
       <div className="space-y-6">
         <p className="text-sm text-[var(--text-secondary)]">
@@ -10,7 +15,10 @@ export default function HelpContact() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
-            <h2 className="text-sm font-semibold">Email</h2>
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <Mail size={14} className="text-[var(--accent-blue)]" />
+              Email
+            </h2>
             <p className="mt-1 text-xs text-[var(--text-secondary)]">
               For general questions and support requests.
             </p>
@@ -18,7 +26,10 @@ export default function HelpContact() {
           </div>
 
           <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
-            <h2 className="text-sm font-semibold">Bug Reports</h2>
+            <h2 className="flex items-center gap-2 text-sm font-semibold">
+              <Bug size={14} className="text-[var(--accent-red)]" />
+              Bug Reports
+            </h2>
             <p className="mt-1 text-xs text-[var(--text-secondary)]">
               Found something broken? Let us know with as much detail as possible.
             </p>
@@ -27,7 +38,10 @@ export default function HelpContact() {
         </div>
 
         <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
-          <h2 className="mb-3 text-sm font-semibold">Send a Message</h2>
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <MessageSquare size={14} className="text-[var(--accent-blue)]" />
+            Send a Message
+          </h2>
           <form className="space-y-3" onSubmit={(e) => e.preventDefault()}>
             <div>
               <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Subject</label>
@@ -39,8 +53,9 @@ export default function HelpContact() {
             </div>
             <button
               type="submit"
-              className="rounded-md bg-[var(--accent-blue)] px-5 py-2 text-sm font-medium text-white hover:opacity-90"
+              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-blue)] px-5 py-2 text-sm font-medium text-white hover:opacity-90"
             >
+              <Send size={14} />
               Send Message
             </button>
           </form>

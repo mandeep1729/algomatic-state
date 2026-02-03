@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { Smile, Meh, Frown, Angry, Plus, X, BookOpen } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import api from '../../api';
 import type { JournalEntry, JournalEntryCreate, JournalEntryType, Mood, BehavioralTag, TradeSummary } from '../../types';
 import { format } from 'date-fns';
 
-const MOODS: { value: Mood; label: string; icon: string }[] = [
-  { value: 'confident', label: 'Confident', icon: '\u{1F60E}' },
-  { value: 'neutral', label: 'Neutral', icon: '\u{1F610}' },
-  { value: 'anxious', label: 'Anxious', icon: '\u{1F630}' },
-  { value: 'frustrated', label: 'Frustrated', icon: '\u{1F624}' },
+const MOODS: { value: Mood; label: string; Icon: LucideIcon; color: string }[] = [
+  { value: 'confident', label: 'Confident', Icon: Smile, color: 'text-[var(--accent-green)]' },
+  { value: 'neutral', label: 'Neutral', Icon: Meh, color: 'text-[var(--accent-blue)]' },
+  { value: 'anxious', label: 'Anxious', Icon: Frown, color: 'text-[var(--accent-yellow)]' },
+  { value: 'frustrated', label: 'Frustrated', Icon: Angry, color: 'text-[var(--accent-red)]' },
 ];
 
 const ENTRY_TYPES: { value: JournalEntryType; label: string }[] = [
@@ -67,12 +69,15 @@ export default function Journal() {
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Journal</h1>
+        <div className="flex items-center gap-2">
+          <BookOpen size={22} className="text-[var(--accent-blue)]" />
+          <h1 className="text-2xl font-semibold">Journal</h1>
+        </div>
         <button
           onClick={() => setShowForm(!showForm)}
-          className="rounded-md bg-[var(--accent-blue)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+          className="inline-flex items-center gap-1.5 rounded-md bg-[var(--accent-blue)] px-4 py-2 text-sm font-medium text-white hover:opacity-90"
         >
-          {showForm ? 'Cancel' : 'New Entry'}
+          {showForm ? <><X size={14} /> Cancel</> : <><Plus size={14} /> New Entry</>}
         </button>
       </div>
 
@@ -163,8 +168,9 @@ function EntryCard({ entry }: { entry: JournalEntry }) {
           )}
         </div>
         {moodInfo && (
-          <span className="text-xs text-[var(--text-secondary)]" title={moodInfo.label}>
-            {moodInfo.icon} {moodInfo.label}
+          <span className={`inline-flex items-center gap-1 text-xs ${moodInfo.color}`} title={moodInfo.label}>
+            <moodInfo.Icon size={14} />
+            {moodInfo.label}
           </span>
         )}
       </div>
@@ -293,14 +299,15 @@ function CreateEntryForm({
               key={m.value}
               type="button"
               onClick={() => setMood(mood === m.value ? '' : m.value)}
-              className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-2 text-sm transition-colors ${
                 mood === m.value
                   ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10'
                   : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
               }`}
               title={m.label}
             >
-              {m.icon} {m.label}
+              <m.Icon size={15} className={mood === m.value ? m.color : ''} />
+              {m.label}
             </button>
           ))}
         </div>

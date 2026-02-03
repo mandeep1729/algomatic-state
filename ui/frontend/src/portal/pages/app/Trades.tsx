@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AlertTriangle, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../api';
 import type { TradeSummary } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
@@ -111,13 +112,16 @@ export default function Trades() {
       {/* Filters bar */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         {/* Symbol search */}
-        <input
-          type="text"
-          placeholder="Search symbol..."
-          value={symbolFilter}
-          onChange={(e) => updateParam('symbol', e.target.value)}
-          className="h-8 w-40 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:border-[var(--accent-blue)] focus:outline-none"
-        />
+        <div className="relative">
+          <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
+          <input
+            type="text"
+            placeholder="Search symbol..."
+            value={symbolFilter}
+            onChange={(e) => updateParam('symbol', e.target.value)}
+            className="h-8 w-40 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] pl-8 pr-3 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-secondary)] focus:border-[var(--accent-blue)] focus:outline-none"
+          />
+        </div>
 
         {/* Source filter */}
         <select
@@ -156,7 +160,7 @@ export default function Trades() {
               : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
           }`}
         >
-          <span>{'\u26A0'}</span>
+          <AlertTriangle size={13} />
           Flagged Only
         </button>
 
@@ -252,16 +256,18 @@ export default function Trades() {
             <button
               disabled={currentPage <= 1}
               onClick={() => updateParam('page', String(currentPage - 1))}
-              className="rounded-md border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
             >
+              <ChevronLeft size={13} />
               Previous
             </button>
             <button
               disabled={currentPage >= totalPages}
               onClick={() => updateParam('page', String(currentPage + 1))}
-              className="rounded-md border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Next
+              <ChevronRight size={13} />
             </button>
           </div>
         </div>

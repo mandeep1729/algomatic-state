@@ -1,7 +1,12 @@
+import { HelpCircle, XCircle, CheckCircle2 } from 'lucide-react';
+
 export default function HelpCommonMisunderstandings() {
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="mb-6 text-3xl font-bold">Common Misunderstandings</h1>
+      <div className="mb-6 flex items-center gap-3">
+        <HelpCircle size={28} className="text-[var(--accent-red)]" />
+        <h1 className="text-3xl font-bold">Common Misunderstandings</h1>
+      </div>
 
       <div className="space-y-4">
         {[
@@ -39,8 +44,14 @@ export default function HelpCommonMisunderstandings() {
           },
         ].map((item) => (
           <div key={item.myth} className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
-            <div className="text-sm font-medium text-[var(--accent-red)]">{item.myth}</div>
-            <p className="mt-2 text-xs text-[var(--text-secondary)]">{item.reality}</p>
+            <div className="flex items-start gap-2 text-sm font-medium text-[var(--accent-red)]">
+              <XCircle size={16} className="mt-0.5 flex-shrink-0" />
+              {item.myth}
+            </div>
+            <div className="mt-2 flex items-start gap-2 text-xs text-[var(--text-secondary)]">
+              <CheckCircle2 size={14} className="mt-0.5 flex-shrink-0 text-[var(--accent-green)]" />
+              <p>{item.reality}</p>
+            </div>
           </div>
         ))}
       </div>

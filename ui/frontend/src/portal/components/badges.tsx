@@ -1,3 +1,4 @@
+import { Info, AlertTriangle, AlertOctagon, Ban } from 'lucide-react';
 import type { TradeSource, TradeStatus, Severity } from '../types';
 
 export function DirectionBadge({ direction }: { direction: string }) {
@@ -59,12 +60,12 @@ export function SeverityBadge({ severity }: { severity: Severity }) {
   );
 }
 
-const SEVERITY_ICONS: Record<Severity, string> = {
-  info: '\u2139',      // i
-  warning: '\u26A0',   // triangle
-  critical: '\u2716',  // x mark
-  blocker: '\u26D4',   // no entry
-};
+const SEVERITY_ICON_MAP = {
+  info: Info,
+  warning: AlertTriangle,
+  critical: AlertOctagon,
+  blocker: Ban,
+} as const;
 
 export function SeverityIcon({ severity }: { severity: Severity }) {
   const colors: Record<Severity, string> = {
@@ -74,9 +75,11 @@ export function SeverityIcon({ severity }: { severity: Severity }) {
     blocker: 'text-[var(--accent-red)]',
   };
 
+  const Icon = SEVERITY_ICON_MAP[severity];
+
   return (
     <span className={colors[severity]} title={severity}>
-      {SEVERITY_ICONS[severity]}
+      <Icon size={14} />
     </span>
   );
 }
