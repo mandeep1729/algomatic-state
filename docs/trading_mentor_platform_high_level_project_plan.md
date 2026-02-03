@@ -22,45 +22,6 @@ The system acts as a **mentor + risk guardian + behavioral coach**, not a predic
 
 ## 3. Phase Breakdown
 
-### Phase 0 – Research & Validation (2–3 weeks)
-
-**Objectives**
-- Validate user pain points
-- Define MVP rule set
-- Confirm data access paths
-
-**Key Activities**
-- Interview 10–20 retail traders
-- Collect common losing‑trade patterns
-- Define "no‑brainer bad trade" taxonomy
-- Competitive analysis (journals, prop rules, brokers)
-
-**Deliverables**
-- Problem definition document
-- User personas
-- Initial rule list (v0)
-
----
-
-### Phase 1 – Core Data & Foundations (3–4 weeks)
-
-**Objectives**
-- Build data ingestion and normalization layer
-- Establish core domain model
-
-**Key Components**
-- Trade import (CSV, manual entry)
-- Market data ingestion (OHLCV, VWAP, ATR)
-- Account & risk profile
-- Session / time‑of‑day tagging
-
-**Deliverables**
-- Unified trade schema
-- Market context pipeline
-- Basic dashboard (read‑only analytics)
-
----
-
 ### Phase 2 – Rule‑Based Discipline Engine (MVP) (4–6 weeks)
 
 **Objectives**
@@ -111,44 +72,6 @@ The system acts as a **mentor + risk guardian + behavioral coach**, not a predic
 
 ---
 
-### Phase 4 – AI Mentor Layer (6–8 weeks)
-
-**Objectives**
-- Add conversational and contextual explanations
-- Shift from rules → coaching
-
-**Capabilities**
-- Trade critique in natural language
-- "What would have improved this trade"
-- Pattern‑aware explanations
-- Daily mentor summaries
-
-**Constraints**
-- AI explains decisions, does not generate signals
-- AI grounded in rule + behavior outputs
-
-**Deliverables**
-- AI mentor service
-- Explanation prompts & guardrails
-- Conversational UI
-
----
-
-### Phase 5 – Enforcement & Habit Formation (Optional / Advanced)
-
-**Objectives**
-- Actively prevent self‑destructive behavior
-
-**Features**
-- Trade cooldowns after losses
-- Daily loss limits
-- Forced review before re‑entry
-- Discipline streaks
-
-**Deliverables**
-- Rule enforcement policies
-- Habit scoring engine
-- User‑configurable guardrails
 
 ---
 
