@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router-dom';
 
 // Layouts
 import AppLayout from '../layouts/AppLayout';
+import { ChartProvider } from '../context/ChartContext';
 import PublicLayout from '../layouts/PublicLayout';
 import OnboardingLayout from '../layouts/OnboardingLayout';
 
@@ -94,7 +95,7 @@ export const router = createBrowserRouter([
   // App portal
   {
     path: '/app',
-    element: <AppLayout />,
+    element: <ChartProvider><AppLayout /></ChartProvider>,
     children: [
       { index: true, element: <Overview /> },
       { path: 'trades', element: <Trades /> },

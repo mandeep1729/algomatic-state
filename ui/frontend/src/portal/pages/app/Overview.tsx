@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { X } from 'lucide-react';
 import api from '../../api';
+import { fetchOHLCVData, fetchFeatures } from '../../../api';
+import type { OHLCVData, FeatureData } from '../../../types';
 import type { TradeSummary, InsightsSummary, BrokerStatus, JournalEntry, BehavioralInsight } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
+import { OHLCVChart } from '../../../components/OHLCVChart';
+import { useChartContext } from '../../context/ChartContext';
 import { format } from 'date-fns';
 
 export default function Overview() {
@@ -12,6 +17,14 @@ export default function Overview() {
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   const [behavioralInsights, setBehavioralInsights] = useState<BehavioralInsight[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Chart state
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [ohlcvData, setOhlcvData] = useState<OHLCVData | null>(null);
+  const [featureData, setFeatureData] = useState<FeatureData | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  const { setChartActive, setFeatureNames, selectedFeatures } = useChartContext();
 
   useEffect(() => {
     async function load() {
@@ -34,6 +47,36 @@ export default function Overview() {
     }
     load();
   }, []);
+
+  const handleTickerClick = useCallback(async (symbol: string) => {
+    if (selectedTicker === symbol) return;
+    setSelectedTicker(symbol);
+    setChartLoading(true);
+    setChartActive(true);
+    try {
+      const [ohlcv, features] = await Promise.all([
+        fetchOHLCVData(symbol, '5Min'),
+        fetchFeatures(symbol, '5Min'),
+      ]);
+      setOhlcvData(ohlcv);
+      setFeatureData(features);
+      setFeatureNames(features.feature_names);
+    } catch {
+      setOhlcvData(null);
+      setFeatureData(null);
+      setFeatureNames([]);
+    } finally {
+      setChartLoading(false);
+    }
+  }, [selectedTicker, setChartActive, setFeatureNames]);
+
+  const handleCloseChart = useCallback(() => {
+    setSelectedTicker(null);
+    setOhlcvData(null);
+    setFeatureData(null);
+    setChartActive(false);
+    setFeatureNames([]);
+  }, [setChartActive, setFeatureNames]);
 
   if (loading) {
     return <div className="p-8 text-[var(--text-secondary)]">Loading...</div>;
@@ -85,6 +128,47 @@ export default function Overview() {
         />
       </div>
 
+      {/* OHLCV Chart (shown when a ticker is selected) */}
+      {selectedTicker && (
+        <div className="mb-6">
+          <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+            <div className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-[var(--accent-blue)]">{selectedTicker}</span>
+                <span className="text-xs text-[var(--text-secondary)]">5min chart</span>
+              </div>
+              <button
+                onClick={handleCloseChart}
+                className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                title="Close chart"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="p-2">
+              {chartLoading ? (
+                <div className="flex h-[400px] items-center justify-center text-sm text-[var(--text-secondary)]">
+                  Loading chart data...
+                </div>
+              ) : ohlcvData ? (
+                <OHLCVChart
+                  data={ohlcvData}
+                  featureData={featureData}
+                  selectedFeatures={selectedFeatures}
+                  showVolume={true}
+                  showStates={false}
+                  height={400}
+                />
+              ) : (
+                <div className="flex h-[400px] items-center justify-center text-sm text-[var(--text-secondary)]">
+                  No chart data available for {selectedTicker}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
         {/* Left column */}
         <div className="space-y-6">
@@ -106,9 +190,16 @@ export default function Overview() {
                   {recentTrades.map((trade) => (
                     <tr key={trade.id} className="border-b border-[var(--border-color)] last:border-0 hover:bg-[var(--bg-primary)] transition-colors">
                       <td className="px-4 py-2.5">
-                        <Link to={`/app/trades/${trade.id}`} className="font-medium text-[var(--accent-blue)] hover:underline">
+                        <button
+                          onClick={() => handleTickerClick(trade.symbol)}
+                          className={`font-medium hover:underline ${
+                            selectedTicker === trade.symbol
+                              ? 'text-[var(--accent-green)]'
+                              : 'text-[var(--accent-blue)]'
+                          }`}
+                        >
                           {trade.symbol}
-                        </Link>
+                        </button>
                       </td>
                       <td className="px-4 py-2.5">
                         <DirectionBadge direction={trade.direction} />
