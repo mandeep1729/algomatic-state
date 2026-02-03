@@ -113,7 +113,21 @@ algomatic-state/
 │   │       ├── __init__.py
 │   │       ├── connection.py   # Database connection
 │   │       ├── models.py       # SQLAlchemy models
-│   │       └── repository.py   # Data access layer
+│   │       ├── market_repository.py   # Market data access layer
+│   │       └── trading_repository.py  # Trading data access layer
+│   │
+│   ├── trade/                  # Domain objects
+│   │   ├── intent.py           # Trade intent definitions
+│   │   └── evaluation.py       # Evaluation result definitions
+│   │
+│   ├── rules/                  # Compliance & Guardrails
+│   │   └── guardrails.py       # Output sanitization
+│   │
+│   ├── evaluators/             # Evaluation Engine
+│   │   ├── base.py             # Abstract base classes
+│   │   ├── context.py          # Market context infrastructure
+│   │   ├── risk_reward.py      # Risk/Reward evaluator
+│   │   └── exit_plan.py        # Exit plan evaluator
 │   │
 │   ├── features/               # Feature engineering
 │   │   ├── __init__.py

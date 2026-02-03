@@ -2,7 +2,7 @@
 
 from src.data.database.connection import DatabaseManager, get_db_manager
 from src.data.database.models import Base, Ticker, OHLCVBar, DataSyncLog, ComputedFeature
-from src.data.database.repository import OHLCVRepository
+from src.data.database.market_repository import OHLCVRepository
 from src.data.database.trading_buddy_models import (
     UserAccount,
     UserRule,

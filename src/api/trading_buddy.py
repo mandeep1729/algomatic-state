@@ -14,13 +14,13 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.data.database.connection import get_db_manager
-from src.domain import (
+from src.trade.intent import (
     TradeDirection,
     TradeIntentStatus,
     TradeIntent as DomainTradeIntent,
-    Severity,
 )
-from src.context import ContextPackBuilder
+from src.trade.evaluation import Severity
+from src.evaluators.context import ContextPackBuilder
 from src.orchestrator import EvaluatorOrchestrator, OrchestratorConfig
 
 logger = logging.getLogger(__name__)
