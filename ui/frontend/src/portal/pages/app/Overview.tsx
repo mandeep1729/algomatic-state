@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
-import api, { fetchMockOHLCVData, fetchMockFeatures } from '../../api';
+import api, { fetchSyncStatus, triggerSync, fetchOHLCVData, fetchFeatures, fetchMockOHLCVData, fetchMockFeatures } from '../../api';
 import type { TradeSummary, InsightsSummary, BrokerStatus, JournalEntry, BehavioralInsight } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
@@ -21,6 +21,8 @@ export default function Overview() {
   const [ohlcvData, setOhlcvData] = useState<{ timestamps: string[]; open: number[]; high: number[]; low: number[]; close: number[]; volume: number[] } | null>(null);
   const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const selectedTickerRef = useRef<string | null>(null);
 
   const { setChartActive, setFeatureNames, selectedFeatures } = useChartContext();
 
@@ -49,31 +51,85 @@ export default function Overview() {
   const handleTickerClick = useCallback(async (symbol: string) => {
     if (selectedTicker === symbol) return;
     setSelectedTicker(symbol);
+    selectedTickerRef.current = symbol;
     setChartLoading(true);
     setChartActive(true);
-    try {
+
+    const STALE_MS = 15 * 60 * 1000; // 15 minutes
+    const TIMEFRAME = '5Min';
+
+    // Helper: fetch OHLCV + features from backend
+    async function fetchChartData() {
       const [ohlcv, features] = await Promise.all([
-        fetchMockOHLCVData(symbol),
-        fetchMockFeatures(symbol),
+        fetchOHLCVData(symbol, TIMEFRAME),
+        fetchFeatures(symbol, TIMEFRAME),
       ]);
+      return { ohlcv, features };
+    }
+
+    // 1. Immediately render with whatever data the DB already has
+    try {
+      const { ohlcv, features } = await fetchChartData();
       setOhlcvData(ohlcv);
       setFeatureData(features);
       setFeatureNames(features.feature_names);
     } catch {
-      setOhlcvData(null);
-      setFeatureData(null);
-      setFeatureNames([]);
-    } finally {
+      // Backend unavailable — fall back to mocks for immediate render
+      try {
+        const [ohlcv, features] = await Promise.all([
+          fetchMockOHLCVData(symbol),
+          fetchMockFeatures(symbol),
+        ]);
+        setOhlcvData(ohlcv);
+        setFeatureData(features);
+        setFeatureNames(features.feature_names);
+      } catch {
+        setOhlcvData(null);
+        setFeatureData(null);
+        setFeatureNames([]);
+      }
       setChartLoading(false);
+      return; // No backend — nothing to sync
+    }
+    setChartLoading(false);
+
+    // 2. Background: check sync status and refresh chart if new data arrives
+    try {
+      const syncEntries = await fetchSyncStatus(symbol);
+      const entry = syncEntries.find((e) => e.timeframe === TIMEFRAME);
+      const isStale =
+        !entry ||
+        !entry.last_synced_timestamp ||
+        Date.now() - new Date(entry.last_synced_timestamp).getTime() > STALE_MS;
+
+      if (isStale) {
+        setSyncing(true);
+        await triggerSync(symbol, TIMEFRAME);
+
+        // Guard: user may have clicked a different ticker while sync was in flight
+        if (selectedTickerRef.current !== symbol) return;
+
+        // Re-fetch with the newly synced data
+        const { ohlcv, features } = await fetchChartData();
+        setOhlcvData(ohlcv);
+        setFeatureData(features);
+        setFeatureNames(features.feature_names);
+      }
+    } catch {
+      // Sync failed — chart already shows existing data, nothing to do
+    } finally {
+      setSyncing(false);
     }
   }, [selectedTicker, setChartActive, setFeatureNames]);
 
   const handleCloseChart = useCallback(() => {
     setSelectedTicker(null);
+    selectedTickerRef.current = null;
     setOhlcvData(null);
     setFeatureData(null);
     setChartActive(false);
     setFeatureNames([]);
+    setSyncing(false);
   }, [setChartActive, setFeatureNames]);
 
   if (loading) {
@@ -134,6 +190,7 @@ export default function Overview() {
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-[var(--accent-blue)]">{selectedTicker}</span>
                 <span className="text-xs text-[var(--text-secondary)]">5min chart</span>
+                {syncing && <span className="text-[10px] text-[var(--accent-yellow)]">Syncing...</span>}
               </div>
               <button
                 onClick={handleCloseChart}

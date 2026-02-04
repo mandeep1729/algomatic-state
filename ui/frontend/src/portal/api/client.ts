@@ -7,6 +7,10 @@
  *   POST /api/trading-buddy/evaluate       → evaluateTrade
  *   GET  /api/trading-buddy/evaluators     → fetchEvaluators
  *   GET  /api/broker/status?user_id=       → fetchBrokerStatus
+ *   GET  /api/sync-status/{symbol}         → fetchSyncStatus
+ *   POST /api/sync/{symbol}               → triggerSync
+ *   GET  /api/ohlcv/{symbol}              → fetchOHLCVData
+ *   GET  /api/features/{symbol}           → fetchFeatures
  *
  * All other functions are served by the mock layer (see api/index.ts).
  */
@@ -68,4 +72,96 @@ export async function fetchEvaluators(): Promise<string[]> {
 
 export async function fetchBrokerStatus(): Promise<BrokerStatus> {
   return get<BrokerStatus>(`/api/broker/status?user_id=${USER_ID}`);
+}
+
+// =============================================================================
+// Chart Data Types
+// =============================================================================
+
+export interface SyncStatusEntry {
+  symbol: string;
+  timeframe: string;
+  last_synced_timestamp: string | null;
+  first_synced_timestamp: string | null;
+  last_sync_at: string | null;
+  bars_fetched: number;
+  total_bars: number;
+  status: string;
+  error_message: string | null;
+}
+
+export interface SyncResult {
+  message: string;
+  bars_loaded: number;
+  date_range: { start: string | null; end: string | null };
+}
+
+export interface OHLCVData {
+  timestamps: string[];
+  open: number[];
+  high: number[];
+  low: number[];
+  close: number[];
+  volume: number[];
+}
+
+export interface FeatureData {
+  timestamps: string[];
+  features: Record<string, number[]>;
+  feature_names: string[];
+}
+
+// =============================================================================
+// Sync Status — GET /api/sync-status/{symbol}
+// =============================================================================
+
+export async function fetchSyncStatus(symbol: string): Promise<SyncStatusEntry[]> {
+  return get<SyncStatusEntry[]>(`/api/sync-status/${encodeURIComponent(symbol)}`);
+}
+
+// =============================================================================
+// Trigger Sync — POST /api/sync/{symbol}
+// =============================================================================
+
+export async function triggerSync(symbol: string, timeframe?: string): Promise<SyncResult> {
+  const params = new URLSearchParams();
+  if (timeframe) params.set('timeframe', timeframe);
+  const qs = params.toString();
+  return post<SyncResult>(`/api/sync/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`);
+}
+
+// =============================================================================
+// OHLCV Data — GET /api/ohlcv/{symbol}
+// =============================================================================
+
+export async function fetchOHLCVData(
+  symbol: string,
+  timeframe?: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<OHLCVData> {
+  const params = new URLSearchParams();
+  if (timeframe) params.set('timeframe', timeframe);
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  const qs = params.toString();
+  return get<OHLCVData>(`/api/ohlcv/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`);
+}
+
+// =============================================================================
+// Features — GET /api/features/{symbol}
+// =============================================================================
+
+export async function fetchFeatures(
+  symbol: string,
+  timeframe?: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<FeatureData> {
+  const params = new URLSearchParams();
+  if (timeframe) params.set('timeframe', timeframe);
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  const qs = params.toString();
+  return get<FeatureData>(`/api/features/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`);
 }

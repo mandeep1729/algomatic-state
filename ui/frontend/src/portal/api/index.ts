@@ -13,6 +13,10 @@ import * as realApi from './client';
  *   - evaluateTrade      → POST /api/trading-buddy/evaluate
  *   - fetchEvaluators    → GET  /api/trading-buddy/evaluators
  *   - fetchBrokerStatus  → GET  /api/broker/status
+ *   - fetchSyncStatus    → GET  /api/sync-status/{symbol}
+ *   - triggerSync        → POST /api/sync/{symbol}
+ *   - fetchOHLCVData     → GET  /api/ohlcv/{symbol}
+ *   - fetchFeatures      → GET  /api/features/{symbol}
  */
 const api = USE_MOCKS
   ? mockApi
@@ -51,5 +55,8 @@ const api = USE_MOCKS
 
 export default api;
 
-// Re-export mock chart data helpers (always mocked — no backend endpoint)
+// Re-export real chart data functions from client
+export { fetchSyncStatus, triggerSync, fetchOHLCVData, fetchFeatures } from './client';
+
+// Re-export mock chart data helpers for fallback use
 export { fetchMockOHLCVData, fetchMockFeatures } from '../mocks/mockApi';
