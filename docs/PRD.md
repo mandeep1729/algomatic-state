@@ -31,7 +31,6 @@ A hybrid system that:
 - Demonstrate state representation improves baseline momentum strategy
 - Identify distinct market regimes with meaningful performance differences
 - Maintain system stability during extended paper trading periods
-- Always follow instructions in docs/SKILLS.md
 
 ## Non-Goals
 - High-frequency trading (sub-second execution)

@@ -184,7 +184,7 @@ npm run dev
 
 The UI will be available at `http://localhost:5173`.
 
-See [docs/UI.md](docs/UI.md) for detailed usage, API endpoints, and troubleshooting.
+See [docs/APIs.md](docs/APIs.md) for the full API reference.
 
 ### 7. Launch the Momentum Trading Agent
 
@@ -383,7 +383,6 @@ algomatic-state/
     ├── FEATURE.md
     ├── PRD.md
     ├── PITFALLS.md
-    ├── UI.md
     ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
     ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md
     └── Trading_Buddy_Detailed_TODOs.md
@@ -488,7 +487,6 @@ pytest tests/unit/hmm/ --cov=src/features/state/hmm --cov-report=html
 - [Features](docs/FEATURE.md): Feature engineering specification
 - [PRD](docs/PRD.md): Product requirements document
 - [Pitfalls](docs/PITFALLS.md): ML and trading pitfalls research
-- [UI](docs/UI.md): Regime state visualization UI
 - [HMM Implementation Plan](docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md): Phase-by-phase HMM implementation
 - [Trading Buddy Roadmap](docs/Trading_Buddy_Master_Roadmap_and_DB_Schema.md): Evaluation platform architecture
 - [Trading Buddy TODOs](docs/Trading_Buddy_Detailed_TODOs.md): Detailed implementation status

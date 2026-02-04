@@ -1,6 +1,6 @@
 # Implementation Plan: Multi-Timeframe State Vectors + HMM Regime Tracking
 
-This document outlines the phased implementation plan for the system described in [MULTI_TIMEFRAME_STATE_VECTORS_HMM_REGIME_TRACKING.md](./MULTI_TIMEFRAME_STATE_VECTORS_HMM_REGIME_TRACKING.md).
+This document outlines the phased implementation plan for multi-timeframe state vectors with HMM regime tracking.
 
 > **Status**: All phases have been implemented. See `src/hmm/` for the complete module.
 
