@@ -148,6 +148,44 @@ print(f"State: {output.state_id}, Prob: {output.state_prob:.2f}")
 print(f"Is OOD: {output.is_ood}")
 ```
 
+### 6. Start the Web UI
+
+The web UI provides interactive regime state visualization with price charts, feature exploration, and regime statistics. It consists of a FastAPI backend and a React frontend.
+
+**Prerequisites:** Python virtual environment activated, Node.js 18+.
+
+#### Option A: Using the startup script
+
+```bash
+# From the project root
+cd ui
+./start_ui.sh       # Linux/macOS
+start_ui.bat         # Windows
+```
+
+This starts both the backend (port 8000) and frontend (port 5173) together.
+
+#### Option B: Manual startup (two terminals)
+
+**Terminal 1 -- Backend:**
+```bash
+# From the project root with venv activated
+python -m ui.run_backend
+```
+
+The API server will be available at `http://localhost:8000` (docs at `http://localhost:8000/docs`).
+
+**Terminal 2 -- Frontend:**
+```bash
+cd ui/frontend
+npm install    # first time only
+npm run dev
+```
+
+The UI will be available at `http://localhost:5173`.
+
+See [docs/UI.md](docs/UI.md) for detailed usage, API endpoints, and troubleshooting.
+
 ## Project Structure
 
 ```
