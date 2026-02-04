@@ -147,6 +147,34 @@ class OHLCVRepository:
             query = query.filter(Ticker.is_active == True)
         return query.order_by(Ticker.symbol).all()
 
+    def bulk_upsert_tickers(self, tickers: list[dict]) -> int:
+        """Bulk upsert tickers using PostgreSQL ON CONFLICT.
+
+        Inserts new tickers or updates existing ones (by symbol).
+        Sets is_active=True on conflict so re-seeding reactivates symbols.
+
+        Args:
+            tickers: List of dicts with keys: symbol, name, exchange, asset_type
+
+        Returns:
+            Number of rows affected
+        """
+        if not tickers:
+            return 0
+
+        stmt = pg_insert(Ticker).values(tickers)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["symbol"],
+            set_={
+                "name": stmt.excluded.name,
+                "exchange": stmt.excluded.exchange,
+                "asset_type": stmt.excluded.asset_type,
+                "is_active": True,
+            },
+        )
+        result = self.session.execute(stmt)
+        return result.rowcount
+
     # -------------------------------------------------------------------------
     # OHLCV Bar Operations
     # -------------------------------------------------------------------------

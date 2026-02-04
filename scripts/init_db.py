@@ -14,6 +14,7 @@ Options:
 """
 
 import argparse
+import csv
 import subprocess
 import sys
 from pathlib import Path
@@ -26,19 +27,7 @@ from config.settings import get_settings
 from src.data.database.connection import get_db_manager
 from src.data.database.market_repository import OHLCVRepository
 
-
-COMMON_TICKERS = [
-    ("SPY", "SPDR S&P 500 ETF Trust", "NYSE Arca", "etf"),
-    ("QQQ", "Invesco QQQ Trust", "NASDAQ", "etf"),
-    ("IWM", "iShares Russell 2000 ETF", "NYSE Arca", "etf"),
-    ("AAPL", "Apple Inc.", "NASDAQ", "stock"),
-    ("MSFT", "Microsoft Corporation", "NASDAQ", "stock"),
-    ("GOOGL", "Alphabet Inc.", "NASDAQ", "stock"),
-    ("AMZN", "Amazon.com Inc.", "NASDAQ", "stock"),
-    ("TSLA", "Tesla Inc.", "NASDAQ", "stock"),
-    ("NVDA", "NVIDIA Corporation", "NASDAQ", "stock"),
-    ("META", "Meta Platforms Inc.", "NASDAQ", "stock"),
-]
+SEED_CSV_PATH = project_root / "config" / "seed" / "us_tickers.csv"
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,22 +92,28 @@ def run_migrations() -> bool:
         return False
 
 
-def _seed_ticker(repo: OHLCVRepository, symbol: str, name: str, exchange: str, asset_type: str) -> None:
-    """Seed a single ticker."""
-    ticker = repo.get_or_create_ticker(symbol=symbol, name=name, exchange=exchange, asset_type=asset_type)
-    print(f"  Added/verified ticker: {ticker.symbol} ({ticker.name})")
+def _load_seed_csv() -> list[dict]:
+    """Load tickers from the seed CSV file."""
+    with open(SEED_CSV_PATH, newline="") as f:
+        return list(csv.DictReader(f))
 
 
 def seed_tickers() -> bool:
-    """Seed database with common tickers. Returns True if successful."""
-    print("\nSeeding database with common tickers...")
+    """Seed database with tickers from CSV. Returns True if successful."""
+    print("\nSeeding database with US-traded tickers...")
+
+    if not SEED_CSV_PATH.exists():
+        print(f"Seed CSV not found: {SEED_CSV_PATH}")
+        print("Run: python scripts/download_tickers.py")
+        return False
+
     try:
+        tickers = _load_seed_csv()
         db_manager = get_db_manager()
         with db_manager.get_session() as session:
             repo = OHLCVRepository(session)
-            for symbol, name, exchange, asset_type in COMMON_TICKERS:
-                _seed_ticker(repo, symbol, name, exchange, asset_type)
-        print(f"Seeding completed! Added {len(COMMON_TICKERS)} tickers.")
+            count = repo.bulk_upsert_tickers(tickers)
+        print(f"Seeding completed! Upserted {count} tickers from {SEED_CSV_PATH.name}.")
         return True
     except Exception as e:
         print(f"Seeding error: {e}")
