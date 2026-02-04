@@ -25,5 +25,8 @@ alembic>=1.12.0
 fastapi>=0.104.0
 uvicorn>=0.24.0
 
+# Broker dependencies
+snaptrade-python-sdk>=11.0.0
+
 # Agent dependencies
 httpx>=0.25.0

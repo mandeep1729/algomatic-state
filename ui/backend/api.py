@@ -53,7 +53,7 @@ from src.data.loaders.csv_loader import CSVLoader
 from src.data.loaders.database_loader import DatabaseLoader
 from src.data.database.connection import get_db_manager
 from src.data.database.models import VALID_TIMEFRAMES
-from src.data.database.repository import OHLCVRepository
+from src.data.database.market_repository import OHLCVRepository
 from src.features.pipeline import FeaturePipeline, get_minimal_features
 from src.features.state.hmm.artifacts import get_model_path, list_models
 from src.features.state.hmm.inference import InferenceEngine
@@ -762,7 +762,7 @@ async def compute_features(symbol: str, force: bool = False):
         force: If True, recompute features for all bars (overwrites existing)
     """
     try:
-        from src.data.database.repository import OHLCVRepository
+        from src.data.database.market_repository import OHLCVRepository
         from src.features import FeaturePipeline
 
         # Use full FeaturePipeline for all 68 features

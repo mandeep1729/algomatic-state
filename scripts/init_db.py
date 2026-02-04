@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 
 from config.settings import get_settings
 from src.data.database.connection import get_db_manager
-from src.data.database.repository import OHLCVRepository
+from src.data.database.market_repository import OHLCVRepository
 
 
 COMMON_TICKERS = [
