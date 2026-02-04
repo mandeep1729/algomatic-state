@@ -50,6 +50,7 @@ export default function Trades() {
 
   // Chart state
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [chartTimeframe, setChartTimeframe] = useState('5Min');
   const [ohlcvData, setOhlcvData] = useState<{ timestamps: string[]; open: number[]; high: number[]; low: number[]; close: number[]; volume: number[] } | null>(null);
   const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
@@ -132,6 +133,27 @@ export default function Trades() {
     setChartActive(false);
     setFeatureNames([]);
   }, [setChartActive, setFeatureNames]);
+
+  const handleTimeframeChange = useCallback(async (newTimeframe: string) => {
+    setChartTimeframe(newTimeframe);
+    if (!selectedTicker) return;
+    setChartLoading(true);
+    try {
+      const [ohlcv, features] = await Promise.all([
+        fetchMockOHLCVData(selectedTicker),
+        fetchMockFeatures(selectedTicker),
+      ]);
+      setOhlcvData(ohlcv);
+      setFeatureData(features);
+      setFeatureNames(features.feature_names);
+    } catch {
+      setOhlcvData(null);
+      setFeatureData(null);
+      setFeatureNames([]);
+    } finally {
+      setChartLoading(false);
+    }
+  }, [selectedTicker, setFeatureNames]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -224,7 +246,20 @@ export default function Trades() {
             <div className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-[var(--accent-blue)]">{selectedTicker}</span>
-                <span className="text-xs text-[var(--text-secondary)]">5min chart</span>
+                <select
+                  value={chartTimeframe}
+                  onChange={(e) => handleTimeframeChange(e.target.value)}
+                  disabled={chartLoading}
+                  className="h-6 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent-blue)] focus:outline-none"
+                >
+                  <option value="1Min">1m</option>
+                  <option value="5Min">5m</option>
+                  <option value="15Min">15m</option>
+                  <option value="30Min">30m</option>
+                  <option value="1Hour">1h</option>
+                  <option value="4Hour">4h</option>
+                  <option value="1Day">1d</option>
+                </select>
               </div>
               <button
                 onClick={handleCloseChart}

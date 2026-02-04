@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import {
   createChart,
   IChartApi,
@@ -10,6 +10,8 @@ import {
   ColorType,
   CrosshairMode,
 } from 'lightweight-charts';
+
+const MAX_CHART_POINTS = 7200;
 
 interface OHLCVData {
   timestamps: string[];
@@ -90,6 +92,77 @@ export function OHLCVChart({
   const stateSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const featureSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
 
+  // Timeline slider state
+  const totalPoints = data?.timestamps.length ?? 0;
+  const needsSlider = totalPoints > MAX_CHART_POINTS;
+  const windowSize = Math.min(totalPoints, MAX_CHART_POINTS);
+  const maxSliderValue = needsSlider ? totalPoints - windowSize : 0;
+  const [sliderOffset, setSliderOffset] = useState(0);
+
+  // Reset slider when data changes
+  useEffect(() => {
+    setSliderOffset(0);
+  }, [data]);
+
+  // Compute windowed data subset
+  const windowedData = useMemo(() => {
+    if (!data) return null;
+    if (!needsSlider) return data;
+    const start = sliderOffset;
+    const end = start + windowSize;
+    return {
+      timestamps: data.timestamps.slice(start, end),
+      open: data.open.slice(start, end),
+      high: data.high.slice(start, end),
+      low: data.low.slice(start, end),
+      close: data.close.slice(start, end),
+      volume: data.volume.slice(start, end),
+    };
+  }, [data, needsSlider, sliderOffset, windowSize]);
+
+  // Compute windowed feature data
+  const windowedFeatureData = useMemo(() => {
+    if (!featureData || !data) return featureData;
+    if (!needsSlider) return featureData;
+    // Feature data timestamps may differ from OHLCV; window by matching time range
+    const startTime = data.timestamps[sliderOffset];
+    const endTime = data.timestamps[sliderOffset + windowSize - 1];
+    const startIdx = featureData.timestamps.findIndex((ts) => ts >= startTime);
+    const endIdx = featureData.timestamps.findIndex((ts) => ts > endTime);
+    const actualEnd = endIdx === -1 ? featureData.timestamps.length : endIdx;
+    const actualStart = startIdx === -1 ? 0 : startIdx;
+    const windowedFeatures: Record<string, number[]> = {};
+    for (const [key, values] of Object.entries(featureData.features)) {
+      windowedFeatures[key] = values.slice(actualStart, actualEnd);
+    }
+    return {
+      timestamps: featureData.timestamps.slice(actualStart, actualEnd),
+      features: windowedFeatures,
+      feature_names: featureData.feature_names,
+    };
+  }, [featureData, data, needsSlider, sliderOffset, windowSize]);
+
+  // Compute windowed regime data
+  const windowedRegimeData = useMemo(() => {
+    if (!regimeData || !data) return regimeData;
+    if (!needsSlider) return regimeData;
+    const startTime = data.timestamps[sliderOffset];
+    const endTime = data.timestamps[sliderOffset + windowSize - 1];
+    const startIdx = regimeData.timestamps.findIndex((ts) => ts >= startTime);
+    const endIdx = regimeData.timestamps.findIndex((ts) => ts > endTime);
+    const actualEnd = endIdx === -1 ? regimeData.timestamps.length : endIdx;
+    const actualStart = startIdx === -1 ? 0 : startIdx;
+    return {
+      timestamps: regimeData.timestamps.slice(actualStart, actualEnd),
+      state_ids: regimeData.state_ids.slice(actualStart, actualEnd),
+      state_info: regimeData.state_info,
+    };
+  }, [regimeData, data, needsSlider, sliderOffset, windowSize]);
+
+  const handleSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setSliderOffset(Number(e.target.value));
+  }, []);
+
   // Initialize chart
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -133,12 +206,12 @@ export function OHLCVChart({
         fixRightEdge: true,
         tickMarkFormatter: (time: number, tickMarkType: number) => {
           const date = new Date(time * 1000);
-          const day = date.getDate();
-          const hours = date.getHours().toString().padStart(2, '0');
-          const minutes = date.getMinutes().toString().padStart(2, '0');
+          const day = date.getUTCDate();
+          const hours = date.getUTCHours().toString().padStart(2, '0');
+          const minutes = date.getUTCMinutes().toString().padStart(2, '0');
           const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
           if (tickMarkType <= 2) {
-            return `${months[date.getMonth()]} ${day}`;
+            return `${months[date.getUTCMonth()]} ${day}`;
           }
           return `${hours}:${minutes}`;
         },
@@ -231,25 +304,25 @@ export function OHLCVChart({
 
   // Update chart data
   useEffect(() => {
-    if (!data || !candlestickSeriesRef.current || !volumeSeriesRef.current) {
+    if (!windowedData || !candlestickSeriesRef.current || !volumeSeriesRef.current) {
       return;
     }
 
     // Prepare candlestick data
-    const candlestickData: CandlestickData[] = data.timestamps.map((ts, i) => ({
+    const candlestickData: CandlestickData[] = windowedData.timestamps.map((ts, i) => ({
       time: toUnixTime(ts),
-      open: data.open[i],
-      high: data.high[i],
-      low: data.low[i],
-      close: data.close[i],
+      open: windowedData.open[i],
+      high: windowedData.high[i],
+      low: windowedData.low[i],
+      close: windowedData.close[i],
     }));
 
     // Prepare volume data with colors based on candle direction
-    const volumeData: HistogramData[] = data.timestamps.map((ts, i) => {
-      const isUp = i === 0 || data.close[i] >= data.open[i];
+    const volumeData: HistogramData[] = windowedData.timestamps.map((ts, i) => {
+      const isUp = i === 0 || windowedData.close[i] >= windowedData.open[i];
       return {
         time: toUnixTime(ts),
-        value: data.volume[i],
+        value: windowedData.volume[i],
         color: isUp ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)',
       };
     });
@@ -261,11 +334,11 @@ export function OHLCVChart({
     if (chartRef.current) {
       chartRef.current.timeScale().fitContent();
     }
-  }, [data]);
+  }, [windowedData]);
 
   // Update feature overlays
   useEffect(() => {
-    if (!chartRef.current || !featureData) return;
+    if (!chartRef.current || !windowedFeatureData) return;
 
     const chart = chartRef.current;
     const currentSeries = featureSeriesRef.current;
@@ -280,7 +353,7 @@ export function OHLCVChart({
 
     // Add or update series for selected features
     selectedFeatures.forEach((featureKey, index) => {
-      const featureValues = featureData.features[featureKey];
+      const featureValues = windowedFeatureData.features[featureKey];
       if (!featureValues) return;
 
       // Assign unique color per indicator using index
@@ -288,11 +361,11 @@ export function OHLCVChart({
 
       // Prepare line data, filtering out NaN/null values
       const lineData: LineData[] = [];
-      for (let i = 0; i < featureData.timestamps.length; i++) {
+      for (let i = 0; i < windowedFeatureData.timestamps.length; i++) {
         const value = featureValues[i];
         if (value !== null && value !== undefined && !isNaN(value) && isFinite(value)) {
           lineData.push({
-            time: toUnixTime(featureData.timestamps[i]),
+            time: toUnixTime(windowedFeatureData.timestamps[i]),
             value: value,
           });
         }
@@ -332,7 +405,7 @@ export function OHLCVChart({
 
       series.setData(lineData);
     });
-  }, [featureData, selectedFeatures]);
+  }, [windowedFeatureData, selectedFeatures]);
 
   // Update volume visibility
   useEffect(() => {
@@ -345,13 +418,13 @@ export function OHLCVChart({
 
   // Update state histogram data
   useEffect(() => {
-    if (!stateSeriesRef.current || !regimeData) {
+    if (!stateSeriesRef.current || !windowedRegimeData) {
       return;
     }
 
-    const stateData: HistogramData[] = regimeData.timestamps.map((ts, i) => {
-      const stateId = regimeData.state_ids[i];
-      const stateInfo = regimeData.state_info[String(stateId)];
+    const stateData: HistogramData[] = windowedRegimeData.timestamps.map((ts, i) => {
+      const stateId = windowedRegimeData.state_ids[i];
+      const stateInfo = windowedRegimeData.state_info[String(stateId)];
       return {
         time: toUnixTime(ts),
         value: 1, // Constant height for state bars
@@ -360,16 +433,16 @@ export function OHLCVChart({
     });
 
     stateSeriesRef.current.setData(stateData);
-  }, [regimeData]);
+  }, [windowedRegimeData]);
 
   // Update state visibility
   useEffect(() => {
     if (stateSeriesRef.current) {
       stateSeriesRef.current.applyOptions({
-        visible: showStates && regimeData !== null,
+        visible: showStates && windowedRegimeData !== null,
       });
     }
-  }, [showStates, regimeData]);
+  }, [showStates, windowedRegimeData]);
 
   // Update chart height
   useEffect(() => {
@@ -391,6 +464,20 @@ export function OHLCVChart({
     }
   }, []);
 
+  // Format slider label showing the visible date range
+  const sliderLabel = useMemo(() => {
+    if (!windowedData || windowedData.timestamps.length === 0) return '';
+    const startDate = new Date(windowedData.timestamps[0]);
+    const endDate = new Date(windowedData.timestamps[windowedData.timestamps.length - 1]);
+    const fmt = (d: Date) => {
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const hrs = d.getUTCHours().toString().padStart(2, '0');
+      const mins = d.getUTCMinutes().toString().padStart(2, '0');
+      return `${months[d.getUTCMonth()]} ${d.getUTCDate()} ${hrs}:${mins}`;
+    };
+    return `${fmt(startDate)} - ${fmt(endDate)}`;
+  }, [windowedData]);
+
   return (
     <div style={{ position: 'relative' }}>
       <div
@@ -398,7 +485,7 @@ export function OHLCVChart({
         style={{
           width: '100%',
           height: `${height}px`,
-          borderRadius: '8px',
+          borderRadius: needsSlider ? '8px 8px 0 0' : '8px',
           overflow: 'hidden',
         }}
       />
@@ -476,6 +563,65 @@ export function OHLCVChart({
               </span>
             );
           })}
+        </div>
+      )}
+      {/* Timeline navigation slider */}
+      {needsSlider && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 12px',
+            background: '#0d1117',
+            borderTop: '1px solid #21262d',
+            borderRadius: '0 0 8px 8px',
+          }}
+        >
+          <span
+            style={{
+              fontSize: '10px',
+              color: '#8b949e',
+              whiteSpace: 'nowrap',
+              minWidth: '32px',
+            }}
+          >
+            {sliderOffset + 1}
+          </span>
+          <input
+            type="range"
+            min={0}
+            max={maxSliderValue}
+            value={sliderOffset}
+            onChange={handleSliderChange}
+            style={{
+              flex: 1,
+              height: '4px',
+              cursor: 'pointer',
+              accentColor: '#58a6ff',
+            }}
+          />
+          <span
+            style={{
+              fontSize: '10px',
+              color: '#8b949e',
+              whiteSpace: 'nowrap',
+              minWidth: '32px',
+              textAlign: 'right',
+            }}
+          >
+            {sliderOffset + windowSize}
+          </span>
+          <span
+            style={{
+              fontSize: '10px',
+              color: '#58a6ff',
+              whiteSpace: 'nowrap',
+              marginLeft: '4px',
+            }}
+          >
+            {sliderLabel}
+          </span>
         </div>
       )}
       {/* State legend */}

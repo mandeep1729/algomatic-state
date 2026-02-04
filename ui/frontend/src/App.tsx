@@ -777,7 +777,7 @@ function App() {
 
           {/* Trades Tab */}
           {activeTab === 'trades' && (
-            <TradeHistoryTable />
+            <TradeHistoryTable selectedTicker={selectedTicker} />
           )}
 
         </main>
