@@ -1,5 +1,6 @@
 """Multi-asset data loading with timestamp alignment and parallel execution."""
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -8,6 +9,8 @@ from typing import Callable
 import pandas as pd
 
 from src.data.loaders.base import BaseDataLoader
+
+logger = logging.getLogger(__name__)
 
 
 def align_timestamps(
@@ -201,7 +204,7 @@ class MultiAssetLoader:
         if on_error == "raise":
             raise RuntimeError(f"Failed to load {name}: {error}") from error
         elif on_error == "warn":
-            print(f"Warning: Failed to load {name}: {error}")
+            logger.warning("Failed to load %s: %s", name, error)
         # Return empty DataFrame for "warn" and "skip"
         return pd.DataFrame()
 

@@ -4,6 +4,7 @@ NOTE: This module requires reimplementation of the strategy module.
 See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable
@@ -13,6 +14,8 @@ import pandas as pd
 
 from src.backtest.engine import BacktestEngine, BacktestConfig, BacktestResult, BaseStrategy
 from src.backtest.metrics import PerformanceMetrics, calculate_metrics
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -158,11 +161,18 @@ class WalkForwardValidator:
         if not windows:
             raise ValueError("No valid windows could be generated from data")
 
+        logger.info("Walk-forward validation: %d windows generated", len(windows))
+
         # Process each window
         all_test_equities = []
         all_test_trades = []
 
         for window in windows:
+            logger.debug(
+                "Processing window %d: train=%s to %s, test=%s to %s",
+                window.window_id, window.train_start, window.train_end,
+                window.test_start, window.test_end,
+            )
             # Slice data for this window
             train_data, test_data = self._slice_data(data, window)
 
@@ -236,6 +246,11 @@ class WalkForwardValidator:
         )
         test_metrics_summary = self._summarize_metrics(
             [w.test_result.metrics for w in windows if w.test_result]
+        )
+
+        logger.info(
+            "Walk-forward complete: %d windows, OOS sharpe=%.2f",
+            len(windows), combined_metrics.sharpe_ratio,
         )
 
         return WalkForwardResult(

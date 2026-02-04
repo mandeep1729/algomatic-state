@@ -1,5 +1,6 @@
 """Momentum strategy for the trading agent."""
 
+import logging
 from datetime import datetime
 
 import numpy as np
@@ -7,6 +8,8 @@ import pandas as pd
 
 from config.settings import StrategyConfig
 from src.execution.order_manager import Signal, SignalDirection, SignalMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class MomentumStrategy:
@@ -33,16 +36,21 @@ class MomentumStrategy:
         state: np.ndarray | None = None,
     ) -> list[Signal]:
         if features.empty:
+            logger.debug("No features available for signal generation")
             return []
 
         latest = features.iloc[-1]
         feature_name = self.config.momentum_feature
 
         if feature_name not in latest.index:
+            logger.warning(
+                "Momentum feature '%s' not found in features", feature_name
+            )
             return []
 
         momentum_value = latest[feature_name]
         if pd.isna(momentum_value):
+            logger.debug("Momentum value is NaN, skipping signal generation")
             return []
 
         now = timestamp or datetime.now()
@@ -53,6 +61,11 @@ class MomentumStrategy:
             direction = SignalDirection.SHORT
         else:
             direction = SignalDirection.FLAT
+
+        logger.info(
+            "Signal generated: %s %s momentum=%.4f",
+            self.symbol, direction.value, momentum_value,
+        )
 
         return [
             Signal(

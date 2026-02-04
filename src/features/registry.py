@@ -1,5 +1,6 @@
 """Feature registry and configuration loading."""
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ from .returns import ReturnFeatureCalculator
 from .time_of_day import TimeOfDayFeatureCalculator
 from .volatility import VolatilityFeatureCalculator
 from .volume import VolumeFeatureCalculator
+
+logger = logging.getLogger(__name__)
 
 
 # Global registry of calculator classes
@@ -31,6 +34,7 @@ def register_calculator(name: str):
 
     def decorator(cls: type[BaseFeatureCalculator]) -> type[BaseFeatureCalculator]:
         _CALCULATOR_REGISTRY[name] = cls
+        logger.debug("Registered feature calculator: %s", name)
         return cls
 
     return decorator

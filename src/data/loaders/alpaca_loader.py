@@ -5,6 +5,7 @@ This module is a backward-compatible wrapper around
 and schema validation on top of the provider's fetch logic.
 """
 
+import logging
 import os
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,8 @@ from src.data.loaders.base import BaseDataLoader
 from src.data.schemas import validate_ohlcv
 from src.marketdata.alpaca_provider import AlpacaProvider
 from src.marketdata.utils import RateLimiter  # noqa: F401 — re-export for backward compat
+
+logger = logging.getLogger(__name__)
 
 
 class AlpacaLoader(BaseDataLoader):
@@ -129,6 +132,6 @@ class AlpacaLoader(BaseDataLoader):
             try:
                 result[symbol] = self.load(symbol, start, end)
             except Exception as e:
-                print(f"Warning: Failed to load {symbol}: {e}")
+                logger.warning("Failed to load %s: %s", symbol, e)
                 result[symbol] = pd.DataFrame()
         return result

@@ -1,5 +1,6 @@
 """Database connection management with connection pooling."""
 
+import logging
 from contextlib import contextmanager
 from functools import lru_cache
 from typing import Generator
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from config.settings import DatabaseConfig, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
@@ -33,6 +36,10 @@ class DatabaseManager:
     def engine(self) -> Engine:
         """Get or create the database engine with connection pooling."""
         if self._engine is None:
+            logger.info(
+                "Creating database engine (pool_size=%d, max_overflow=%d)",
+                self.config.pool_size, self.config.max_overflow,
+            )
             self._engine = create_engine(
                 self.config.url,
                 poolclass=QueuePool,
@@ -82,6 +89,7 @@ class DatabaseManager:
             yield session
             session.commit()
         except Exception:
+            logger.warning("Database session error, rolling back")
             session.rollback()
             raise
         finally:
@@ -111,6 +119,7 @@ class DatabaseManager:
         properly close all database connections.
         """
         if self._engine is not None:
+            logger.info("Disposing database connection pool")
             self._engine.dispose()
             self._engine = None
             self._session_factory = None
@@ -126,6 +135,7 @@ class DatabaseManager:
                 session.execute(text("SELECT 1"))
             return True
         except Exception:
+            logger.error("Database health check failed", exc_info=True)
             return False
 
 
