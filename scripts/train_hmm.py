@@ -17,7 +17,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.data.database.connection import get_db_manager
-from src.data.database.repository import OHLCVRepository
+from src.data.database.market_repository import OHLCVRepository
 from src.features.state.hmm.config import create_default_config, load_feature_spec, DEFAULT_FEATURE_SET
 from src.features.state.hmm.data_pipeline import GapHandler
 from src.features.state.hmm.training import TrainingPipeline, TrainingConfig
