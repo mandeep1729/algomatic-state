@@ -96,10 +96,23 @@ algomatic-state/
 │   ├── __init__.py
 │   ├── settings.py             # Pydantic settings classes
 │   ├── features.json           # Feature configuration
-│   └── assets.yaml             # Asset universe
+│   ├── assets.yaml             # Asset universe
+│   ├── trading.yaml            # Trading strategy and backtest config
+│   └── state_vector_feature_spec.yaml  # HMM feature spec
 │
 ├── src/                        # Source code
 │   ├── __init__.py
+│   │
+│   ├── agent/                  # Standalone momentum trading agent
+│   │   ├── main.py             # Entry point (FastAPI + scheduler in threads)
+│   │   ├── config.py           # AgentConfig (AGENT_ env prefix)
+│   │   ├── strategy.py         # MomentumStrategy
+│   │   ├── scheduler.py        # Async fetch-compute-trade loop
+│   │   └── api.py              # Internal /market-data endpoint
+│   │
+│   ├── api/                    # Public API routers
+│   │   ├── trading_buddy.py    # Trading Buddy REST endpoints
+│   │   └── broker.py           # SnapTrade broker integration routes
 │   │
 │   ├── data/                   # Data layer
 │   │   ├── __init__.py
@@ -109,25 +122,42 @@ algomatic-state/
 │   │   │   ├── csv_loader.py   # Local CSV files
 │   │   │   ├── database_loader.py # PostgreSQL database
 │   │   │   └── alpaca_loader.py # Alpaca API
-│   │   └── database/
-│   │       ├── __init__.py
-│   │       ├── connection.py   # Database connection
-│   │       ├── models.py       # SQLAlchemy models
-│   │       ├── market_repository.py   # Market data access layer
-│   │       └── trading_repository.py  # Trading data access layer
+│   │   ├── database/
+│   │   │   ├── __init__.py
+│   │   │   ├── connection.py   # Database connection
+│   │   │   ├── models.py       # SQLAlchemy OHLCV models
+│   │   │   ├── broker_models.py # Broker integration models
+│   │   │   ├── trading_buddy_models.py # Trading Buddy models
+│   │   │   ├── market_repository.py   # Market data access layer
+│   │   │   └── trading_repository.py  # Trading Buddy data access layer
+│   │   ├── cache.py            # Data caching
+│   │   ├── schemas.py          # Pandera OHLCV schema validation
+│   │   └── quality.py          # Data quality checks
+│   │
+│   ├── marketdata/             # Market data provider abstraction
+│   │   ├── base.py             # MarketDataProvider ABC
+│   │   ├── alpaca_provider.py  # Alpaca data provider
+│   │   ├── finnhub_provider.py # Finnhub data provider
+│   │   └── utils.py            # Rate limiter, retry, normalisation
 │   │
 │   ├── trade/                  # Domain objects
-│   │   ├── intent.py           # Trade intent definitions
-│   │   └── evaluation.py       # Evaluation result definitions
+│   │   ├── intent.py           # TradeIntent with validation and computed properties
+│   │   └── evaluation.py       # EvaluationResult, EvaluationItem, Severity, Evidence
 │   │
 │   ├── rules/                  # Compliance & Guardrails
-│   │   └── guardrails.py       # Output sanitization
+│   │   └── guardrails.py       # Output sanitisation (no-prediction policy)
 │   │
-│   ├── evaluators/             # Evaluation Engine
-│   │   ├── base.py             # Abstract base classes
-│   │   ├── context.py          # Market context infrastructure
-│   │   ├── risk_reward.py      # Risk/Reward evaluator
-│   │   └── exit_plan.py        # Exit plan evaluator
+│   ├── evaluators/             # Trade evaluation engine
+│   │   ├── base.py             # Evaluator ABC with EvaluatorConfig
+│   │   ├── registry.py         # @register_evaluator decorator, get_evaluator()
+│   │   ├── evidence.py         # Evidence helpers (z-scores, thresholds, ATR)
+│   │   ├── context.py          # ContextPack, ContextPackBuilder (bars, features, regimes, levels)
+│   │   ├── risk_reward.py      # Risk/Reward evaluator (R:R, sizing, stop distance)
+│   │   ├── exit_plan.py        # Exit plan evaluator (stop/target presence, proximity)
+│   │   ├── regime_fit.py       # Regime fit evaluator (direction conflict, transition risk, OOD)
+│   │   └── mtfa.py             # Multi-timeframe alignment evaluator
+│   │
+│   ├── orchestrator.py         # EvaluatorOrchestrator (sequential/parallel execution, scoring)
 │   │
 │   ├── features/               # Feature engineering
 │   │   ├── __init__.py
@@ -135,40 +165,35 @@ algomatic-state/
 │   │   ├── returns.py          # Return-based features
 │   │   ├── volatility.py       # Volatility features
 │   │   ├── volume.py           # Volume features
-│   │   ├── intrabar.py         # Intrabar features
-│   │   ├── time_of_day.py      # Time-based features
+│   │   ├── intrabar.py         # Intrabar structure features
+│   │   ├── time_of_day.py      # Time-of-day encoding
 │   │   ├── market_context.py   # Market context features
 │   │   ├── anchor.py           # Anchor VWAP features
 │   │   ├── talib_indicators.py # TA-Lib indicators
 │   │   ├── pandas_ta_indicators.py # pandas-ta indicators
 │   │   ├── pipeline.py         # Feature orchestration
-│   │   └── registry.py         # Feature registry
-│   │
-│   ├── hmm/                    # HMM State Vector Module
-│   │   ├── __init__.py         # Module exports
-│   │   ├── contracts.py        # Data contracts (FeatureVector, HMMOutput, etc.)
-│   │   ├── config.py           # Configuration loading
-│   │   ├── artifacts.py        # Model artifact management
-│   │   ├── scalers.py          # Robust, Standard, Yeo-Johnson scalers
-│   │   ├── encoders.py         # PCA and Temporal PCA encoders
-│   │   ├── hmm_model.py        # Gaussian HMM wrapper
-│   │   ├── data_pipeline.py    # Feature loading, gap handling, splitting
-│   │   ├── training.py         # Training pipeline and hyperparameter tuning
-│   │   ├── inference.py        # Online inference engine
-│   │   ├── storage.py          # Parquet state storage
-│   │   ├── validation.py       # Model validation and diagnostics
-│   │   └── monitoring.py       # Drift detection and operations
-│   │
-│   ├── pca_states/             # PCA-based State Computation (alternative to HMM)
-│   │   ├── __init__.py         # Module exports
-│   │   ├── contracts.py        # Data contracts (PCAStateOutput, PCAModelMetadata)
-│   │   ├── artifacts.py        # Model path management
-│   │   ├── training.py         # PCAStateTrainer with auto component/cluster selection
-│   │   ├── engine.py           # PCAStateEngine for inference
-│   │   └── labeling.py         # Semantic state labeling
-│   │
-│   ├── strategy/               # Trading logic (uses HMM states)
-│   │   └── (regime-gated signal generation)
+│   │   ├── registry.py         # Feature registry
+│   │   └── state/              # State representation modules
+│   │       ├── hmm/            # HMM regime tracking
+│   │       │   ├── contracts.py    # FeatureVector, HMMOutput, ModelMetadata
+│   │       │   ├── config.py       # Configuration loading
+│   │       │   ├── artifacts.py    # Model artifact management
+│   │       │   ├── scalers.py      # Robust, Standard, Yeo-Johnson scalers
+│   │       │   ├── encoders.py     # PCA and Temporal PCA encoders
+│   │       │   ├── hmm_model.py    # Gaussian HMM wrapper
+│   │       │   ├── data_pipeline.py # Feature loading, gap handling, splitting
+│   │       │   ├── training.py     # Training pipeline
+│   │       │   ├── inference.py    # Online inference engine
+│   │       │   ├── labeling.py     # State labeling
+│   │       │   ├── storage.py      # Parquet state storage
+│   │       │   ├── validation.py   # Model validation and diagnostics
+│   │       │   └── monitoring.py   # Drift detection and operations
+│   │       └── pca/            # PCA + K-means state computation
+│   │           ├── contracts.py    # PCAStateOutput, PCAModelMetadata
+│   │           ├── artifacts.py    # Model path management
+│   │           ├── training.py     # PCAStateTrainer
+│   │           ├── engine.py       # PCAStateEngine for inference
+│   │           └── labeling.py     # Semantic state labeling
 │   │
 │   ├── backtest/               # Backtesting
 │   │   ├── __init__.py
@@ -184,18 +209,23 @@ algomatic-state/
 │   │   ├── order_manager.py    # Order lifecycle
 │   │   ├── order_tracker.py    # Order tracking
 │   │   ├── risk_manager.py     # Risk checks
-│   │   └── runner.py           # Trading runner
+│   │   ├── runner.py           # Trading runner
+│   │   └── snaptrade_client.py # SnapTrade broker client
 │   │
 │   └── utils/                  # Utilities
 │       ├── __init__.py
-│       ├── logging.py          # Structured logging
-│       └── exceptions.py       # Custom exceptions
+│       └── logging.py          # Structured logging
 │
 ├── tests/                      # Test suite
 │   ├── conftest.py             # Shared fixtures
-│   ├── unit/                   # Unit tests
-│   ├── integration/            # Integration tests
-│   └── e2e/                    # End-to-end tests
+│   └── unit/
+│       ├── backtest/           # Backtest tests
+│       ├── broker/             # Broker integration tests
+│       ├── data/               # Data layer tests
+│       ├── evaluators/         # Evaluator tests
+│       ├── execution/          # Execution tests
+│       ├── features/           # Feature tests
+│       └── hmm/                # HMM module tests
 │
 ├── scripts/                    # CLI scripts
 │   ├── helpers/                # Shared helper modules
@@ -206,23 +236,50 @@ algomatic-state/
 │   ├── compute_features.py
 │   ├── import_csv_to_db.py
 │   ├── init_db.py
+│   ├── train_hmm.py
+│   ├── analyze_hmm_states.py
 │   ├── run_paper_trading.py
 │   └── run_live_trading.py
+│
+├── alembic/                    # Database migrations
+│   ├── env.py
+│   └── versions/
+│       ├── 001_initial_schema.py
+│       ├── 002_add_computed_features.py
+│       ├── 003_remove_vwap.py
+│       ├── 004_consolidate_states_to_features.py
+│       ├── 005_trading_buddy_tables.py
+│       └── 006_broker_integration_tables.py
 │
 ├── ui/                         # Web UI
 │   ├── backend/
 │   │   └── api.py              # FastAPI backend
-│   └── frontend/               # React frontend
+│   └── frontend/               # React + TypeScript frontend
 │
-├── data/                       # Data directory (gitignored)
-├── models/                     # Trained models (per timeframe)
-│   └── timeframe=X/model_id=Y/ # Versioned model artifacts
-├── states/                     # State time-series (Parquet)
-├── logs/                       # Application logs
+├── models/                     # Trained models (per ticker/timeframe)
+│   └── ticker=AAPL/
+│       └── timeframe=1Min/
+│           └── model_id=state_v001/
+│               ├── scaler.pkl
+│               ├── encoder.pkl
+│               ├── hmm.pkl
+│               ├── metadata.json
+│               └── feature_spec.yaml
+│
+├── Dockerfile                  # Docker image for momentum agent
+├── docker-compose.yml          # PostgreSQL + pgAdmin + agent
+│
 └── docs/                       # Documentation
     ├── ARCHITECTURE.md
+    ├── APIs.md
+    ├── DATABASE.md
+    ├── FEATURE.md
+    ├── PRD.md
+    ├── PITFALLS.md
+    ├── UI.md
     ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
-    └── MULTI_TIMEFRAME_STATE_VECTORS_HMM_REGIME_TRACKING.md
+    ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md
+    └── Trading_Buddy_Detailed_TODOs.md
 ```
 
 ## Core Components
@@ -302,7 +359,7 @@ Orchestrates feature computation with:
 
 **Purpose**: Learn continuous latent state vectors and infer discrete market regimes.
 
-**Location**: `src/hmm/`
+**Location**: `src/features/state/hmm/` (HMM) and `src/features/state/pca/` (PCA + K-means alternative)
 
 #### Architecture (per timeframe)
 ```
@@ -330,7 +387,7 @@ Gaussian HMM
 - Different K (state count) per timeframe
 - Higher TF states for risk-on/off; lower TF for timing
 
-#### Key Components
+#### Key Components (all under `src/features/state/hmm/`)
 - **Scalers** (`scalers.py`): RobustScaler (median/IQR), StandardScaler, YeoJohnsonScaler, CombinedScaler
 - **Encoders** (`encoders.py`): PCAEncoder, TemporalPCAEncoder with auto latent dimension selection
 - **HMM** (`hmm_model.py`): GaussianHMMWrapper with K-means init, covariance regularization, AIC/BIC selection
@@ -445,6 +502,95 @@ Fill Handler ──► Update Positions
 | Drawdown | Max 10% from peak | Reduce position sizes 50% |
 | Concentration | Max 40% in single sector | Reject order |
 
+### 7. Market Data Provider Layer
+
+**Purpose**: Abstract market data fetching across vendors (Alpaca, Finnhub).
+
+**Location**: `src/marketdata/`
+
+```python
+class MarketDataProvider(ABC):
+    source_name: str  # "alpaca", "finnhub"
+
+    @abstractmethod
+    def fetch_bars(self, symbol, start, end, resolution="1Min") -> pd.DataFrame:
+        """Fetch OHLCV bars with standard columns and timezone-naive index."""
+```
+
+- `AlpacaProvider`: Wraps alpaca-py SDK
+- `FinnhubProvider`: Wraps finnhub-python SDK
+- `utils.py`: RateLimiter, fetch_with_retry, normalize_ohlcv
+
+### 8. Trading Buddy (Trade Evaluation Layer)
+
+**Purpose**: Review proposed trades against risk, context, and process checks. Acts as a mentor and risk guardian -- never predicts or generates signals.
+
+**Location**: `src/evaluators/`, `src/orchestrator.py`, `src/trade/`, `src/rules/`, `src/api/trading_buddy.py`
+
+#### Evaluation Flow
+```
+TradeIntent
+     │
+     ▼
+ContextPackBuilder
+(bars, features, regimes, key levels, MTFA)
+     │
+     ▼
+EvaluatorOrchestrator
+     │
+     ├─► RiskRewardEvaluator (R:R, sizing, stop sanity)
+     ├─► ExitPlanEvaluator (stop/target presence)
+     ├─► RegimeFitEvaluator (direction vs regime, transition risk)
+     └─► MTFAEvaluator (timeframe alignment)
+     │
+     ▼
+Deduplicate + Score (100 base - penalties)
+     │
+     ▼
+Guardrails (sanitise predictive language)
+     │
+     ▼
+EvaluationResult (score, items, summary)
+```
+
+#### Key Components
+- **TradeIntent** (`src/trade/intent.py`): Proposed trade with entry, stop, target, size
+- **EvaluationResult** (`src/trade/evaluation.py`): Score + items with severity levels (BLOCKER, CRITICAL, WARNING, INFO)
+- **ContextPack** (`src/evaluators/context.py`): Reusable market context with caching (60s TTL)
+- **Evaluator** (`src/evaluators/base.py`): ABC with `evaluate(intent, context, config)` returning `list[EvaluationItem]`
+- **Registry** (`src/evaluators/registry.py`): `@register_evaluator` decorator for plug-in discovery
+- **Guardrails** (`src/rules/guardrails.py`): No-prediction policy enforcement
+
+### 9. Standalone Momentum Agent
+
+**Purpose**: Dockerised trading agent that runs a fetch-compute-trade loop on a timer.
+
+**Location**: `src/agent/`
+
+#### Agent Architecture
+```
+┌─────────────────────────────────────────────────┐
+│                  Agent Process                    │
+│                                                   │
+│  ┌───────────────────┐  ┌─────────────────────┐  │
+│  │  FastAPI Thread    │  │  Scheduler Loop     │  │
+│  │  (internal API)    │  │  (async main loop)  │  │
+│  │  /health           │  │                     │  │
+│  │  /market-data      │  │  1. Market open?    │  │
+│  └───────────────────┘  │  2. Fetch OHLCV     │  │
+│                          │  3. Compute features │  │
+│                          │  4. Generate signals │  │
+│                          │  5. Risk check       │  │
+│                          │  6. Submit orders    │  │
+│                          └─────────────────────┘  │
+└─────────────────────────────────────────────────┘
+```
+
+- Configurable via `AGENT_*` environment variables
+- Data provider switchable: Alpaca or Finnhub
+- Uses `MomentumStrategy` with configurable thresholds
+- Docker Compose service with PostgreSQL dependency
+
 ## Data Flow Diagrams
 
 ### Training Flow
@@ -549,12 +695,15 @@ LOG_LEVEL=INFO
 ### Pydantic Settings (config/settings.py)
 ```python
 class Settings(BaseSettings):
-    alpaca: AlpacaSettings
-    data: DataSettings
-    features: FeatureSettings
-    state: StateSettings
-    strategy: StrategySettings
-    risk: RiskSettings
+    finnhub: FinnhubConfig
+    alpaca: AlpacaConfig
+    data: DataConfig
+    features: FeatureConfig
+    state: StateConfig
+    strategy: StrategyConfig
+    backtest: BacktestConfig
+    logging: LoggingConfig
+    database: DatabaseConfig
 ```
 
 ### YAML Configuration (config/trading.yaml)
@@ -644,15 +793,18 @@ AlgomaticError (base)
 
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
-| Language | Python 3.11+ | Ecosystem, Alpaca SDK |
+| Language | Python 3.12+ | Ecosystem, Alpaca SDK |
 | Data | pandas, numpy, pyarrow | Standard for financial data |
-| Database | PostgreSQL, SQLAlchemy | Persistent storage for OHLCV and features |
-| ML | PyTorch, scikit-learn | Encoder training, clustering |
+| Database | PostgreSQL 16, SQLAlchemy, Alembic | Persistent storage with migrations |
+| ML | scikit-learn | PCA, clustering, preprocessing |
 | HMM | hmmlearn | Gaussian HMM for regime tracking |
 | TA | TA-Lib, pandas-ta | Technical indicators |
 | Validation | pandera | DataFrame schema validation |
-| Config | pydantic, pyyaml | Type-safe configuration |
-| API | alpaca-py | Official Alpaca SDK |
-| Web | FastAPI, React | Visualization UI |
+| Config | pydantic, pydantic-settings, pyyaml | Type-safe configuration |
+| Market Data | alpaca-py, finnhub-python | Multi-provider data fetching |
+| Web Backend | FastAPI, uvicorn | REST API |
+| Web Frontend | React 18, TypeScript, Vite | Visualization UI |
+| Charting | TradingView Lightweight Charts, Plotly | Interactive charts |
+| HTTP Client | httpx | Async HTTP (agent scheduler) |
+| Containerisation | Docker, Docker Compose | Deployment |
 | Testing | pytest | Standard Python testing |
-| Logging | structlog | Structured logging |

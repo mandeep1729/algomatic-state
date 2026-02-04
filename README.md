@@ -1,10 +1,14 @@
 # Algomatic State
 
-Algorithmic trading system using HMM-based regime tracking for market state inference and regime-aware trading strategies.
+Trading copilot platform combining HMM-based market regime tracking with a modular trade evaluation system (Trading Buddy) that surfaces risk, context, and inconsistencies to improve trading decisions.
 
 ## Overview
 
-Algomatic State implements a multi-timeframe Hidden Markov Model (HMM) approach to market regime tracking. The system learns continuous latent state vectors from engineered features and uses Gaussian HMMs to infer discrete market regimes, enabling regime-aware trading strategies.
+Algomatic State has two major subsystems:
+
+1. **Regime Tracking Engine** -- Multi-timeframe Hidden Markov Model (HMM) approach to market state inference. The system learns continuous latent state vectors from engineered features and uses Gaussian HMMs to infer discrete market regimes.
+
+2. **Trading Buddy (Trade Evaluation)** -- A modular evaluator orchestrator that reviews proposed trades against risk/reward checks, exit plan quality, regime fit, multi-timeframe alignment, and guardrails. Acts as a mentor and risk guardian, not a signal generator.
 
 ### Key Features
 
@@ -15,6 +19,9 @@ Algomatic State implements a multi-timeframe Hidden Markov Model (HMM) approach 
 - **OOD Detection**: Log-likelihood based out-of-distribution detection
 - **Walk-Forward Validation**: Time-based cross-validation with leakage prevention
 - **Production Monitoring**: Drift detection, shadow inference, retraining triggers
+- **Trade Evaluation**: Pluggable evaluator modules (risk/reward, exit plan, regime fit, MTFA)
+- **Standalone Momentum Agent**: Dockerised agent with scheduler loop, risk manager, and Alpaca/Finnhub data providers
+- **Broker Integration**: SnapTrade-based broker connection for trade history sync
 
 ## Architecture
 
@@ -58,13 +65,16 @@ pip install -r requirements.txt
 ### Dependencies
 
 - `alpaca-py`: Alpaca Markets SDK for trading and market data
+- `finnhub-python`: Finnhub market data provider
 - `pandas`, `numpy`: Data manipulation
 - `scikit-learn`: PCA and preprocessing
 - `hmmlearn`: Gaussian HMM implementation
 - `scipy`: Statistical transforms
 - `pyarrow`: Parquet storage
-- `pydantic`: Configuration management
-- `SQLAlchemy`: Database ORM
+- `pydantic`, `pydantic-settings`: Configuration management
+- `SQLAlchemy`, `alembic`: Database ORM and migrations
+- `FastAPI`, `uvicorn`: REST API backend
+- `httpx`: Async HTTP client (agent scheduler)
 
 ## Quick Start
 
@@ -143,59 +153,153 @@ print(f"Is OOD: {output.is_ood}")
 ```
 algomatic-state/
 ├── config/
-│   ├── settings.py                 # Pydantic configuration
-│   └── state_vector_feature_spec.yaml  # Feature and model config
+│   ├── settings.py                 # Pydantic configuration (Settings, DatabaseConfig, etc.)
+│   ├── assets.yaml                 # Asset universe
+│   ├── features.json               # Feature configuration
+│   ├── trading.yaml                # Trading strategy and backtest config
+│   └── state_vector_feature_spec.yaml  # HMM feature and model config
 │
 ├── src/
+│   ├── agent/                      # Standalone momentum trading agent
+│   │   ├── main.py                # Entry point (FastAPI + scheduler)
+│   │   ├── config.py              # AgentConfig (env-based)
+│   │   ├── strategy.py            # MomentumStrategy
+│   │   ├── scheduler.py           # Async fetch-compute-trade loop
+│   │   └── api.py                 # Internal /market-data endpoint
+│   │
+│   ├── api/                        # Public API routers
+│   │   ├── trading_buddy.py       # Trading Buddy REST endpoints
+│   │   └── broker.py              # SnapTrade broker integration
+│   │
 │   ├── data/                       # Data loading and storage
 │   │   ├── loaders/               # CSV, Alpaca, Database loaders
-│   │   └── database/              # SQLAlchemy models
+│   │   ├── database/              # SQLAlchemy models and repositories
+│   │   ├── cache.py               # Data caching
+│   │   ├── schemas.py             # Pandera OHLCV schema
+│   │   └── quality.py             # Data quality checks
+│   │
+│   ├── marketdata/                 # Market data provider abstraction
+│   │   ├── base.py                # MarketDataProvider ABC
+│   │   ├── alpaca_provider.py     # Alpaca data provider
+│   │   ├── finnhub_provider.py    # Finnhub data provider
+│   │   └── utils.py               # Rate limiter, retry, normalisation
 │   │
 │   ├── features/                   # Feature engineering
 │   │   ├── returns.py             # Return-based features
 │   │   ├── volatility.py          # Volatility features
 │   │   ├── volume.py              # Volume features
-│   │   └── pipeline.py            # Feature orchestration
+│   │   ├── intrabar.py            # Intrabar structure features
+│   │   ├── anchor.py              # Anchor VWAP features
+│   │   ├── time_of_day.py         # Time-of-day encoding
+│   │   ├── market_context.py      # Market context features
+│   │   ├── talib_indicators.py    # TA-Lib indicators
+│   │   ├── pandas_ta_indicators.py # pandas-ta indicators
+│   │   ├── pipeline.py            # Feature orchestration
+│   │   ├── registry.py            # Feature registry
+│   │   └── state/                 # State representation modules
+│   │       ├── hmm/               # HMM regime tracking
+│   │       │   ├── contracts.py   # Data contracts (FeatureVector, HMMOutput)
+│   │       │   ├── config.py      # Configuration loading
+│   │       │   ├── artifacts.py   # Model artifact management
+│   │       │   ├── scalers.py     # Robust, Standard, Yeo-Johnson scalers
+│   │       │   ├── encoders.py    # PCA and Temporal PCA encoders
+│   │       │   ├── hmm_model.py   # Gaussian HMM wrapper
+│   │       │   ├── data_pipeline.py # Feature loading, gap handling, splitting
+│   │       │   ├── training.py    # Training pipeline
+│   │       │   ├── inference.py   # Online inference engine
+│   │       │   ├── storage.py     # Parquet state storage
+│   │       │   ├── validation.py  # Model validation and diagnostics
+│   │       │   └── monitoring.py  # Drift detection and operations
+│   │       └── pca/               # PCA + K-means state computation
+│   │           ├── contracts.py   # PCAStateOutput, PCAModelMetadata
+│   │           ├── artifacts.py   # Model path management
+│   │           ├── training.py    # PCAStateTrainer
+│   │           ├── engine.py      # PCAStateEngine for inference
+│   │           └── labeling.py    # Semantic state labeling
 │   │
-│   ├── hmm/                        # HMM State Vector Module
-│   │   ├── contracts.py           # Data contracts (FeatureVector, HMMOutput, etc.)
-│   │   ├── config.py              # Configuration loading
-│   │   ├── artifacts.py           # Model artifact management
-│   │   ├── scalers.py             # Robust, Standard, Yeo-Johnson scalers
-│   │   ├── encoders.py            # PCA and Temporal PCA encoders
-│   │   ├── hmm_model.py           # Gaussian HMM wrapper
-│   │   ├── data_pipeline.py       # Feature loading, gap handling, splitting
-│   │   ├── training.py            # Training pipeline and hyperparameter tuning
-│   │   ├── inference.py           # Online inference engine
-│   │   ├── storage.py             # Parquet state storage
-│   │   ├── validation.py          # Model validation and diagnostics
-│   │   └── monitoring.py          # Drift detection and operations
+│   ├── trade/                      # Domain objects
+│   │   ├── intent.py              # TradeIntent with validation
+│   │   └── evaluation.py          # EvaluationResult, Severity, Evidence
+│   │
+│   ├── evaluators/                 # Trade evaluation engine
+│   │   ├── base.py                # Evaluator ABC
+│   │   ├── registry.py            # @register_evaluator decorator
+│   │   ├── evidence.py            # Evidence helpers (z-scores, thresholds)
+│   │   ├── context.py             # ContextPack and ContextPackBuilder
+│   │   ├── risk_reward.py         # Risk/Reward evaluator
+│   │   ├── exit_plan.py           # Exit plan evaluator
+│   │   ├── regime_fit.py          # Regime fit evaluator
+│   │   └── mtfa.py                # Multi-timeframe alignment evaluator
+│   │
+│   ├── orchestrator.py             # EvaluatorOrchestrator
+│   ├── rules/
+│   │   └── guardrails.py          # Output sanitisation (no-prediction policy)
 │   │
 │   ├── backtest/                   # Backtesting engine
+│   │   ├── engine.py              # BacktestEngine
+│   │   ├── walk_forward.py        # Walk-forward validation
+│   │   ├── metrics.py             # Performance metrics
+│   │   └── report.py              # Reporting
+│   │
 │   └── execution/                  # Live trading execution
+│       ├── client.py              # Alpaca client wrapper
+│       ├── orders.py              # Order types and status
+│       ├── order_manager.py       # Order lifecycle
+│       ├── order_tracker.py       # Order tracking
+│       ├── risk_manager.py        # Risk checks
+│       ├── runner.py              # Trading runner
+│       └── snaptrade_client.py    # SnapTrade broker client
 │
-├── tests/
+├── tests/                          # Test suite
 │   └── unit/
-│       └── hmm/                    # HMM module tests
+│       ├── backtest/              # Backtest tests
+│       ├── broker/                # Broker integration tests
+│       ├── data/                  # Data layer tests
+│       ├── evaluators/            # Evaluator tests
+│       ├── execution/             # Execution tests
+│       ├── features/              # Feature tests
+│       └── hmm/                   # HMM module tests
 │
 ├── models/                         # Trained model artifacts
-│   └── timeframe=1Min/
-│       └── model_id=state_v001/
-│           ├── scaler.pkl
-│           ├── encoder.pkl
-│           ├── hmm.pkl
-│           └── metadata.json
+│   └── ticker=AAPL/
+│       └── timeframe=1Min/
+│           └── model_id=state_v001/
+│               ├── scaler.pkl
+│               ├── encoder.pkl
+│               ├── hmm.pkl
+│               └── metadata.json
 │
-├── states/                         # State time-series (Parquet)
-│   └── timeframe=1Min/
-│       └── model_id=state_v001/
-│           └── symbol=AAPL/
-│               └── date=2024-01-15/
-│                   └── data.parquet
+├── alembic/                        # Database migrations
+│   └── versions/
+│
+├── ui/                             # Web UI
+│   ├── backend/                   # FastAPI backend (api.py)
+│   └── frontend/                  # React + TypeScript frontend
+│
+├── scripts/                        # CLI scripts
+│   ├── download_data.py
+│   ├── compute_features.py
+│   ├── import_csv_to_db.py
+│   ├── init_db.py
+│   ├── train_hmm.py
+│   ├── analyze_hmm_states.py
+│   ├── run_paper_trading.py
+│   └── run_live_trading.py
+│
+├── Dockerfile                      # Docker image for momentum agent
+├── docker-compose.yml              # PostgreSQL + pgAdmin + agent
 │
 └── docs/                           # Documentation
     ├── ARCHITECTURE.md
-    └── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+    ├── APIs.md
+    ├── DATABASE.md
+    ├── FEATURE.md
+    ├── PRD.md
+    ├── PITFALLS.md
+    ├── UI.md
+    ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+    ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md
+    └── Trading_Buddy_Detailed_TODOs.md
 ```
 
 ## Configuration
@@ -279,19 +383,28 @@ timeframe_configs:
 ## Testing
 
 ```bash
-# Run all HMM tests
+# Run all tests
+pytest tests/ -v
+
+# Run HMM tests only
 pytest tests/unit/hmm/ -v
 
 # Run with coverage
-pytest tests/unit/hmm/ --cov=src/hmm --cov-report=html
+pytest tests/unit/hmm/ --cov=src/features/state/hmm --cov-report=html
 ```
 
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md): System design and data flow
-- [Implementation Plan](docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md): Phase-by-phase implementation details
-- [Technical Design](docs/MULTI_TIMEFRAME_STATE_VECTORS_HMM_REGIME_TRACKING.md): HMM design document
-- [SnapTrade Integration](docs/SNAPTRADE.md): Brokerage integration details
+- [APIs](docs/APIs.md): REST API reference
+- [Database](docs/DATABASE.md): Database schema, migrations, and configuration
+- [Features](docs/FEATURE.md): Feature engineering specification
+- [PRD](docs/PRD.md): Product requirements document
+- [Pitfalls](docs/PITFALLS.md): ML and trading pitfalls research
+- [UI](docs/UI.md): Regime state visualization UI
+- [HMM Implementation Plan](docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md): Phase-by-phase HMM implementation
+- [Trading Buddy Roadmap](docs/Trading_Buddy_Master_Roadmap_and_DB_Schema.md): Evaluation platform architecture
+- [Trading Buddy TODOs](docs/Trading_Buddy_Detailed_TODOs.md): Detailed implementation status
 
 ## License
 

@@ -6,11 +6,15 @@ Documentation for the Algomatic State algorithmic trading platform.
 
 Algomatic State provides:
 - Persistent storage of OHLCV (Open, High, Low, Close, Volume) market data
-- Smart incremental fetching from Alpaca API (only fetches new data)
+- Smart incremental fetching from Alpaca and Finnhub APIs
 - Support for multiple timeframes (1Min, 5Min, 15Min, 1Hour, 1Day)
 - Data import from CSV/Parquet files
+- HMM and PCA-based market regime tracking
+- Trading Buddy: modular trade evaluation engine (risk/reward, exit plan, regime fit, MTFA)
+- Standalone momentum trading agent (Dockerised)
 - REST API endpoints for data access and visualization
 - React UI for regime state visualization
+- SnapTrade broker integration for trade history sync
 
 ## Architecture
 
@@ -20,11 +24,11 @@ Algomatic State provides:
 │   (Frontend)    │     │   (Backend)     │     │   (Database)    │
 └─────────────────┘     └─────────────────┘     └─────────────────┘
                                │
-                               ▼
-                        ┌─────────────────┐
-                        │   Alpaca API    │
-                        │   (Data Source) │
-                        └─────────────────┘
+                        ┌──────┴──────┐
+                        ▼             ▼
+                 ┌────────────┐ ┌────────────┐
+                 │ Alpaca API │ │ Finnhub API│
+                 └────────────┘ └────────────┘
 ```
 
 ## Quick Start
@@ -278,7 +282,13 @@ ALPACA_SECRET_KEY=your_secret_key
 
 ## Documentation Index
 
-- [DATABASE.md](DATABASE.md) - Database schema, migrations, and configuration
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and data flow
 - [APIs.md](APIs.md) - REST API reference
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture details
-- [FEATURE.md](FEATURE.md) - Feature engineering documentation
+- [DATABASE.md](DATABASE.md) - Database schema, migrations, and configuration
+- [FEATURE.md](FEATURE.md) - Feature engineering specification
+- [PRD.md](PRD.md) - Product requirements document
+- [PITFALLS.md](PITFALLS.md) - ML and trading pitfalls research
+- [UI.md](UI.md) - Regime state visualization UI
+- [STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md](STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md) - HMM implementation phases
+- [Trading_Buddy_Master_Roadmap_and_DB_Schema.md](Trading_Buddy_Master_Roadmap_and_DB_Schema.md) - Trading Buddy platform architecture
+- [Trading_Buddy_Detailed_TODOs.md](Trading_Buddy_Detailed_TODOs.md) - Detailed Trading Buddy implementation status
