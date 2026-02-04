@@ -184,6 +184,14 @@ def set_cached_data(key: str, data):
     _cache[key] = data
 
 
+def invalidate_cache_for_symbol(symbol: str):
+    """Remove all cached entries for a symbol so fresh data is read from DB."""
+    upper = symbol.upper()
+    keys_to_remove = [k for k in _cache if upper in k.upper()]
+    for k in keys_to_remove:
+        del _cache[k]
+
+
 @app.get("/api/sources", response_model=list[DataSourceInfo])
 async def get_data_sources():
     """Get list of available data sources."""
@@ -714,6 +722,9 @@ async def trigger_sync(
 
         # Trigger sync by loading data (auto_fetch is enabled)
         df = db_loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)
+
+        # Invalidate cached API responses so subsequent GETs read fresh data from DB
+        invalidate_cache_for_symbol(symbol)
 
         return {
             "message": f"Sync completed for {symbol.upper()}/{timeframe}",

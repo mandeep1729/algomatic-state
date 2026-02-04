@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+See @.claude/skills/CODING.md for coding best practices and design patterns.
+See @.claude/SOFTWARE-ROLE.md for your role
+
+
 ## Project Overview
 
 This project builds a trading copilot / assistant whose primary role is to improve trading decisions by surfacing risk, context, and inconsistencies, not by predicting prices or generating trading signals.
@@ -47,4 +51,3 @@ The system acts as a second set of eyes — quietly reviewing a proposed trade a
 - Build long-term trader trust
 
 
-See @.claude/skills/CODING.md for coding best practices and design patterns.
