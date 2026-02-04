@@ -58,11 +58,11 @@ class TestFeatureRegistry:
     def test_get_default_calculators(self):
         """Test getting default calculators."""
         calcs = get_default_calculators(include_market_context=False)
-        # Should have 6 default calculators
-        assert len(calcs) == 6
+        # 6 base calculators + TA-Lib/pandas-ta if available
+        assert len(calcs) >= 6
         types = [type(c) for c in calcs]
         assert ReturnFeatureCalculator in types
         assert VolatilityFeatureCalculator in types
-        
+
         calcs_with_market = get_default_calculators(include_market_context=True)
-        assert len(calcs_with_market) == 7
+        assert len(calcs_with_market) == len(calcs) + 1
