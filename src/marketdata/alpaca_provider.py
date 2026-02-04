@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.enums import DataFeed
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
@@ -109,6 +110,7 @@ class AlpacaProvider(MarketDataProvider):
                 timeframe=timeframe,
                 start=start,
                 end=end,
+                feed=DataFeed.IEX,
             )
             bars = self.client.get_stock_bars(request)
 
