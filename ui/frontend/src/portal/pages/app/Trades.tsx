@@ -74,6 +74,9 @@ export default function Trades() {
     [searchParams, setSearchParams],
   );
 
+  // When a ticker is selected for the chart, use it as the symbol filter for the table
+  const effectiveSymbolFilter = selectedTicker ?? symbolFilter;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -83,7 +86,7 @@ export default function Trades() {
         const res = await api.fetchTrades({
           source: sourceFilter || undefined,
           status: statusFilter || undefined,
-          symbol: symbolFilter || undefined,
+          symbol: effectiveSymbolFilter || undefined,
           flagged: flaggedFilter === 'true' ? true : flaggedFilter === 'false' ? false : undefined,
           sort: sortField,
           page: currentPage,
@@ -100,7 +103,7 @@ export default function Trades() {
 
     load();
     return () => { cancelled = true; };
-  }, [sourceFilter, statusFilter, symbolFilter, flaggedFilter, sortField, currentPage]);
+  }, [sourceFilter, statusFilter, effectiveSymbolFilter, flaggedFilter, sortField, currentPage]);
 
   // Handle ticker click to load chart
   const handleTickerClick = useCallback(async (symbol: string, event: React.MouseEvent) => {
@@ -319,7 +322,9 @@ export default function Trades() {
             ) : trades.length === 0 ? (
               <tr>
                 <td colSpan={9} className="px-6 py-12 text-center text-[var(--text-secondary)]">
-                  No trades match your filters.
+                  {selectedTicker
+                    ? `No trades found for ${selectedTicker}.`
+                    : 'No trades match your filters.'}
                 </td>
               </tr>
             ) : (
