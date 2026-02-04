@@ -7,6 +7,7 @@ removed as part of the HMM regime tracking system redesign.
 See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -16,6 +17,8 @@ import numpy as np
 import pandas as pd
 
 from src.backtest.metrics import PerformanceMetrics, calculate_metrics
+
+logger = logging.getLogger(__name__)
 
 
 # Placeholder types until strategy module is reimplemented
@@ -271,6 +274,11 @@ class BacktestEngine:
             all_timestamps.update(df.index.tolist())
         all_timestamps = sorted(all_timestamps)
 
+        logger.info(
+            "Starting backtest: %d symbols, %d timestamps",
+            len(data), len(all_timestamps),
+        )
+
         # Main event loop
         for i, timestamp in enumerate(all_timestamps):
             # 1. Get current bar data for all symbols
@@ -347,9 +355,11 @@ class BacktestEngine:
                         self._signals.append(signal)
                         self._process_signal(signal, current_bars[symbol], timestamp)
 
-                except Exception as e:
-                    # Log error but continue
-                    pass
+                except Exception:
+                    logger.exception(
+                        "Error generating signals for %s at %s",
+                        symbol, timestamp,
+                    )
 
             # 6. Execute orders if not waiting for next bar
             if not self._config.fill_on_next_bar:
@@ -366,6 +376,11 @@ class BacktestEngine:
             equity_curve,
             [t.to_dict() for t in self._trades],
             risk_free_rate=self._config.risk_free_rate,
+        )
+
+        logger.info(
+            "Backtest complete: %d trades, total_return=%.4f, sharpe=%.2f",
+            metrics.total_trades, metrics.total_return, metrics.sharpe_ratio,
         )
 
         return BacktestResult(

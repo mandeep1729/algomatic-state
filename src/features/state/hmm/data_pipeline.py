@@ -7,6 +7,7 @@ Handles:
 - Train/validation/test splitting with leakage prevention
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
@@ -18,6 +19,8 @@ from sqlalchemy.orm import Session
 
 from src.data.database.models import ComputedFeature, OHLCVBar, Ticker
 from src.features.state.hmm.contracts import FeatureVector, VALID_TIMEFRAMES
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -114,6 +117,10 @@ class FeatureLoader:
         features = self.session.execute(stmt).scalars().all()
 
         if not features:
+            logger.debug(
+                "No features found for %s/%s in range %s to %s",
+                symbol, timeframe, start, end,
+            )
             return pd.DataFrame(columns=["timestamp"] + feature_names)
 
         records = []
@@ -126,6 +133,10 @@ class FeatureLoader:
         df = pd.DataFrame(records)
         df.set_index("timestamp", inplace=True)
         df.sort_index(inplace=True)
+
+        logger.debug(
+            "Loaded %d feature rows for %s/%s", len(df), symbol, timeframe,
+        )
 
         return df
 

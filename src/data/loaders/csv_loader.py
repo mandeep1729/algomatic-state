@@ -1,5 +1,6 @@
 """CSV data loader for OHLCV market data."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -7,6 +8,8 @@ import pandas as pd
 
 from src.data.loaders.base import BaseDataLoader
 from src.data.schemas import validate_ohlcv
+
+logger = logging.getLogger(__name__)
 
 
 # Common timestamp column names to detect
@@ -86,6 +89,8 @@ class CSVLoader(BaseDataLoader):
         if not path.exists():
             raise FileNotFoundError(f"CSV file not found: {path}")
 
+        logger.debug("Loading CSV from %s", path)
+
         # Load raw CSV
         df = pd.read_csv(path)
 
@@ -121,6 +126,8 @@ class CSVLoader(BaseDataLoader):
         # Validate schema
         if self.validate:
             df = validate_ohlcv(df)
+
+        logger.info("Loaded %d rows from %s", len(df), path)
 
         return df
 

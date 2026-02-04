@@ -1,11 +1,14 @@
 """Caching layer for market data."""
 
 import hashlib
+import logging
 import pickle
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class DataCache:
@@ -83,9 +86,14 @@ class DataCache:
         if cache_path.exists():
             try:
                 with open(cache_path, "rb") as f:
-                    return pickle.load(f)
+                    data = pickle.load(f)
+                logger.debug("Cache hit for %s", symbol)
+                return data
             except Exception:
-                # Corrupted cache file, remove it
+                logger.warning(
+                    "Corrupted cache file for %s, removing %s",
+                    symbol, cache_path,
+                )
                 cache_path.unlink(missing_ok=True)
                 return None
         return None
@@ -115,6 +123,7 @@ class DataCache:
 
         with open(cache_path, "wb") as f:
             pickle.dump(data, f)
+        logger.debug("Cached %s (%d rows) to %s", symbol, len(data), cache_path)
         return cache_path
 
     def clear(self, symbol: str | None = None) -> int:
@@ -137,6 +146,7 @@ class DataCache:
             for f in self.cache_dir.rglob("*.pkl"):
                 f.unlink()
                 count += 1
+        logger.info("Cleared %d cache files%s", count, f" for {symbol}" if symbol else "")
         return count
 
     def list_cached(self, symbol: str | None = None) -> list[dict]:

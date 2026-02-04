@@ -7,6 +7,7 @@ Implements:
 - Model selection (AIC/BIC)
 """
 
+import logging
 import pickle
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,8 @@ from typing import Literal, Optional
 
 import numpy as np
 from sklearn.cluster import KMeans
+
+logger = logging.getLogger(__name__)
 
 try:
     from hmmlearn import hmm
@@ -186,6 +189,11 @@ class GaussianHMMWrapper:
 
         self._latent_dim = Z_clean.shape[1]
 
+        logger.info(
+            "Fitting HMM: n_states=%d, n_samples=%d, latent_dim=%d",
+            self.n_states, len(Z_clean), self._latent_dim,
+        )
+
         means, covars = self._init_from_kmeans(Z_clean)
 
         self.model_ = hmm.GaussianHMM(
@@ -212,6 +220,11 @@ class GaussianHMMWrapper:
         self._regularize_covariances()
 
         self._compute_metrics(Z_clean, lengths=clean_lengths)
+
+        logger.info(
+            "HMM fitted: log_likelihood=%.2f, AIC=%.2f, BIC=%.2f",
+            self.metrics_.log_likelihood, self.metrics_.aic, self.metrics_.bic,
+        )
 
         return self
 
@@ -468,6 +481,7 @@ class GaussianHMMWrapper:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "wb") as f:
             pickle.dump(self, f)
+        logger.info("Saved HMM model to %s", path)
 
     @classmethod
     def load(cls, path: Path | str) -> "GaussianHMMWrapper":
@@ -521,7 +535,15 @@ def select_n_states(
             else:
                 scores[n_states] = wrapper.metrics_.bic
 
+            logger.debug(
+                "Model selection: n_states=%d, %s=%.2f",
+                n_states, criterion, scores[n_states],
+            )
+
         except Exception:
+            logger.debug(
+                "Model selection: n_states=%d failed to fit", n_states
+            )
             continue
 
     if not scores:

@@ -10,6 +10,7 @@ Implements:
 - Validation report generation
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -20,6 +21,8 @@ import pandas as pd
 
 from src.features.state.hmm.contracts import HMMOutput
 from src.features.state.hmm.hmm_model import GaussianHMMWrapper
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -440,6 +443,13 @@ class ModelValidator:
             "mean_entropy": posterior_stats.mean_entropy,
             "ood_rate": ood_rate,
         }
+
+        logger.info(
+            "Validation complete for model %s: n_samples=%d, "
+            "mean_confidence=%.3f, ood_rate=%.3f",
+            self.model_id, len(Z_clean),
+            posterior_stats.mean_max_prob, ood_rate,
+        )
 
         return ValidationReport(
             model_id=self.model_id,

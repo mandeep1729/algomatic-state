@@ -1,10 +1,13 @@
 """Data quality validation and reporting for OHLCV market data."""
 
+import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -230,6 +233,14 @@ class DataQualityValidator:
             and len(report.gaps) == 0
             and len(report.outliers) == 0
         )
+
+        if report.issues:
+            logger.warning(
+                "Data quality issues for %s: %s",
+                symbol, "; ".join(report.issues),
+            )
+        else:
+            logger.debug("Data quality validation passed for %s", symbol)
 
         return report
 

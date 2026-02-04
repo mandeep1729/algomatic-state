@@ -7,6 +7,7 @@ Implements:
 - Partitioned storage layout
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, date
 from pathlib import Path
@@ -19,6 +20,8 @@ import pyarrow.parquet as pq
 
 from src.features.state.hmm.artifacts import StatesPaths, get_states_path
 from src.features.state.hmm.contracts import HMMOutput, VALID_TIMEFRAMES
+
+logger = logging.getLogger(__name__)
 
 
 STATE_SCHEMA = pa.schema([
@@ -160,6 +163,10 @@ class StateWriter:
         )
 
         self._buffer.clear()
+
+        logger.debug(
+            "Flushed %d state records to %s", len(df), output_path,
+        )
 
         return output_path
 
