@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Search, ChevronLeft, ChevronRight } from 'lucide-react';
-import api from '../../api';
+import { AlertTriangle, Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import api, { fetchMockOHLCVData, fetchMockFeatures } from '../../api';
 import type { TradeSummary } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
+import { OHLCVChart } from '../../../components/OHLCVChart';
+import { useChartContext } from '../../context/ChartContext';
 import { format } from 'date-fns';
 
 const SOURCE_OPTIONS: { label: string; value: string }[] = [
@@ -45,6 +47,14 @@ export default function Trades() {
   const [trades, setTrades] = useState<TradeSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  // Chart state
+  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [ohlcvData, setOhlcvData] = useState<{ timestamps: string[]; open: number[]; high: number[]; low: number[]; close: number[]; volume: number[] } | null>(null);
+  const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  const { setChartActive, setFeatureNames, selectedFeatures } = useChartContext();
 
   const updateParam = useCallback(
     (key: string, value: string) => {
@@ -90,6 +100,38 @@ export default function Trades() {
     load();
     return () => { cancelled = true; };
   }, [sourceFilter, statusFilter, symbolFilter, flaggedFilter, sortField, currentPage]);
+
+  // Handle ticker click to load chart
+  const handleTickerClick = useCallback(async (symbol: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent row click navigation
+    if (selectedTicker === symbol) return;
+    setSelectedTicker(symbol);
+    setChartLoading(true);
+    setChartActive(true);
+    try {
+      const [ohlcv, features] = await Promise.all([
+        fetchMockOHLCVData(symbol),
+        fetchMockFeatures(symbol),
+      ]);
+      setOhlcvData(ohlcv);
+      setFeatureData(features);
+      setFeatureNames(features.feature_names);
+    } catch {
+      setOhlcvData(null);
+      setFeatureData(null);
+      setFeatureNames([]);
+    } finally {
+      setChartLoading(false);
+    }
+  }, [selectedTicker, setChartActive, setFeatureNames]);
+
+  const handleCloseChart = useCallback(() => {
+    setSelectedTicker(null);
+    setOhlcvData(null);
+    setFeatureData(null);
+    setChartActive(false);
+    setFeatureNames([]);
+  }, [setChartActive, setFeatureNames]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -154,11 +196,10 @@ export default function Trades() {
               updateParam('flagged', 'true');
             }
           }}
-          className={`flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs transition-colors ${
-            flaggedFilter === 'true'
+          className={`flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs transition-colors ${flaggedFilter === 'true'
               ? 'border-[var(--accent-red)] bg-[var(--accent-red)]/10 text-[var(--accent-red)]'
               : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-          }`}
+            }`}
         >
           <AlertTriangle size={13} />
           Flagged Only
@@ -176,32 +217,73 @@ export default function Trades() {
         </select>
       </div>
 
+      {/* OHLCV Chart (shown when a ticker is selected) */}
+      {selectedTicker && (
+        <div className="mb-6">
+          <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
+            <div className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold text-[var(--accent-blue)]">{selectedTicker}</span>
+                <span className="text-xs text-[var(--text-secondary)]">5min chart</span>
+              </div>
+              <button
+                onClick={handleCloseChart}
+                className="flex h-6 w-6 items-center justify-center rounded text-[var(--text-secondary)] transition-colors duration-150 hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+                title="Close chart"
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="p-2">
+              {chartLoading ? (
+                <div className="flex h-[400px] items-center justify-center text-sm text-[var(--text-secondary)]">
+                  Loading chart data...
+                </div>
+              ) : ohlcvData ? (
+                <OHLCVChart
+                  data={ohlcvData}
+                  featureData={featureData}
+                  selectedFeatures={selectedFeatures}
+                  showVolume={true}
+                  showStates={false}
+                  height={400}
+                />
+              ) : (
+                <div className="flex h-[400px] items-center justify-center text-sm text-[var(--text-secondary)]">
+                  No chart data available for {selectedTicker}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium text-[var(--text-secondary)]">
-              <th className="px-4 py-3">Symbol</th>
-              <th className="px-4 py-3">Direction</th>
-              <th className="px-4 py-3">Entry</th>
-              <th className="px-4 py-3">Exit</th>
-              <th className="px-4 py-3">Qty</th>
-              <th className="px-4 py-3">Source</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Flags</th>
-              <th className="px-4 py-3">Time</th>
+            <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+              <th className="px-6 py-4">Symbol</th>
+              <th className="px-6 py-4">Direction</th>
+              <th className="px-6 py-4">Entry</th>
+              <th className="px-6 py-4">Exit</th>
+              <th className="px-6 py-4">Qty</th>
+              <th className="px-6 py-4">Source</th>
+              <th className="px-6 py-4">Status</th>
+              <th className="px-6 py-4">Flags</th>
+              <th className="px-6 py-4">Time</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-[var(--border-color)]">
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-[var(--text-secondary)]">
+                <td colSpan={9} className="px-6 py-12 text-center text-[var(--text-secondary)]">
                   Loading...
                 </td>
               </tr>
             ) : trades.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-[var(--text-secondary)]">
+                <td colSpan={9} className="px-6 py-12 text-center text-[var(--text-secondary)]">
                   No trades match your filters.
                 </td>
               </tr>
@@ -210,33 +292,43 @@ export default function Trades() {
                 <tr
                   key={trade.id}
                   onClick={() => navigate(`/app/trades/${trade.id}`)}
-                  className="cursor-pointer border-b border-[var(--border-color)] last:border-0 hover:bg-[var(--bg-primary)] transition-colors"
+                  className="cursor-pointer transition-colors hover:bg-[var(--bg-tertiary)]/50"
                 >
-                  <td className="px-4 py-3 font-medium">{trade.symbol}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4">
+                    <button
+                      onClick={(e) => handleTickerClick(trade.symbol, e)}
+                      className={`font-medium hover:underline ${selectedTicker === trade.symbol
+                          ? 'text-[var(--accent-green)]'
+                          : 'text-[var(--accent-blue)]'
+                        }`}
+                    >
+                      {trade.symbol}
+                    </button>
+                  </td>
+                  <td className="px-6 py-4">
                     <DirectionBadge direction={trade.direction} />
                   </td>
-                  <td className="px-4 py-3 font-mono text-xs">${trade.entry_price.toFixed(2)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">
+                  <td className="px-6 py-4 font-mono text-xs text-[var(--text-secondary)]">${trade.entry_price.toFixed(2)}</td>
+                  <td className="px-6 py-4 font-mono text-xs text-[var(--text-secondary)]">
                     {trade.exit_price != null ? `$${trade.exit_price.toFixed(2)}` : '--'}
                   </td>
-                  <td className="px-4 py-3 text-[var(--text-secondary)]">{trade.quantity}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4 text-[var(--text-secondary)]">{trade.quantity}</td>
+                  <td className="px-6 py-4">
                     <SourceBadge source={trade.source} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4">
                     <StatusBadge status={trade.status} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-6 py-4">
                     {trade.is_flagged ? (
-                      <span className="inline-flex items-center gap-1 rounded bg-[var(--accent-red)]/10 px-2 py-0.5 text-xs text-[var(--accent-red)]">
-                        {trade.flag_count}
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-red)]/10 px-2.5 py-1 text-xs font-medium text-[var(--accent-red)]">
+                        {trade.flag_count} Flags
                       </span>
                     ) : (
-                      <span className="text-[var(--text-secondary)]">--</span>
+                      <span className="text-[var(--text-secondary)]">-</span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-xs text-[var(--text-secondary)]">
+                  <td className="px-6 py-4 text-xs text-[var(--text-secondary)]">
                     {formatTime(trade.entry_time)}
                   </td>
                 </tr>
@@ -275,4 +367,5 @@ export default function Trades() {
     </div>
   );
 }
+
 
