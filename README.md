@@ -186,6 +186,55 @@ The UI will be available at `http://localhost:5173`.
 
 See [docs/UI.md](docs/UI.md) for detailed usage, API endpoints, and troubleshooting.
 
+### 7. Launch the Momentum Trading Agent
+
+The momentum agent runs a configurable loop that fetches market data, computes features, generates momentum signals, and places paper trades via Alpaca. It includes an internal FastAPI endpoint for health checks and market data retrieval.
+
+#### Option A: Docker Compose (recommended)
+
+This starts PostgreSQL, the momentum agent, and optionally pgAdmin together.
+
+```bash
+# 1. Copy and configure your environment
+cp .env.example .env
+# Edit .env to set ALPACA_API_KEY, ALPACA_SECRET_KEY, and optionally FINNHUB_API_KEY
+
+# 2. Start the database and agent
+docker compose up -d
+
+# 3. (Optional) Include pgAdmin for database management
+docker compose --profile tools up -d
+
+# 4. View agent logs
+docker logs -f algomatic-momentum-agent
+```
+
+#### Option B: Run locally without Docker
+
+```bash
+# Ensure the database is running (either via Docker or locally)
+docker compose up -d postgres
+
+# Run the agent directly
+python -m src.agent.main
+```
+
+#### Agent Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `AGENT_SYMBOL` | `AAPL` | Ticker symbol to trade |
+| `AGENT_INTERVAL_MINUTES` | `15` | Minutes between each loop iteration |
+| `AGENT_DATA_PROVIDER` | `finnhub` | Market data source (`alpaca` or `finnhub`) |
+| `AGENT_LOOKBACK_DAYS` | `5` | Days of historical data to fetch each cycle |
+| `AGENT_POSITION_SIZE_DOLLARS` | `10000` | Dollar amount per position |
+| `AGENT_PAPER` | `true` | Use Alpaca paper trading (`true`/`false`) |
+| `STRATEGY_MOMENTUM_FEATURE` | `r5` | Feature used for momentum signal |
+| `STRATEGY_LONG_THRESHOLD` | `0.001` | Momentum value above which to go long |
+| `STRATEGY_SHORT_THRESHOLD` | `-0.001` | Momentum value below which to go short |
+
+The agent requires `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` to be set for order submission. If using Finnhub as the data provider, also set `FINNHUB_API_KEY`.
+
 ## Project Structure
 
 ```
