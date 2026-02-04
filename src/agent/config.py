@@ -15,6 +15,6 @@ class AgentConfig(BaseSettings):
     interval_minutes: int = 15
     data_provider: str = "alpaca"
     lookback_days: int = 5
-    position_size_dollars: float = 10000
+    position_size_dollars: float = 100
     paper: bool = True
     api_port: int = 8000
