@@ -12,6 +12,7 @@ import {
 } from 'lightweight-charts';
 
 const MAX_CHART_POINTS = 7200;
+const MIN_CHART_POINTS = 100;
 
 interface OHLCVData {
   timestamps: string[];
@@ -92,24 +93,34 @@ export function OHLCVChart({
   const stateSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
   const featureSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
 
-  // Timeline slider state
+  // Timeline range slider state
   const totalPoints = data?.timestamps.length ?? 0;
-  const needsSlider = totalPoints > MAX_CHART_POINTS;
-  const windowSize = Math.min(totalPoints, MAX_CHART_POINTS);
-  const maxSliderValue = needsSlider ? totalPoints - windowSize : 0;
-  const [sliderOffset, setSliderOffset] = useState(0);
+  const needsSlider = totalPoints > MIN_CHART_POINTS;
+  const [sliderStart, setSliderStart] = useState(0);
+  const [sliderEnd, setSliderEnd] = useState(Math.min(totalPoints, MAX_CHART_POINTS));
+
+  // Range slider refs for drag handling
+  const rangeTrackRef = useRef<HTMLDivElement>(null);
+  const dragTypeRef = useRef<'left' | 'right' | 'middle' | null>(null);
+  const dragStartXRef = useRef(0);
+  const dragStartValuesRef = useRef({ start: 0, end: 0 });
 
   // Reset slider when data changes
   useEffect(() => {
-    setSliderOffset(0);
-  }, [data]);
+    setSliderStart(0);
+    setSliderEnd(Math.min(totalPoints, MAX_CHART_POINTS));
+  }, [data, totalPoints]);
+
+  // Clamp window size to MAX_CHART_POINTS
+  const clampedEnd = Math.min(sliderEnd, totalPoints);
+  const windowSize = clampedEnd - sliderStart;
 
   // Compute windowed data subset
   const windowedData = useMemo(() => {
     if (!data) return null;
     if (!needsSlider) return data;
-    const start = sliderOffset;
-    const end = start + windowSize;
+    const start = sliderStart;
+    const end = clampedEnd;
     return {
       timestamps: data.timestamps.slice(start, end),
       open: data.open.slice(start, end),
@@ -118,15 +129,14 @@ export function OHLCVChart({
       close: data.close.slice(start, end),
       volume: data.volume.slice(start, end),
     };
-  }, [data, needsSlider, sliderOffset, windowSize]);
+  }, [data, needsSlider, sliderStart, clampedEnd]);
 
   // Compute windowed feature data
   const windowedFeatureData = useMemo(() => {
     if (!featureData || !data) return featureData;
     if (!needsSlider) return featureData;
-    // Feature data timestamps may differ from OHLCV; window by matching time range
-    const startTime = data.timestamps[sliderOffset];
-    const endTime = data.timestamps[sliderOffset + windowSize - 1];
+    const startTime = data.timestamps[sliderStart];
+    const endTime = data.timestamps[clampedEnd - 1];
     const startIdx = featureData.timestamps.findIndex((ts) => ts >= startTime);
     const endIdx = featureData.timestamps.findIndex((ts) => ts > endTime);
     const actualEnd = endIdx === -1 ? featureData.timestamps.length : endIdx;
@@ -140,14 +150,14 @@ export function OHLCVChart({
       features: windowedFeatures,
       feature_names: featureData.feature_names,
     };
-  }, [featureData, data, needsSlider, sliderOffset, windowSize]);
+  }, [featureData, data, needsSlider, sliderStart, clampedEnd]);
 
   // Compute windowed regime data
   const windowedRegimeData = useMemo(() => {
     if (!regimeData || !data) return regimeData;
     if (!needsSlider) return regimeData;
-    const startTime = data.timestamps[sliderOffset];
-    const endTime = data.timestamps[sliderOffset + windowSize - 1];
+    const startTime = data.timestamps[sliderStart];
+    const endTime = data.timestamps[clampedEnd - 1];
     const startIdx = regimeData.timestamps.findIndex((ts) => ts >= startTime);
     const endIdx = regimeData.timestamps.findIndex((ts) => ts > endTime);
     const actualEnd = endIdx === -1 ? regimeData.timestamps.length : endIdx;
@@ -157,11 +167,75 @@ export function OHLCVChart({
       state_ids: regimeData.state_ids.slice(actualStart, actualEnd),
       state_info: regimeData.state_info,
     };
-  }, [regimeData, data, needsSlider, sliderOffset, windowSize]);
+  }, [regimeData, data, needsSlider, sliderStart, clampedEnd]);
 
-  const handleSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setSliderOffset(Number(e.target.value));
+  // Drag event handlers for the range slider
+  const handleDragStart = useCallback((type: 'left' | 'right' | 'middle', clientX: number) => {
+    dragTypeRef.current = type;
+    dragStartXRef.current = clientX;
+    dragStartValuesRef.current = { start: sliderStart, end: clampedEnd };
+  }, [sliderStart, clampedEnd]);
+
+  const handleDragMove = useCallback((clientX: number) => {
+    if (!dragTypeRef.current || !rangeTrackRef.current) return;
+    const rect = rangeTrackRef.current.getBoundingClientRect();
+    const pixelDelta = clientX - dragStartXRef.current;
+    const indexDelta = Math.round((pixelDelta / rect.width) * totalPoints);
+    const { start: origStart, end: origEnd } = dragStartValuesRef.current;
+
+    if (dragTypeRef.current === 'left') {
+      const newStart = Math.max(0, Math.min(origStart + indexDelta, origEnd - MIN_CHART_POINTS));
+      const newWindowSize = origEnd - newStart;
+      if (newWindowSize <= MAX_CHART_POINTS) {
+        setSliderStart(newStart);
+      }
+    } else if (dragTypeRef.current === 'right') {
+      const newEnd = Math.min(totalPoints, Math.max(origEnd + indexDelta, origStart + MIN_CHART_POINTS));
+      const newWindowSize = newEnd - origStart;
+      if (newWindowSize <= MAX_CHART_POINTS) {
+        setSliderEnd(newEnd);
+      }
+    } else if (dragTypeRef.current === 'middle') {
+      const span = origEnd - origStart;
+      let newStart = origStart + indexDelta;
+      let newEnd = origEnd + indexDelta;
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = span;
+      }
+      if (newEnd > totalPoints) {
+        newEnd = totalPoints;
+        newStart = totalPoints - span;
+      }
+      setSliderStart(newStart);
+      setSliderEnd(newEnd);
+    }
+  }, [totalPoints]);
+
+  const handleDragEnd = useCallback(() => {
+    dragTypeRef.current = null;
   }, []);
+
+  // Mouse event handlers
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => handleDragMove(e.clientX);
+    const onMouseUp = () => handleDragEnd();
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1) handleDragMove(e.touches[0].clientX);
+    };
+    const onTouchEnd = () => handleDragEnd();
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('touchmove', onTouchMove);
+    window.addEventListener('touchend', onTouchEnd);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [handleDragMove, handleDragEnd]);
 
   // Initialize chart
   useEffect(() => {
@@ -565,14 +639,14 @@ export function OHLCVChart({
           })}
         </div>
       )}
-      {/* Timeline navigation slider */}
+      {/* Dual-handle range slider for timeline navigation */}
       {needsSlider && (
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            padding: '6px 12px',
+            padding: '8px 12px',
             background: '#0d1117',
             borderTop: '1px solid #21262d',
             borderRadius: '0 0 8px 8px',
@@ -586,21 +660,105 @@ export function OHLCVChart({
               minWidth: '32px',
             }}
           >
-            {sliderOffset + 1}
+            {sliderStart + 1}
           </span>
-          <input
-            type="range"
-            min={0}
-            max={maxSliderValue}
-            value={sliderOffset}
-            onChange={handleSliderChange}
+          {/* Range slider track */}
+          <div
+            ref={rangeTrackRef}
             style={{
               flex: 1,
-              height: '4px',
-              cursor: 'pointer',
-              accentColor: '#58a6ff',
+              position: 'relative',
+              height: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              userSelect: 'none',
             }}
-          />
+          >
+            {/* Background track */}
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                height: '4px',
+                background: '#21262d',
+                borderRadius: '2px',
+              }}
+            />
+            {/* Active range fill */}
+            <div
+              style={{
+                position: 'absolute',
+                left: `${(sliderStart / totalPoints) * 100}%`,
+                width: `${((clampedEnd - sliderStart) / totalPoints) * 100}%`,
+                height: '4px',
+                background: '#58a6ff',
+                borderRadius: '2px',
+                cursor: 'grab',
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                handleDragStart('middle', e.clientX);
+              }}
+              onTouchStart={(e) => {
+                if (e.touches.length === 1) {
+                  handleDragStart('middle', e.touches[0].clientX);
+                }
+              }}
+            />
+            {/* Left handle */}
+            <div
+              style={{
+                position: 'absolute',
+                left: `${(sliderStart / totalPoints) * 100}%`,
+                width: '12px',
+                height: '16px',
+                background: '#58a6ff',
+                borderRadius: '3px',
+                transform: 'translateX(-6px)',
+                cursor: 'ew-resize',
+                zIndex: 2,
+                border: '1px solid #79c0ff',
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDragStart('left', e.clientX);
+              }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                if (e.touches.length === 1) {
+                  handleDragStart('left', e.touches[0].clientX);
+                }
+              }}
+            />
+            {/* Right handle */}
+            <div
+              style={{
+                position: 'absolute',
+                left: `${(clampedEnd / totalPoints) * 100}%`,
+                width: '12px',
+                height: '16px',
+                background: '#58a6ff',
+                borderRadius: '3px',
+                transform: 'translateX(-6px)',
+                cursor: 'ew-resize',
+                zIndex: 2,
+                border: '1px solid #79c0ff',
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDragStart('right', e.clientX);
+              }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                if (e.touches.length === 1) {
+                  handleDragStart('right', e.touches[0].clientX);
+                }
+              }}
+            />
+          </div>
           <span
             style={{
               fontSize: '10px',
@@ -610,7 +768,7 @@ export function OHLCVChart({
               textAlign: 'right',
             }}
           >
-            {sliderOffset + windowSize}
+            {clampedEnd}
           </span>
           <span
             style={{
@@ -620,7 +778,7 @@ export function OHLCVChart({
               marginLeft: '4px',
             }}
           >
-            {sliderLabel}
+            {sliderLabel} ({windowSize.toLocaleString()} pts)
           </span>
         </div>
       )}
