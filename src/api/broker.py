@@ -246,10 +246,11 @@ async def sync_data(
 @router.get("/trades", response_model=List[TradeResponse])
 async def get_trades(
     user_id: int = 1,
+    symbol: Optional[str] = None,
     limit: int = 50,
     db: Session = Depends(get_db)
 ):
-    """Get trade history."""
+    """Get trade history, optionally filtered by symbol."""
     snap_user = db.query(SnapTradeUser).filter(
         SnapTradeUser.user_account_id == user_id
     ).first()
@@ -258,9 +259,14 @@ async def get_trades(
         return []
 
     # Join tables
-    trades = db.query(TradeHistory).join(BrokerConnection).filter(
+    query = db.query(TradeHistory).join(BrokerConnection).filter(
         BrokerConnection.snaptrade_user_id == snap_user.id
-    ).order_by(TradeHistory.executed_at.desc()).limit(limit).all()
+    )
+
+    if symbol:
+        query = query.filter(TradeHistory.symbol == symbol)
+
+    trades = query.order_by(TradeHistory.executed_at.desc()).limit(limit).all()
 
     return [
         TradeResponse(

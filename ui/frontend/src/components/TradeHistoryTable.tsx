@@ -1,23 +1,27 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { fetchTrades, syncBroker, Trade } from '../api';
 
-export const TradeHistoryTable: React.FC = () => {
+interface TradeHistoryTableProps {
+    selectedTicker?: string;
+}
+
+export const TradeHistoryTable: React.FC<TradeHistoryTableProps> = ({ selectedTicker }) => {
     const [trades, setTrades] = useState<Trade[]>([]);
     const [loading, setLoading] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const loadTrades = async () => {
+    const loadTrades = useCallback(async () => {
         setLoading(true);
         try {
-            const data = await fetchTrades();
+            const data = await fetchTrades(1, selectedTicker || undefined);
             setTrades(data);
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : 'Failed to fetch trades');
         } finally {
             setLoading(false);
         }
-    };
+    }, [selectedTicker]);
 
     const handleSync = async () => {
         setSyncing(true);
@@ -33,12 +37,14 @@ export const TradeHistoryTable: React.FC = () => {
 
     useEffect(() => {
         loadTrades();
-    }, []);
+    }, [loadTrades]);
 
     return (
         <div className="section">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                <h3 className="section-title" style={{ margin: 0 }}>Trade History</h3>
+                <h3 className="section-title" style={{ margin: 0 }}>
+                    Trade History{selectedTicker ? ` - ${selectedTicker}` : ''}
+                </h3>
                 <button
                     onClick={handleSync}
                     disabled={syncing}
@@ -61,7 +67,11 @@ export const TradeHistoryTable: React.FC = () => {
             {loading ? (
                 <div className="loading">Loading trades...</div>
             ) : trades.length === 0 ? (
-                <div style={{ color: '#8b949e', fontStyle: 'italic' }}>No trades found. Connect a broker and sync.</div>
+                <div style={{ color: '#8b949e', fontStyle: 'italic' }}>
+                    {selectedTicker
+                        ? `No trades found for ${selectedTicker}.`
+                        : 'No trades found. Connect a broker and sync.'}
+                </div>
             ) : (
                 <div style={{ maxHeight: '400px', overflow: 'auto' }}>
                     <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>

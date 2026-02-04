@@ -224,7 +224,11 @@ export async function syncBroker(userId: number = 1): Promise<SyncResponse> {
   return response.data;
 }
 
-export async function fetchTrades(userId: number = 1): Promise<Trade[]> {
-  const response = await axios.get<Trade[]>(`${API_BASE}/broker/trades?user_id=${userId}`);
+export async function fetchTrades(userId: number = 1, symbol?: string): Promise<Trade[]> {
+  const params = new URLSearchParams();
+  params.append('user_id', String(userId));
+  if (symbol) params.append('symbol', symbol);
+
+  const response = await axios.get<Trade[]>(`${API_BASE}/broker/trades?${params.toString()}`);
   return response.data;
 }
