@@ -95,7 +95,7 @@ export function OHLCVChart({
 
   // Timeline range slider state
   const totalPoints = data?.timestamps.length ?? 0;
-  const needsSlider = totalPoints > MAX_CHART_POINTS;
+  const needsSlider = totalPoints > MIN_CHART_POINTS;
   const [sliderStart, setSliderStart] = useState(0);
   const [sliderEnd, setSliderEnd] = useState(Math.min(totalPoints, MAX_CHART_POINTS));
 
