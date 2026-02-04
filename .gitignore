@@ -220,3 +220,7 @@ logs/
 
 # ML models
 models/
+
+# Claude
+.claude
+.llm
