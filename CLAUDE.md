@@ -50,4 +50,16 @@ The system acts as a second set of eyes — quietly reviewing a proposed trade a
 - Surface contextual risk
 - Build long-term trader trust
 
+## Codebase Structure
 
+The project has three major subsystems:
+
+1. **Regime Tracking Engine** (`src/features/state/hmm/`, `src/features/state/pca/`) -- HMM and PCA-based market state inference from engineered features. The feature pipeline is in `src/features/`.
+
+2. **Trading Buddy** (`src/evaluators/`, `src/orchestrator.py`, `src/trade/`, `src/rules/`, `src/api/trading_buddy.py`) -- Modular trade evaluation system. Pluggable evaluators check risk/reward, exit plans, regime fit, and multi-timeframe alignment. Guardrails enforce the no-prediction policy.
+
+3. **Standalone Momentum Agent** (`src/agent/`) -- Dockerised agent with a scheduler loop that fetches data (Alpaca or Finnhub via `src/marketdata/`), computes features, generates signals, and submits orders through the execution layer (`src/execution/`).
+
+Supporting infrastructure: data loaders (`src/data/`), database models and repositories (`src/data/database/`), broker integration (`src/api/broker.py`, `src/execution/snaptrade_client.py`), backtesting (`src/backtest/`), configuration (`config/settings.py`).
+
+See `docs/ARCHITECTURE.md` for detailed architecture, and `docs/Trading_Buddy_Detailed_TODOs.md` for the Trading Buddy implementation roadmap.
