@@ -206,12 +206,12 @@ export function OHLCVChart({
         fixRightEdge: true,
         tickMarkFormatter: (time: number, tickMarkType: number) => {
           const date = new Date(time * 1000);
-          const day = date.getDate();
-          const hours = date.getHours().toString().padStart(2, '0');
-          const minutes = date.getMinutes().toString().padStart(2, '0');
+          const day = date.getUTCDate();
+          const hours = date.getUTCHours().toString().padStart(2, '0');
+          const minutes = date.getUTCMinutes().toString().padStart(2, '0');
           const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
           if (tickMarkType <= 2) {
-            return `${months[date.getMonth()]} ${day}`;
+            return `${months[date.getUTCMonth()]} ${day}`;
           }
           return `${hours}:${minutes}`;
         },
@@ -471,9 +471,9 @@ export function OHLCVChart({
     const endDate = new Date(windowedData.timestamps[windowedData.timestamps.length - 1]);
     const fmt = (d: Date) => {
       const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const hrs = d.getHours().toString().padStart(2, '0');
-      const mins = d.getMinutes().toString().padStart(2, '0');
-      return `${months[d.getMonth()]} ${d.getDate()} ${hrs}:${mins}`;
+      const hrs = d.getUTCHours().toString().padStart(2, '0');
+      const mins = d.getUTCMinutes().toString().padStart(2, '0');
+      return `${months[d.getUTCMonth()]} ${d.getUTCDate()} ${hrs}:${mins}`;
     };
     return `${fmt(startDate)} - ${fmt(endDate)}`;
   }, [windowedData]);
