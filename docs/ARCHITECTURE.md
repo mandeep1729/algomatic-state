@@ -276,7 +276,6 @@ algomatic-state/
     ├── FEATURE.md
     ├── PRD.md
     ├── PITFALLS.md
-    ├── UI.md
     ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
     ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md
     └── Trading_Buddy_Detailed_TODOs.md
