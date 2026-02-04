@@ -39,6 +39,13 @@ class MomentumStrategy:
             logger.debug("No features available for signal generation")
             return []
 
+        logger.debug(
+            "Signal input: %d rows, latest=%s, features=%s",
+            len(features),
+            features.index[-1],
+            list(features.columns),
+        )
+
         latest = features.iloc[-1]
         feature_name = self.config.momentum_feature
 
@@ -53,14 +60,27 @@ class MomentumStrategy:
             logger.debug("Momentum value is NaN, skipping signal generation")
             return []
 
+        logger.debug(
+            "Threshold check: %s=%.6f long_threshold=%.6f (dist=%.6f) short_threshold=%.6f (dist=%.6f)",
+            feature_name,
+            momentum_value,
+            self.config.long_threshold,
+            momentum_value - self.config.long_threshold,
+            self.config.short_threshold,
+            momentum_value - self.config.short_threshold,
+        )
+
         now = timestamp or datetime.now()
 
         if momentum_value > self.config.long_threshold:
             direction = SignalDirection.LONG
+            logger.debug("Decision: LONG — momentum %.6f > long_threshold %.6f", momentum_value, self.config.long_threshold)
         elif momentum_value < self.config.short_threshold:
             direction = SignalDirection.SHORT
+            logger.debug("Decision: SHORT — momentum %.6f < short_threshold %.6f", momentum_value, self.config.short_threshold)
         else:
             direction = SignalDirection.FLAT
+            logger.debug("Decision: FLAT — momentum %.6f within [%.6f, %.6f]", momentum_value, self.config.short_threshold, self.config.long_threshold)
 
         logger.info(
             "Signal generated: %s %s momentum=%.4f",

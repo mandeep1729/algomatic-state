@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -48,7 +46,7 @@ services:
       - AGENT_INTERVAL_MINUTES=${AGENT_INTERVAL_MINUTES:-15}
       - AGENT_DATA_PROVIDER=${AGENT_DATA_PROVIDER:-alpaca}
       - AGENT_LOOKBACK_DAYS=${AGENT_LOOKBACK_DAYS:-5}
-      - AGENT_POSITION_SIZE_DOLLARS=${AGENT_POSITION_SIZE_DOLLARS:-10000}
+      - AGENT_POSITION_SIZE_DOLLARS=${AGENT_POSITION_SIZE_DOLLARS:-100}
       - AGENT_PAPER=${AGENT_PAPER:-true}
       - ALPACA_API_KEY=${ALPACA_API_KEY}
       - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
@@ -61,6 +59,7 @@ services:
       - STRATEGY_MOMENTUM_FEATURE=${STRATEGY_MOMENTUM_FEATURE:-r5}
       - STRATEGY_LONG_THRESHOLD=${STRATEGY_LONG_THRESHOLD:-0.001}
       - STRATEGY_SHORT_THRESHOLD=${STRATEGY_SHORT_THRESHOLD:--0.001}
+      - AGENT_LOG_LEVEL=${AGENT_LOG_LEVEL:-INFO}
     volumes:
       - /home/mandeep/projects/algomatic/momentum-agent-logs:/app/logs
     depends_on:

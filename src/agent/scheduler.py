@@ -88,12 +88,24 @@ async def run_agent_loop(
             df[ts_col] = pd.to_datetime(df[ts_col])
             df = df.set_index(ts_col).sort_index()
 
+            logger.debug(
+                "Data fetch: %d rows, range=%s to %s, latest_close=%.4f",
+                len(df), df.index[0], df.index[-1], float(df["close"].iloc[-1]),
+            )
+
             # 4. Compute features
             features = pipeline.compute(df)
             if features.empty:
                 logger.warning("Feature computation produced empty result")
                 await asyncio.sleep(interval)
                 continue
+
+            momentum_col = strategy_config.momentum_feature
+            nan_count = int(features[momentum_col].isna().sum()) if momentum_col in features.columns else -1
+            logger.debug(
+                "Features computed: shape=%s, %s NaN count=%d",
+                features.shape, momentum_col, nan_count,
+            )
 
             # 5. Generate signals
             signals = strategy.generate_signals(features, timestamp=datetime.now())
@@ -112,12 +124,28 @@ async def run_agent_loop(
                 if order is None:
                     continue
 
+                notional = order.quantity * current_price
+                logger.debug(
+                    "Order created: %s %s qty=%.4f price=%.4f notional=$%.2f",
+                    order.side.value, order.symbol, order.quantity, current_price, notional,
+                )
+
+                # Account snapshot before risk check
+                account = client.get_account()
+                positions = client.get_positions()
+                logger.debug(
+                    "Account snapshot: equity=$%.2f buying_power=$%.2f positions=%d",
+                    account.equity, account.buying_power, len(positions),
+                )
+
                 # Risk check
-                violations = risk_manager.check_order(order, price=current_price)
+                violations = risk_manager.check_order(order, price=current_price, account=account, positions=positions)
                 if violations:
                     for v in violations:
                         logger.warning("Risk violation — order rejected", extra={"violation": str(v)})
                     continue
+
+                logger.debug("All risk checks passed for %s", order.symbol)
 
                 # Submit
                 submitted = order_manager.submit_order(order)
