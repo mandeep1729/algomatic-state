@@ -7,6 +7,7 @@ agent scheduler loop in the main asyncio event loop.
 import asyncio
 import logging
 import threading
+from pathlib import Path
 
 import uvicorn
 
@@ -14,11 +15,9 @@ from config.settings import StrategyConfig
 from src.agent.api import app, set_config
 from src.agent.config import AgentConfig
 from src.agent.scheduler import run_agent_loop
+from src.utils.logging import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
+setup_logging(level="INFO", format="text", file=Path("logs/agent.log"))
 logger = logging.getLogger(__name__)
 
 

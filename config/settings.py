@@ -180,7 +180,7 @@ class LoggingConfig(BaseSettings):
         description="Log format",
     )
     file: Path | None = Field(
-        default=None,
+        default=Path("logs/app.log"),
         description="Log file path (None for stdout only)",
     )
     rotate_size_mb: int = Field(
