@@ -38,6 +38,34 @@ services:
       - tools
     restart: unless-stopped
 
+  momentum-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: algomatic-momentum-agent
+    environment:
+      - AGENT_SYMBOL=${AGENT_SYMBOL:-AAPL}
+      - AGENT_INTERVAL_MINUTES=${AGENT_INTERVAL_MINUTES:-15}
+      - AGENT_DATA_PROVIDER=${AGENT_DATA_PROVIDER:-finnhub}
+      - AGENT_LOOKBACK_DAYS=${AGENT_LOOKBACK_DAYS:-5}
+      - AGENT_POSITION_SIZE_DOLLARS=${AGENT_POSITION_SIZE_DOLLARS:-10000}
+      - AGENT_PAPER=${AGENT_PAPER:-true}
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-algomatic}
+      - DB_USER=${DB_USER:-algomatic}
+      - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - STRATEGY_MOMENTUM_FEATURE=${STRATEGY_MOMENTUM_FEATURE:-r5}
+      - STRATEGY_LONG_THRESHOLD=${STRATEGY_LONG_THRESHOLD:-0.001}
+      - STRATEGY_SHORT_THRESHOLD=${STRATEGY_SHORT_THRESHOLD:--0.001}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
     name: algomatic_postgres_data
