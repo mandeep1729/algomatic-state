@@ -15,13 +15,15 @@ class TestFeaturePipeline:
     def test_init_default(self):
         """Test default initialization."""
         pipeline = FeaturePipeline.default()
-        assert len(pipeline.calculators) == 6
+        # 6 base calculators + TA-Lib/pandas-ta if available
+        assert len(pipeline.calculators) >= 6
         assert not pipeline.config.include_market_context
 
     def test_init_with_market_context(self):
         """Test initialization with market context."""
         pipeline = FeaturePipeline.default(include_market_context=True)
-        assert len(pipeline.calculators) == 7
+        # 6 base + market_context + TA-Lib/pandas-ta if available
+        assert len(pipeline.calculators) >= 7
         assert pipeline.config.include_market_context
 
     def test_feature_names(self):

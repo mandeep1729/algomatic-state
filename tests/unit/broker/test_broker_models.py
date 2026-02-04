@@ -29,6 +29,7 @@ def test_trade_history_model():
         side="BUY",
         quantity=10.0,
         price=150.0,
+        fees=0.0,
         executed_at=datetime.now(timezone.utc),
         external_trade_id="trade_123",
         raw_data={"foo": "bar"}
@@ -36,4 +37,4 @@ def test_trade_history_model():
     assert trade.symbol == "AAPL"
     assert trade.side == "BUY"
     assert trade.quantity == 10.0
-    assert trade.files is not None  # Should have default empty or None
+    assert trade.fees == 0.0

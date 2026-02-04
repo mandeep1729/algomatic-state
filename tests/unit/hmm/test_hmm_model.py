@@ -108,7 +108,7 @@ class TestGaussianHMMWrapper:
         assert np.all(diag > 0.5)
 
     def test_covariance_regularization(self, sample_latent: np.ndarray):
-        """Test covariance regularization."""
+        """Test covariance regularization on diagonal elements."""
         wrapper = GaussianHMMWrapper(
             n_states=3,
             covariance_type="diag",
@@ -117,7 +117,11 @@ class TestGaussianHMMWrapper:
         )
         wrapper.fit(sample_latent)
 
-        assert np.all(wrapper.covariances >= 1e-3)
+        # For diag covariance type, only diagonal elements are regularized
+        covars = wrapper.covariances
+        for k in range(covars.shape[0]):
+            diag = np.diag(covars[k])
+            assert np.all(diag >= 1e-3)
 
     def test_properties(self, sample_latent: np.ndarray):
         """Test model properties."""

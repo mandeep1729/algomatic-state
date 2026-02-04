@@ -12,7 +12,7 @@ class TestSnapTradeClient:
 
     def test_register_user(self, client):
         mock_response = MagicMock()
-        mock_response.body = {"user_id": "u1", "user_secret": "s1"}
+        mock_response.body = {"userId": "u1", "userSecret": "s1"}
         client.client.authentication.register_snap_trade_user.return_value = mock_response
 
         result = client.register_user("test_user")
@@ -22,7 +22,7 @@ class TestSnapTradeClient:
 
     def test_generate_connection_link(self, client):
         mock_response = MagicMock()
-        mock_response.body = {"login_redirect_url": "http://test.com"}
+        mock_response.body = {"redirectURI": "http://test.com"}
         client.client.authentication.login_snap_trade_user.return_value = mock_response
 
         link = client.generate_connection_link("u1", "s1")
