@@ -61,6 +61,8 @@ services:
       - STRATEGY_MOMENTUM_FEATURE=${STRATEGY_MOMENTUM_FEATURE:-r5}
       - STRATEGY_LONG_THRESHOLD=${STRATEGY_LONG_THRESHOLD:-0.001}
       - STRATEGY_SHORT_THRESHOLD=${STRATEGY_SHORT_THRESHOLD:--0.001}
+    volumes:
+      - /home/mandeep/projects/algomatic/momentum-agent-logs:/app/logs
     depends_on:
       postgres:
         condition: service_healthy
