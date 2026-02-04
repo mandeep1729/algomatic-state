@@ -18,6 +18,7 @@ export default function Overview() {
 
   // Chart state
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const [chartTimeframe, setChartTimeframe] = useState('5Min');
   const [ohlcvData, setOhlcvData] = useState<{ timestamps: string[]; open: number[]; high: number[]; low: number[]; close: number[]; volume: number[] } | null>(null);
   const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
@@ -48,21 +49,18 @@ export default function Overview() {
     load();
   }, []);
 
-  const handleTickerClick = useCallback(async (symbol: string) => {
-    if (selectedTicker === symbol) return;
-    setSelectedTicker(symbol);
+  const loadChartData = useCallback(async (symbol: string, timeframe: string) => {
     selectedTickerRef.current = symbol;
     setChartLoading(true);
     setChartActive(true);
 
     const STALE_MS = 15 * 60 * 1000; // 15 minutes
-    const TIMEFRAME = '5Min';
 
     // Helper: fetch OHLCV + features from backend
     async function fetchChartData() {
       const [ohlcv, features] = await Promise.all([
-        fetchOHLCVData(symbol, TIMEFRAME),
-        fetchFeatures(symbol, TIMEFRAME),
+        fetchOHLCVData(symbol, timeframe),
+        fetchFeatures(symbol, timeframe),
       ]);
       return { ohlcv, features };
     }
@@ -96,7 +94,7 @@ export default function Overview() {
     // 2. Background: check sync status and refresh chart if new data arrives
     try {
       const syncEntries = await fetchSyncStatus(symbol);
-      const entry = syncEntries.find((e) => e.timeframe === TIMEFRAME);
+      const entry = syncEntries.find((e) => e.timeframe === timeframe);
       const isStale =
         !entry ||
         !entry.last_synced_timestamp ||
@@ -104,7 +102,7 @@ export default function Overview() {
 
       if (isStale) {
         setSyncing(true);
-        await triggerSync(symbol, TIMEFRAME);
+        await triggerSync(symbol, timeframe);
 
         // Guard: user may have clicked a different ticker while sync was in flight
         if (selectedTickerRef.current !== symbol) return;
@@ -120,7 +118,20 @@ export default function Overview() {
     } finally {
       setSyncing(false);
     }
-  }, [selectedTicker, setChartActive, setFeatureNames]);
+  }, [setChartActive, setFeatureNames]);
+
+  const handleTickerClick = useCallback(async (symbol: string) => {
+    if (selectedTicker === symbol) return;
+    setSelectedTicker(symbol);
+    loadChartData(symbol, chartTimeframe);
+  }, [selectedTicker, chartTimeframe, loadChartData]);
+
+  const handleTimeframeChange = useCallback((newTimeframe: string) => {
+    setChartTimeframe(newTimeframe);
+    if (selectedTicker) {
+      loadChartData(selectedTicker, newTimeframe);
+    }
+  }, [selectedTicker, loadChartData]);
 
   const handleCloseChart = useCallback(() => {
     setSelectedTicker(null);
@@ -189,7 +200,20 @@ export default function Overview() {
             <div className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-[var(--accent-blue)]">{selectedTicker}</span>
-                <span className="text-xs text-[var(--text-secondary)]">5min chart</span>
+                <select
+                  value={chartTimeframe}
+                  onChange={(e) => handleTimeframeChange(e.target.value)}
+                  disabled={chartLoading}
+                  className="h-6 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent-blue)] focus:outline-none"
+                >
+                  <option value="1Min">1m</option>
+                  <option value="5Min">5m</option>
+                  <option value="15Min">15m</option>
+                  <option value="30Min">30m</option>
+                  <option value="1Hour">1h</option>
+                  <option value="4Hour">4h</option>
+                  <option value="1Day">1d</option>
+                </select>
                 {syncing && <span className="text-[10px] text-[var(--accent-yellow)]">Syncing...</span>}
               </div>
               <button
