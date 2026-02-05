@@ -49,6 +49,23 @@ export default function Overview() {
     load();
   }, []);
 
+  // Re-fetch trades filtered by selectedTicker (or all when cleared)
+  useEffect(() => {
+    async function loadTrades() {
+      try {
+        const res = await api.fetchTrades({
+          limit: 5,
+          sort: '-entry_time',
+          symbol: selectedTicker ?? undefined,
+        });
+        setRecentTrades(res.trades);
+      } catch {
+        // keep existing trades on error
+      }
+    }
+    loadTrades();
+  }, [selectedTicker]);
+
   const loadChartData = useCallback(async (symbol: string, timeframe: string) => {
     selectedTickerRef.current = symbol;
     setChartLoading(true);
@@ -252,7 +269,7 @@ export default function Overview() {
         {/* Left column */}
         <div className="space-y-6">
           {/* Recent trades */}
-          <Section title="Recent Trades" action={{ label: 'View All', to: '/app/trades' }}>
+          <Section title={selectedTicker ? `Recent Trades — ${selectedTicker}` : 'Recent Trades'} action={{ label: 'View All', to: '/app/trades' }}>
             <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] shadow-sm">
               <table className="w-full text-sm">
                 <thead>
@@ -299,7 +316,10 @@ export default function Overview() {
                   {recentTrades.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
-                        No trades yet. <Link to="/app/evaluate" className="text-[var(--accent-blue)] hover:underline">Evaluate your first trade</Link>
+                        {selectedTicker
+                          ? `No trades found for ${selectedTicker}.`
+                          : <>No trades yet. <Link to="/app/evaluate" className="text-[var(--accent-blue)] hover:underline">Evaluate your first trade</Link></>
+                        }
                       </td>
                     </tr>
                   )}
