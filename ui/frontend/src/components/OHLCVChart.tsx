@@ -60,22 +60,26 @@ const OVERLAY_COLORS = [
   '#db6d28', '#ff7b72', '#7ee787', '#79c0ff', '#cea5fb',
 ];
 
-// Convert ISO timestamp to Unix timestamp (seconds)
-const toUnixTime = (isoString: string): Time => {
-  return Math.floor(new Date(isoString).getTime() / 1000) as Time;
-};
-
-// Convert UTC Date to EST/EDT timezone components
-const toEST = (date: Date): { month: number; day: number; hours: number; minutes: number } => {
-  // Use Intl.DateTimeFormat to get EST/EDT time (handles DST automatically)
+// Convert UTC Date to EST/EDT timezone components (handles DST automatically)
+const toEST = (date: Date): { year: number; month: number; day: number; hours: number; minutes: number } => {
   const estString = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
   const estDate = new Date(estString);
   return {
+    year: estDate.getFullYear(),
     month: estDate.getMonth(),
     day: estDate.getDate(),
     hours: estDate.getHours(),
     minutes: estDate.getMinutes(),
   };
+};
+
+// Convert ISO timestamp to a chart-time value shifted to EST.
+// lightweight-charts uses UTC internally for day-boundary detection and tick
+// placement.  By encoding EST values as-if-UTC we make the chart's internal
+// logic (day separators, tick label hierarchy) align with Eastern Time.
+const toChartTime = (isoString: string): Time => {
+  const est = toEST(new Date(isoString));
+  return Math.floor(Date.UTC(est.year, est.month, est.day, est.hours, est.minutes, 0) / 1000) as Time;
 };
 
 // Check if feature should use price scale (overlays on price chart)
@@ -302,13 +306,13 @@ export function OHLCVChart({
         fixLeftEdge: true,
         fixRightEdge: true,
         tickMarkFormatter: (time: number, tickMarkType: number) => {
+          // Chart times are already EST-shifted-as-UTC, so use getUTC* directly
           const date = new Date(time * 1000);
-          const est = toEST(date);
-          const hours = est.hours.toString().padStart(2, '0');
-          const minutes = est.minutes.toString().padStart(2, '0');
+          const hours = date.getUTCHours().toString().padStart(2, '0');
+          const minutes = date.getUTCMinutes().toString().padStart(2, '0');
           const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
           if (tickMarkType <= 2) {
-            return `${months[est.month]} ${est.day}`;
+            return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`;
           }
           return `${hours}:${minutes}`;
         },
@@ -318,12 +322,12 @@ export function OHLCVChart({
       },
       localization: {
         timeFormatter: (time: number) => {
+          // Chart times are already EST-shifted-as-UTC, so use getUTC* directly
           const date = new Date(time * 1000);
-          const est = toEST(date);
           const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          const hrs = est.hours.toString().padStart(2, '0');
-          const mins = est.minutes.toString().padStart(2, '0');
-          return `${months[est.month]} ${est.day}, ${hrs}:${mins} EST`;
+          const hrs = date.getUTCHours().toString().padStart(2, '0');
+          const mins = date.getUTCMinutes().toString().padStart(2, '0');
+          return `${months[date.getUTCMonth()]} ${date.getUTCDate()}, ${hrs}:${mins} EST`;
         },
       },
     });
@@ -417,7 +421,7 @@ export function OHLCVChart({
 
     // Prepare candlestick data
     const candlestickData: CandlestickData[] = windowedData.timestamps.map((ts, i) => ({
-      time: toUnixTime(ts),
+      time: toChartTime(ts),
       open: windowedData.open[i],
       high: windowedData.high[i],
       low: windowedData.low[i],
@@ -428,7 +432,7 @@ export function OHLCVChart({
     const volumeData: HistogramData[] = windowedData.timestamps.map((ts, i) => {
       const isUp = i === 0 || windowedData.close[i] >= windowedData.open[i];
       return {
-        time: toUnixTime(ts),
+        time: toChartTime(ts),
         value: windowedData.volume[i],
         color: isUp ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)',
       };
@@ -472,7 +476,7 @@ export function OHLCVChart({
         const value = featureValues[i];
         if (value !== null && value !== undefined && !isNaN(value) && isFinite(value)) {
           lineData.push({
-            time: toUnixTime(windowedFeatureData.timestamps[i]),
+            time: toChartTime(windowedFeatureData.timestamps[i]),
             value: value,
           });
         }
@@ -533,7 +537,7 @@ export function OHLCVChart({
       const stateId = windowedRegimeData.state_ids[i];
       const stateInfo = windowedRegimeData.state_info[String(stateId)];
       return {
-        time: toUnixTime(ts),
+        time: toChartTime(ts),
         value: 1, // Constant height for state bars
         color: stateInfo?.color || '#6b7280',
       };
