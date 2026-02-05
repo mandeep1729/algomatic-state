@@ -19,6 +19,8 @@ import type {
   EvaluateRequest,
   EvaluateResponse,
   BrokerStatus,
+  TradeListResponse,
+  TradeSummary,
 } from '../types';
 
 // Hardcoded user ID until auth is implemented
@@ -164,4 +166,76 @@ export async function fetchFeatures(
   if (endDate) params.set('end_date', endDate);
   const qs = params.toString();
   return get<FeatureData>(`/api/features/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`);
+}
+
+// =============================================================================
+// Trades — GET /api/broker/trades
+// Maps broker TradeResponse → portal TradeSummary
+// =============================================================================
+
+interface BrokerTradeResponse {
+  id: number;
+  symbol: string;
+  side: string;
+  quantity: number;
+  price: number;
+  fees: number;
+  executed_at: string;
+  brokerage: string;
+}
+
+interface BrokerTradeListResponse {
+  trades: BrokerTradeResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export async function fetchTrades(params: {
+  source?: string;
+  flagged?: boolean;
+  symbol?: string;
+  status?: string;
+  sort?: string;
+  page?: number;
+  limit?: number;
+} = {}): Promise<TradeListResponse> {
+  // Map portal sort fields to backend column names
+  const SORT_MAP: Record<string, string> = { entry_time: 'executed_at', symbol: 'symbol' };
+  function mapSort(sort?: string): string | undefined {
+    if (!sort) return undefined;
+    const desc = sort.startsWith('-');
+    const field = desc ? sort.slice(1) : sort;
+    const mapped = SORT_MAP[field] ?? field;
+    return desc ? `-${mapped}` : mapped;
+  }
+
+  const qs = new URLSearchParams();
+  qs.set('user_id', String(USER_ID));
+  if (params.symbol) qs.set('symbol', params.symbol);
+  const sortVal = mapSort(params.sort);
+  if (sortVal) qs.set('sort', sortVal);
+  if (params.page) qs.set('page', String(params.page));
+  if (params.limit) qs.set('limit', String(params.limit));
+
+  const res = await get<BrokerTradeListResponse>(`/api/broker/trades?${qs.toString()}`);
+
+  const trades: TradeSummary[] = res.trades.map((t) => ({
+    id: String(t.id),
+    symbol: t.symbol,
+    direction: t.side === 'buy' ? 'long' as const : 'short' as const,
+    entry_price: t.price,
+    exit_price: null,
+    quantity: t.quantity,
+    entry_time: t.executed_at,
+    exit_time: null,
+    source: 'synced' as const,
+    brokerage: t.brokerage,
+    is_flagged: false,
+    flag_count: 0,
+    status: 'closed' as const,
+    timeframe: '',
+  }));
+
+  return { trades, total: res.total, page: res.page, limit: res.limit };
 }
