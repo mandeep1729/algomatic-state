@@ -13,6 +13,7 @@ import * as realApi from './client';
  *   - evaluateTrade      → POST /api/trading-buddy/evaluate
  *   - fetchEvaluators    → GET  /api/trading-buddy/evaluators
  *   - fetchBrokerStatus  → GET  /api/broker/status
+ *   - fetchTrades        → GET  /api/broker/trades
  *   - fetchSyncStatus    → GET  /api/sync-status/{symbol}
  *   - triggerSync        → POST /api/sync/{symbol}
  *   - fetchOHLCVData     → GET  /api/ohlcv/{symbol}
@@ -25,6 +26,7 @@ const api = USE_MOCKS
       evaluateTrade: realApi.evaluateTrade,
       fetchEvaluators: realApi.fetchEvaluators,
       fetchBrokerStatus: realApi.fetchBrokerStatus,
+      fetchTrades: realApi.fetchTrades,
 
       // Mock fallbacks — no backend endpoints yet
       fetchCurrentUser: mockApi.fetchCurrentUser,
@@ -32,7 +34,6 @@ const api = USE_MOCKS
       updateTradingProfile: mockApi.updateTradingProfile,
       fetchRiskPreferences: mockApi.fetchRiskPreferences,
       updateRiskPreferences: mockApi.updateRiskPreferences,
-      fetchTrades: mockApi.fetchTrades,
       fetchTradeDetail: mockApi.fetchTradeDetail,
       createManualTrade: mockApi.createManualTrade,
       fetchInsightsSummary: mockApi.fetchInsightsSummary,

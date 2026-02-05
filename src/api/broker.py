@@ -50,12 +50,20 @@ class ConnectResponse(BaseModel):
     redirect_url: str
 
 class TradeResponse(BaseModel):
+    id: int
     symbol: str
     side: str
     quantity: float
     price: float
+    fees: float
     executed_at: datetime
     brokerage: str
+
+class TradeListAPIResponse(BaseModel):
+    trades: List[TradeResponse]
+    total: int
+    page: int
+    limit: int
 
 class SyncResponse(BaseModel):
     status: str
@@ -243,20 +251,22 @@ async def sync_data(
     return SyncResponse(status="success", trades_synced=synced_count)
 
 
-@router.get("/trades", response_model=List[TradeResponse])
+@router.get("/trades", response_model=TradeListAPIResponse)
 async def get_trades(
     user_id: int = 1,
     symbol: Optional[str] = None,
+    sort: str = "-executed_at",
+    page: int = 1,
     limit: int = 50,
     db: Session = Depends(get_db)
 ):
-    """Get trade history, optionally filtered by symbol."""
+    """Get trade history, optionally filtered by symbol, with pagination."""
     snap_user = db.query(SnapTradeUser).filter(
         SnapTradeUser.user_account_id == user_id
     ).first()
 
     if not snap_user:
-        return []
+        return TradeListAPIResponse(trades=[], total=0, page=page, limit=limit)
 
     # Join tables
     query = db.query(TradeHistory).join(BrokerConnection).filter(
@@ -266,19 +276,36 @@ async def get_trades(
     if symbol:
         query = query.filter(TradeHistory.symbol == symbol)
 
-    trades = query.order_by(TradeHistory.executed_at.desc()).limit(limit).all()
+    total = query.count()
 
-    return [
-        TradeResponse(
-            symbol=t.symbol,
-            side=t.side,
-            quantity=t.quantity,
-            price=t.price,
-            executed_at=t.executed_at,
-            brokerage=t.connection.brokerage_name
-        )
-        for t in trades
-    ]
+    # Sorting
+    desc_sort = sort.startswith("-")
+    sort_field = sort.lstrip("-")
+    column = getattr(TradeHistory, sort_field, TradeHistory.executed_at)
+    query = query.order_by(column.desc() if desc_sort else column.asc())
+
+    # Pagination
+    offset = (max(page, 1) - 1) * limit
+    trades = query.offset(offset).limit(limit).all()
+
+    return TradeListAPIResponse(
+        trades=[
+            TradeResponse(
+                id=t.id,
+                symbol=t.symbol,
+                side=t.side,
+                quantity=t.quantity,
+                price=t.price,
+                fees=t.fees,
+                executed_at=t.executed_at,
+                brokerage=t.connection.brokerage_name
+            )
+            for t in trades
+        ],
+        total=total,
+        page=page,
+        limit=limit,
+    )
 
 
 class ConnectionStatusResponse(BaseModel):
