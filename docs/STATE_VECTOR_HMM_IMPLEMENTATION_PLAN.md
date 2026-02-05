@@ -2,7 +2,7 @@
 
 This document outlines the phased implementation plan for multi-timeframe state vectors with HMM regime tracking.
 
-> **Status**: All phases have been implemented. See `src/hmm/` for the complete module.
+> **Status**: All phases have been implemented. See `src/features/state/hmm/` for the complete module.
 
 ---
 
@@ -19,7 +19,7 @@ This document outlines the phased implementation plan for multi-timeframe state 
 | 1.5 | Define data contracts | TypedDict/dataclass for `FeatureVector`, `LatentStateVector`, `HMMOutput` | [x] |
 | 1.6 | Set up artifact versioning | Naming convention and path builder for `models/timeframe=X/model_id=Y/` | [x] |
 
-**Implementation**: `src/hmm/contracts.py`, `src/hmm/config.py`, `src/hmm/artifacts.py`, `config/state_vector_feature_spec.yaml`
+**Implementation**: `src/features/state/hmm/contracts.py`, `src/features/state/hmm/config.py`, `src/features/state/hmm/artifacts.py`, `config/state_vector_feature_spec.yaml`
 
 ---
 
@@ -37,7 +37,7 @@ This document outlines the phased implementation plan for multi-timeframe state 
 | 2.6 | Leakage prevention checks | Validation that scaler fits only on train data | [x] |
 | 2.7 | **Automated Feature Selection** | (Optional) Constrained feature selection within the fixed set: drop redundant/highly collinear features, enforce stability across retrains, and never exceed the feature budget. | [x] |
 
-**Implementation**: `src/hmm/data_pipeline.py`, `src/hmm/scalers.py`
+**Implementation**: `src/features/state/hmm/data_pipeline.py`, `src/features/state/hmm/scalers.py`
 
 ### Fixed Feature Set (for State Vector Training)
 
@@ -84,7 +84,7 @@ Notes:
 | 3.5 | Encoder serialization | Save to `.pkl` or `.onnx` format | [x] |
 | 3.6 | Latent dimension selection | Explained variance analysis for PCA; reconstruction error/KL-divergence for VAE | [x] |
 
-**Implementation**: `src/hmm/encoders.py` (PCAEncoder, TemporalPCAEncoder, BaseEncoder)
+**Implementation**: `src/features/state/hmm/encoders.py` (PCAEncoder, TemporalPCAEncoder, BaseEncoder)
 
 **Note**: Task 3.4 (VAE) is optional and not implemented. PCA baseline is sufficient for initial production use.
 
@@ -105,7 +105,7 @@ Notes:
 | 4.7 | Viterbi decoding | s_hat_{1:T} for offline/backtest analysis | [x] |
 | 4.8 | HMM serialization | Save/load `.pkl` with metadata | [x] |
 
-**Implementation**: `src/hmm/hmm_model.py` (GaussianHMMWrapper, select_n_states, match_states_hungarian)
+**Implementation**: `src/features/state/hmm/hmm_model.py` (GaussianHMMWrapper, select_n_states, match_states_hungarian)
 
 ---
 
@@ -122,7 +122,7 @@ Notes:
 | 5.5 | Artifact packaging | Bundle scaler, encoder, hmm, feature_spec, metadata | [x] |
 | 5.6 | Training reproducibility | Seed management, config logging | [x] |
 
-**Implementation**: `src/hmm/training.py` (TrainingPipeline, TrainingConfig, CrossValidator, HyperparameterTuner)
+**Implementation**: `src/features/state/hmm/training.py` (TrainingPipeline, TrainingConfig, CrossValidator, HyperparameterTuner)
 
 ---
 
@@ -139,7 +139,7 @@ Notes:
 | 6.5 | OOD detection | Multi-layer OOD & model health: emission log p(z_t) threshold -> UNKNOWN, plus posterior entropy spikes and state-occupancy collapse detection (see 6.7–6.8). | [x] |
 | 6.6 | Multi-timeframe synchronizer | Carry-forward higher TF states with **Validity TTL** checks | [x] |
 
-**Implementation**: `src/hmm/inference.py` (InferenceEngine, RollingFeatureBuffer, TemporalInferenceEngine, MultiTimeframeInferenceEngine)
+**Implementation**: `src/features/state/hmm/inference.py` (InferenceEngine, RollingFeatureBuffer, TemporalInferenceEngine, MultiTimeframeInferenceEngine)
 
 ---
 
@@ -155,7 +155,7 @@ Notes:
 | 7.4 | Schema validation | Ensure required fields: symbol, ts, timeframe, model_id, z_*, state_id, etc. | [x] |
 | 7.5 | **DB Mirroring (Optional)** | Store latest regime per symbol in `current_states` table for real-time UI/Monitoring | [ ] |
 
-**Implementation**: `src/hmm/storage.py` (StateWriter, StateReader, StateRecord, validate_state_dataframe)
+**Implementation**: `src/features/state/hmm/storage.py` (StateWriter, StateReader, StateRecord, validate_state_dataframe)
 
 **Note**: Task 7.5 (DB Mirroring) is optional and not implemented. Parquet storage is sufficient for initial use.
 
@@ -175,7 +175,7 @@ Notes:
 | 8.6 | Walk-forward backtest | Compare baseline vs state-gated vs state-sized strategies | [x] |
 | 8.7 | Validation report generator | Automated report with all metrics | [x] |
 
-**Implementation**: `src/hmm/validation.py` (ModelValidator, ValidationReport, DwellTimeAnalyzer, TransitionAnalyzer, PosteriorAnalyzer, StateConditionedReturnAnalyzer, OODMonitor, WalkForwardBacktest)
+**Implementation**: `src/features/state/hmm/validation.py` (ModelValidator, ValidationReport, DwellTimeAnalyzer, TransitionAnalyzer, PosteriorAnalyzer, StateConditionedReturnAnalyzer, OODMonitor, WalkForwardBacktest)
 
 ---
 
@@ -191,7 +191,7 @@ Notes:
 | 9.4 | Model rollout manager | Switch model_id after stability checks | [x] |
 | 9.5 | Retraining scheduler | Cadence-based (Weekly) plus economic & statistical triggers: reconstruction loss / log-likelihood decay **and** z-scored log-likelihood vs trailing window, KL divergence / PSI on feature and state distributions, entropy spikes, and occupancy collapse alerts. | [x] |
 
-**Implementation**: `src/hmm/monitoring.py` (MetricsCollector, MonitoringMetrics, DriftDetector, DriftAlert, ShadowInference, ModelRolloutManager, RetrainingScheduler, MonitoringDashboard)
+**Implementation**: `src/features/state/hmm/monitoring.py` (MetricsCollector, MonitoringMetrics, DriftDetector, DriftAlert, ShadowInference, ModelRolloutManager, RetrainingScheduler, MonitoringDashboard)
 
 ---
 
