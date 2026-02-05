@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-See @.claude/skills/CODING.md for coding best practices and design patterns.
+See @.claude/skills/coding-best-practices/SKILLS.md for coding best practices and design patterns.
 See @.claude/SOFTWARE-ROLE.md for your role
 
 
