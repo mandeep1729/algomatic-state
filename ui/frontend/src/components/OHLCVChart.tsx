@@ -12,7 +12,7 @@ import {
 } from 'lightweight-charts';
 
 const MAX_CHART_POINTS = 7200;
-const MIN_CHART_POINTS = 100;
+const MIN_CHART_POINTS = 1;
 
 interface OHLCVData {
   timestamps: string[];
