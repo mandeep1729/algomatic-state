@@ -276,7 +276,7 @@ async def _load_ohlcv_internal(
         )
 
     response = {
-        "timestamps": df.index.strftime("%Y-%m-%d %H:%M:%S").tolist(),
+        "timestamps": df.index.strftime("%Y-%m-%dT%H:%M:%SZ").tolist(),
         "open": df["open"].tolist(),
         "high": df["high"].tolist(),
         "low": df["low"].tolist(),
@@ -352,7 +352,7 @@ async def get_features(
 
         # Convert to response format
         response = {
-            "timestamps": features_df.index.strftime("%Y-%m-%d %H:%M:%S").tolist(),
+            "timestamps": features_df.index.strftime("%Y-%m-%dT%H:%M:%SZ").tolist(),
             "features": {col: features_df[col].replace([np.inf, -np.inf], np.nan).fillna(0).tolist()
                         for col in features_df.columns},
             "feature_names": features_df.columns.tolist(),
@@ -458,7 +458,7 @@ async def get_regimes(
             features = {name: row.get(name, np.nan) for name in model_features}
 
             output = engine.process(features, symbol.upper(), ts)
-            timestamps.append(ts.strftime("%Y-%m-%d %H:%M:%S"))
+            timestamps.append(ts.strftime("%Y-%m-%dT%H:%M:%SZ"))
             state_ids.append(output.state_id)
 
             # Collect state record for database if bar_id exists
@@ -550,8 +550,8 @@ async def get_statistics(
         ohlcv_stats = {
             "total_bars": len(df),
             "date_range": {
-                "start": df.index.min().strftime("%Y-%m-%d %H:%M:%S"),
-                "end": df.index.max().strftime("%Y-%m-%d %H:%M:%S"),
+                "start": df.index.min().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "end": df.index.max().strftime("%Y-%m-%dT%H:%M:%SZ"),
             },
             "price": {
                 "min": float(df["low"].min()),
@@ -1454,7 +1454,7 @@ async def get_pca_regimes(
         )
 
         return PCARegimeResponse(
-            timestamps=[ts.strftime("%Y-%m-%d %H:%M:%S") for ts in state_df.index],
+            timestamps=[ts.strftime("%Y-%m-%dT%H:%M:%SZ") for ts in state_df.index],
             state_ids=state_df["state_id"].tolist(),
             distances=state_df["distance"].tolist(),
             state_info=state_info,
