@@ -1,18 +1,31 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
+import * as echarts from 'echarts/core';
+import { CandlestickChart, BarChart, LineChart, CustomChart } from 'echarts/charts';
 import {
-  createChart,
-  IChartApi,
-  ISeriesApi,
-  CandlestickData,
-  HistogramData,
-  LineData,
-  Time,
-  ColorType,
-  CrosshairMode,
-} from 'lightweight-charts';
+  GridComponent,
+  TooltipComponent,
+  DataZoomComponent,
+  LegendComponent,
+} from 'echarts/components';
+import { CanvasRenderer } from 'echarts/renderers';
+import type { EChartsOption } from 'echarts';
+
+type EChartsInstance = ReturnType<typeof echarts.init>;
+
+// Register only what we need for tree-shaking
+echarts.use([
+  CandlestickChart,
+  BarChart,
+  LineChart,
+  CustomChart,
+  GridComponent,
+  TooltipComponent,
+  DataZoomComponent,
+  LegendComponent,
+  CanvasRenderer,
+]);
 
 const MAX_CHART_POINTS = 7200;
-const MIN_CHART_POINTS = 3;
 
 interface OHLCVData {
   timestamps: string[];
@@ -54,36 +67,41 @@ interface OHLCVChartProps {
   onRangeChange?: (start: number, end: number) => void;
 }
 
-// Feature overlay colors - cycle through these
+// Feature overlay colors
 const OVERLAY_COLORS = [
   '#58a6ff', '#3fb950', '#f85149', '#d29922', '#a371f7',
   '#db6d28', '#ff7b72', '#7ee787', '#79c0ff', '#cea5fb',
 ];
 
-// Convert UTC Date to EST/EDT timezone components (handles DST automatically)
-const toEST = (date: Date): { year: number; month: number; day: number; hours: number; minutes: number } => {
-  const estString = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
-  const estDate = new Date(estString);
-  return {
-    year: estDate.getFullYear(),
-    month: estDate.getMonth(),
-    day: estDate.getDate(),
-    hours: estDate.getHours(),
-    minutes: estDate.getMinutes(),
-  };
-};
+// EST formatter — reusable across tooltip and axis labels
+const estDateFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short',
+  day: 'numeric',
+});
+const estTimeFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+const estFullFmt = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
 
-// Convert ISO timestamp to a chart-time value shifted to EST.
-// lightweight-charts uses UTC internally for day-boundary detection and tick
-// placement.  By encoding EST values as-if-UTC we make the chart's internal
-// logic (day separators, tick label hierarchy) align with Eastern Time.
-const toChartTime = (isoString: string): Time => {
-  const est = toEST(new Date(isoString));
-  return Math.floor(Date.UTC(est.year, est.month, est.day, est.hours, est.minutes, 0) / 1000) as Time;
-};
+/** Format an ISO timestamp to an EST label for the x-axis. */
+function formatTimestampEST(iso: string): string {
+  const d = new Date(iso);
+  return `${estDateFmt.format(d)} ${estTimeFmt.format(d)}`;
+}
 
-// Check if feature should use price scale (overlays on price chart)
-const isPriceScaleFeature = (featureKey: string): boolean => {
+/** Check if feature should overlay on the price chart (vs. separate pane). */
+function isPriceScaleFeature(featureKey: string): boolean {
   const priceFeatures = [
     'sma_20', 'sma_50', 'sma_200', 'ema_20', 'ema_50', 'ema_200',
     'bb_upper', 'bb_middle', 'bb_lower', 'vwap', 'vwap_60',
@@ -91,7 +109,24 @@ const isPriceScaleFeature = (featureKey: string): boolean => {
     'pivot_pp', 'pivot_r1', 'pivot_r2', 'pivot_s1', 'pivot_s2',
   ];
   return priceFeatures.includes(featureKey);
-};
+}
+
+/**
+ * Align feature/regime timestamps to the OHLCV category axis.
+ * Returns an array of values (or null for gaps) indexed by the category axis.
+ */
+function alignToCategories<T>(
+  categoryTimestamps: string[],
+  sourceTimestamps: string[],
+  sourceValues: T[],
+  nullValue: T,
+): T[] {
+  const map = new Map<string, T>();
+  for (let i = 0; i < sourceTimestamps.length; i++) {
+    map.set(sourceTimestamps[i], sourceValues[i]);
+  }
+  return categoryTimestamps.map((ts) => map.get(ts) ?? nullValue);
+}
 
 export function OHLCVChart({
   data,
@@ -104,491 +139,403 @@ export function OHLCVChart({
   onRangeChange,
 }: OHLCVChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const stateSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
-  const featureSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const echartsRef = useRef<EChartsInstance | null>(null);
 
-  // Timeline range slider state
-  const totalPoints = data?.timestamps.length ?? 0;
-  const needsSlider = totalPoints > MIN_CHART_POINTS;
-  const [sliderStart, setSliderStart] = useState(0);
-  const [sliderEnd, setSliderEnd] = useState(Math.min(totalPoints, MAX_CHART_POINTS));
-
-  // Range slider refs for drag handling
-  const rangeTrackRef = useRef<HTMLDivElement>(null);
-  const dragTypeRef = useRef<'left' | 'right' | 'middle' | null>(null);
-  const dragStartXRef = useRef(0);
-  const dragStartValuesRef = useRef({ start: 0, end: 0 });
-
-  // Stable key to detect when data has meaningfully changed (different symbol/timeframe)
-  const dataKey = useMemo(() => {
-    if (!data || data.timestamps.length === 0) return '';
-    return `${data.timestamps[0]}_${data.timestamps.length}`;
-  }, [data]);
-
-  // Reset slider only when the underlying dataset changes (not on re-renders)
-  const prevDataKeyRef = useRef(dataKey);
-  useEffect(() => {
-    if (dataKey !== prevDataKeyRef.current) {
-      prevDataKeyRef.current = dataKey;
-      setSliderStart(0);
-      setSliderEnd(Math.min(totalPoints, MAX_CHART_POINTS));
-    }
-  }, [dataKey, totalPoints]);
-
-  // Clamp window size to MAX_CHART_POINTS
-  const clampedEnd = Math.min(sliderEnd, totalPoints);
-  const windowSize = clampedEnd - sliderStart;
-
-  // Compute windowed data subset
+  // ── Data windowing: last MAX_CHART_POINTS ──
   const windowedData = useMemo(() => {
     if (!data) return null;
-    if (!needsSlider) return data;
-    const start = sliderStart;
-    const end = clampedEnd;
+    const len = data.timestamps.length;
+    if (len <= MAX_CHART_POINTS) return data;
+    const start = len - MAX_CHART_POINTS;
     return {
-      timestamps: data.timestamps.slice(start, end),
-      open: data.open.slice(start, end),
-      high: data.high.slice(start, end),
-      low: data.low.slice(start, end),
-      close: data.close.slice(start, end),
-      volume: data.volume.slice(start, end),
+      timestamps: data.timestamps.slice(start),
+      open: data.open.slice(start),
+      high: data.high.slice(start),
+      low: data.low.slice(start),
+      close: data.close.slice(start),
+      volume: data.volume.slice(start),
     };
-  }, [data, needsSlider, sliderStart, clampedEnd]);
+  }, [data]);
 
-  // Compute windowed feature data
-  const windowedFeatureData = useMemo(() => {
-    if (!featureData || !data) return featureData;
-    if (!needsSlider) return featureData;
-    const startTime = data.timestamps[sliderStart];
-    const endTime = data.timestamps[clampedEnd - 1];
-    const startIdx = featureData.timestamps.findIndex((ts) => ts >= startTime);
-    const endIdx = featureData.timestamps.findIndex((ts) => ts > endTime);
-    const actualEnd = endIdx === -1 ? featureData.timestamps.length : endIdx;
-    const actualStart = startIdx === -1 ? 0 : startIdx;
-    const windowedFeatures: Record<string, number[]> = {};
-    for (const [key, values] of Object.entries(featureData.features)) {
-      windowedFeatures[key] = values.slice(actualStart, actualEnd);
+  // Category labels for the x-axis
+  const categoryLabels = useMemo(
+    () => (windowedData ? windowedData.timestamps.map(formatTimestampEST) : []),
+    [windowedData],
+  );
+
+  // ── Build full ECharts option ──
+  const chartOption = useMemo((): EChartsOption | null => {
+    if (!windowedData) return null;
+
+    const ts = windowedData.timestamps;
+    const len = ts.length;
+
+    // Determine which panes are active
+    const hasVolume = showVolume;
+    const hasStates = showStates && regimeData && regimeData.state_ids.length > 0;
+    const nonPriceFeatures = selectedFeatures.filter((f) => !isPriceScaleFeature(f));
+    const hasIndicatorPane = nonPriceFeatures.length > 0;
+
+    // ── Grid layout computation ──
+    // Each grid is positioned via top/height percentages.
+    const grids: EChartsOption['grid'] = [];
+    const xAxes: EChartsOption['xAxis'] = [];
+    const yAxes: EChartsOption['yAxis'] = [];
+
+    // Spacing
+    const topPad = 40; // px for buttons/legend
+    const bottomPad = 5; // px
+    const gapPx = 8;
+    // We'll use pixel-based positioning for simplicity
+    const totalHeight = height;
+    const usable = totalHeight - topPad - bottomPad;
+
+    // Pane height allocation (fractions of usable)
+    let volumeFrac = hasVolume ? 0.15 : 0;
+    let stateFrac = hasStates ? 0.06 : 0;
+    let indicatorFrac = hasIndicatorPane ? 0.18 : 0;
+    let priceFrac = 1 - volumeFrac - stateFrac - indicatorFrac;
+
+    // Convert to pixels
+    const gapCount = [hasVolume, hasStates, hasIndicatorPane].filter(Boolean).length;
+    const gapTotal = gapCount * gapPx;
+    const avail = usable - gapTotal;
+
+    const priceH = Math.round(avail * priceFrac);
+    const volumeH = Math.round(avail * volumeFrac);
+    const stateH = Math.round(avail * stateFrac);
+    const indicatorH = Math.round(avail * indicatorFrac);
+
+    let curTop = topPad;
+    let gridIdx = 0;
+
+    // Grid 0: Candlestick + price-scale features
+    const priceGridIdx = gridIdx++;
+    grids.push({ left: 60, right: 60, top: curTop, height: priceH });
+    curTop += priceH + gapPx;
+
+    // Grid 1: Volume
+    let volumeGridIdx = -1;
+    if (hasVolume) {
+      volumeGridIdx = gridIdx++;
+      grids.push({ left: 60, right: 60, top: curTop, height: volumeH });
+      curTop += volumeH + gapPx;
     }
-    return {
-      timestamps: featureData.timestamps.slice(actualStart, actualEnd),
-      features: windowedFeatures,
-      feature_names: featureData.feature_names,
-    };
-  }, [featureData, data, needsSlider, sliderStart, clampedEnd]);
 
-  // Compute windowed regime data
-  const windowedRegimeData = useMemo(() => {
-    if (!regimeData || !data) return regimeData;
-    if (!needsSlider) return regimeData;
-    const startTime = data.timestamps[sliderStart];
-    const endTime = data.timestamps[clampedEnd - 1];
-    const startIdx = regimeData.timestamps.findIndex((ts) => ts >= startTime);
-    const endIdx = regimeData.timestamps.findIndex((ts) => ts > endTime);
-    const actualEnd = endIdx === -1 ? regimeData.timestamps.length : endIdx;
-    const actualStart = startIdx === -1 ? 0 : startIdx;
-    return {
-      timestamps: regimeData.timestamps.slice(actualStart, actualEnd),
-      state_ids: regimeData.state_ids.slice(actualStart, actualEnd),
-      state_info: regimeData.state_info,
-    };
-  }, [regimeData, data, needsSlider, sliderStart, clampedEnd]);
-
-  // Drag event handlers for the range slider
-  const handleDragStart = useCallback((type: 'left' | 'right' | 'middle', clientX: number) => {
-    dragTypeRef.current = type;
-    dragStartXRef.current = clientX;
-    dragStartValuesRef.current = { start: sliderStart, end: clampedEnd };
-  }, [sliderStart, clampedEnd]);
-
-  const handleDragMove = useCallback((clientX: number) => {
-    if (!dragTypeRef.current || !rangeTrackRef.current) return;
-    const rect = rangeTrackRef.current.getBoundingClientRect();
-    const pixelDelta = clientX - dragStartXRef.current;
-    const indexDelta = Math.round((pixelDelta / rect.width) * totalPoints);
-    const { start: origStart, end: origEnd } = dragStartValuesRef.current;
-
-    if (dragTypeRef.current === 'left') {
-      const newStart = Math.max(0, Math.min(origStart + indexDelta, origEnd - MIN_CHART_POINTS));
-      const newWindowSize = origEnd - newStart;
-      if (newWindowSize <= MAX_CHART_POINTS) {
-        setSliderStart(newStart);
-      }
-    } else if (dragTypeRef.current === 'right') {
-      const newEnd = Math.min(totalPoints, Math.max(origEnd + indexDelta, origStart + MIN_CHART_POINTS));
-      const newWindowSize = newEnd - origStart;
-      if (newWindowSize <= MAX_CHART_POINTS) {
-        setSliderEnd(newEnd);
-      }
-    } else if (dragTypeRef.current === 'middle') {
-      const span = origEnd - origStart;
-      let newStart = origStart + indexDelta;
-      let newEnd = origEnd + indexDelta;
-      if (newStart < 0) {
-        newStart = 0;
-        newEnd = span;
-      }
-      if (newEnd > totalPoints) {
-        newEnd = totalPoints;
-        newStart = totalPoints - span;
-      }
-      setSliderStart(newStart);
-      setSliderEnd(newEnd);
+    // Grid 2: Regime states
+    let stateGridIdx = -1;
+    if (hasStates) {
+      stateGridIdx = gridIdx++;
+      grids.push({ left: 60, right: 60, top: curTop, height: stateH });
+      curTop += stateH + gapPx;
     }
-  }, [totalPoints]);
 
-  const handleDragEnd = useCallback(() => {
-    dragTypeRef.current = null;
-  }, []);
+    // Grid 3: Non-price indicator overlays
+    let indicatorGridIdx = -1;
+    if (hasIndicatorPane) {
+      indicatorGridIdx = gridIdx++;
+      grids.push({ left: 60, right: 60, top: curTop, height: indicatorH });
+      curTop += indicatorH + gapPx;
+    }
 
-  // Mouse event handlers
-  useEffect(() => {
-    const onMouseMove = (e: MouseEvent) => handleDragMove(e.clientX);
-    const onMouseUp = () => handleDragEnd();
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 1) handleDragMove(e.touches[0].clientX);
+    // Build x/y axes for each grid
+    const allGridIndices: number[] = [];
+    for (let g = 0; g < gridIdx; g++) {
+      allGridIndices.push(g);
+      (xAxes as any[]).push({
+        type: 'category',
+        data: categoryLabels,
+        gridIndex: g,
+        axisLabel: {
+          show: g === gridIdx - 1, // only bottom grid shows labels
+          color: '#8b949e',
+          fontSize: 10,
+        },
+        axisTick: { show: g === gridIdx - 1 },
+        axisLine: { lineStyle: { color: '#30363d' } },
+        splitLine: { show: false },
+        axisPointer: { label: { show: g === gridIdx - 1 } },
+      });
+      (yAxes as any[]).push({
+        type: 'value',
+        gridIndex: g,
+        scale: true,
+        splitLine: { lineStyle: { color: '#21262d' } },
+        axisLabel: {
+          color: '#8b949e',
+          fontSize: 10,
+          show: g !== stateGridIdx, // hide y-axis labels for state strip
+        },
+        axisLine: { show: false },
+        axisTick: { show: false },
+      });
+    }
+
+    // ── Series ──
+    const series: any[] = [];
+
+    // Candlestick data: [open, close, low, high]
+    const candleData = [];
+    for (let i = 0; i < len; i++) {
+      candleData.push([
+        windowedData.open[i],
+        windowedData.close[i],
+        windowedData.low[i],
+        windowedData.high[i],
+      ]);
+    }
+    series.push({
+      name: 'Price',
+      type: 'candlestick',
+      data: candleData,
+      xAxisIndex: priceGridIdx,
+      yAxisIndex: priceGridIdx,
+      itemStyle: {
+        color: '#3fb950',        // up fill
+        color0: '#f85149',       // down fill
+        borderColor: '#3fb950',  // up border
+        borderColor0: '#f85149', // down border
+      },
+    });
+
+    // Price-scale feature overlays (on price grid)
+    const priceFeatures = selectedFeatures.filter(isPriceScaleFeature);
+    priceFeatures.forEach((featureKey) => {
+      if (!featureData) return;
+      const vals = featureData.features[featureKey];
+      if (!vals) return;
+      const aligned = alignToCategories(ts, featureData.timestamps, vals, NaN);
+      const colorIdx = selectedFeatures.indexOf(featureKey);
+      series.push({
+        name: featureKey,
+        type: 'line',
+        data: aligned.map((v) => (isNaN(v) || !isFinite(v) ? null : v)),
+        xAxisIndex: priceGridIdx,
+        yAxisIndex: priceGridIdx,
+        symbol: 'none',
+        lineStyle: { width: 2, color: OVERLAY_COLORS[colorIdx % OVERLAY_COLORS.length] },
+        itemStyle: { color: OVERLAY_COLORS[colorIdx % OVERLAY_COLORS.length] },
+        connectNulls: false,
+        z: 1,
+      });
+    });
+
+    // Volume bars
+    if (hasVolume && volumeGridIdx >= 0) {
+      const volumeData = [];
+      for (let i = 0; i < len; i++) {
+        const isUp = windowedData.close[i] >= windowedData.open[i];
+        volumeData.push({
+          value: windowedData.volume[i],
+          itemStyle: {
+            color: isUp ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)',
+          },
+        });
+      }
+      series.push({
+        name: 'Volume',
+        type: 'bar',
+        data: volumeData,
+        xAxisIndex: volumeGridIdx,
+        yAxisIndex: volumeGridIdx,
+        barWidth: '60%',
+        large: true,
+      });
+    }
+
+    // Regime state strip
+    if (hasStates && stateGridIdx >= 0 && regimeData) {
+      const stateIds = alignToCategories(ts, regimeData.timestamps, regimeData.state_ids, -1);
+      const stateData = stateIds.map((sid) => {
+        const info = regimeData.state_info[String(sid)];
+        return {
+          value: 1,
+          itemStyle: { color: info?.color || '#6b7280' },
+        };
+      });
+      series.push({
+        name: 'Regime',
+        type: 'bar',
+        data: stateData,
+        xAxisIndex: stateGridIdx,
+        yAxisIndex: stateGridIdx,
+        barWidth: '100%',
+        barGap: '0%',
+        barCategoryGap: '0%',
+      });
+      // Hide y-axis for state strip
+      (yAxes as any[])[stateGridIdx].show = false;
+    }
+
+    // Non-price feature overlays (in indicator grid)
+    if (hasIndicatorPane && indicatorGridIdx >= 0) {
+      nonPriceFeatures.forEach((featureKey) => {
+        if (!featureData) return;
+        const vals = featureData.features[featureKey];
+        if (!vals) return;
+        const aligned = alignToCategories(ts, featureData.timestamps, vals, NaN);
+        const colorIdx = selectedFeatures.indexOf(featureKey);
+        series.push({
+          name: featureKey,
+          type: 'line',
+          data: aligned.map((v) => (isNaN(v) || !isFinite(v) ? null : v)),
+          xAxisIndex: indicatorGridIdx,
+          yAxisIndex: indicatorGridIdx,
+          symbol: 'none',
+          lineStyle: { width: 2, color: OVERLAY_COLORS[colorIdx % OVERLAY_COLORS.length] },
+          itemStyle: { color: OVERLAY_COLORS[colorIdx % OVERLAY_COLORS.length] },
+          connectNulls: false,
+        });
+      });
+    }
+
+    // ── DataZoom (inside only, linked across all x-axes) ──
+    const dataZoom: any[] = [
+      {
+        type: 'inside',
+        xAxisIndex: allGridIndices,
+        filterMode: 'filter',
+        zoomOnMouseWheel: true,
+        moveOnMouseMove: true,
+        moveOnMouseWheel: false,
+      },
+    ];
+
+    // ── Tooltip ──
+    const tooltip: any = {
+      trigger: 'axis',
+      backgroundColor: 'rgba(13, 17, 23, 0.95)',
+      borderColor: '#30363d',
+      textStyle: { color: '#e6edf3', fontSize: 12 },
+      axisPointer: {
+        type: 'cross',
+        crossStyle: { color: '#58a6ff' },
+        lineStyle: { color: '#58a6ff', type: 'dashed' },
+        label: {
+          backgroundColor: '#388bfd',
+        },
+      },
+      formatter: (params: any[]) => {
+        if (!params || params.length === 0) return '';
+        const idx = params[0].dataIndex;
+        const isoTs = windowedData.timestamps[idx];
+        if (!isoTs) return '';
+        const d = new Date(isoTs);
+        const header = `${estFullFmt.format(d)} EST`;
+        let html = `<div style="font-weight:600;margin-bottom:4px">${header}</div>`;
+
+        for (const p of params) {
+          if (p.seriesName === 'Price' && p.data) {
+            const [open, close, low, high] = p.data;
+            const color = close >= open ? '#3fb950' : '#f85149';
+            html += `<div style="color:${color}">O: ${open.toFixed(2)} H: ${high.toFixed(2)} L: ${low.toFixed(2)} C: ${close.toFixed(2)}</div>`;
+          } else if (p.seriesName === 'Volume' && p.value != null) {
+            const vol = typeof p.value === 'object' ? p.value.value : p.value;
+            html += `<div style="color:#8b949e">Vol: ${Number(vol).toLocaleString()}</div>`;
+          } else if (p.seriesName === 'Regime') {
+            // skip in tooltip
+          } else if (p.value != null) {
+            html += `<div><span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${Number(p.value).toFixed(4)}</div>`;
+          }
+        }
+        return html;
+      },
     };
-    const onTouchEnd = () => handleDragEnd();
 
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('touchmove', onTouchMove);
-    window.addEventListener('touchend', onTouchEnd);
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onTouchEnd);
+    return {
+      backgroundColor: '#0d1117',
+      animation: false,
+      grid: grids,
+      xAxis: xAxes,
+      yAxis: yAxes,
+      series,
+      dataZoom,
+      tooltip,
     };
-  }, [handleDragMove, handleDragEnd]);
+  }, [
+    windowedData,
+    categoryLabels,
+    showVolume,
+    showStates,
+    regimeData,
+    featureData,
+    selectedFeatures,
+    height,
+  ]);
 
-  // Initialize chart
+  // ── Init ECharts instance + ResizeObserver ──
   useEffect(() => {
     if (!chartContainerRef.current) return;
 
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { type: ColorType.Solid, color: '#0d1117' },
-        textColor: '#e6edf3',
-      },
-      grid: {
-        vertLines: { color: '#21262d' },
-        horzLines: { color: '#21262d' },
-      },
-      crosshair: {
-        mode: CrosshairMode.Normal,
-        vertLine: {
-          color: '#58a6ff',
-          width: 1,
-          style: 2,
-          labelBackgroundColor: '#388bfd',
-        },
-        horzLine: {
-          color: '#58a6ff',
-          width: 1,
-          style: 2,
-          labelBackgroundColor: '#388bfd',
-        },
-      },
-      rightPriceScale: {
-        borderColor: '#30363d',
-        scaleMargins: {
-          top: 0.1,
-          bottom: 0.2,
-        },
-      },
-      timeScale: {
-        borderColor: '#30363d',
-        timeVisible: true,
-        secondsVisible: false,
-        fixLeftEdge: true,
-        fixRightEdge: true,
-        tickMarkFormatter: (time: number, tickMarkType: number) => {
-          // Chart times are already EST-shifted-as-UTC, so use getUTC* directly
-          const date = new Date(time * 1000);
-          const hours = date.getUTCHours().toString().padStart(2, '0');
-          const minutes = date.getUTCMinutes().toString().padStart(2, '0');
-          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          if (tickMarkType <= 2) {
-            return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`;
-          }
-          return `${hours}:${minutes}`;
-        },
-      },
-      handleScroll: {
-        vertTouchDrag: false,
-      },
-      localization: {
-        timeFormatter: (time: number) => {
-          // Chart times are already EST-shifted-as-UTC, so use getUTC* directly
-          const date = new Date(time * 1000);
-          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          const hrs = date.getUTCHours().toString().padStart(2, '0');
-          const mins = date.getUTCMinutes().toString().padStart(2, '0');
-          return `${months[date.getUTCMonth()]} ${date.getUTCDate()}, ${hrs}:${mins} EST`;
-        },
-      },
+    const instance = echarts.init(chartContainerRef.current, undefined, {
+      renderer: 'canvas',
     });
+    echartsRef.current = instance;
 
-    chart.timeScale().fitContent();
-
-    // Add candlestick series
-    const candlestickSeries = chart.addCandlestickSeries({
-      upColor: '#3fb950',
-      downColor: '#f85149',
-      borderUpColor: '#3fb950',
-      borderDownColor: '#f85149',
-      wickUpColor: '#3fb950',
-      wickDownColor: '#f85149',
+    const ro = new ResizeObserver(() => {
+      instance.resize();
     });
-
-    // Add volume series as histogram at bottom
-    const volumeSeries = chart.addHistogramSeries({
-      priceFormat: {
-        type: 'volume',
-      },
-      priceScaleId: 'volume',
-    });
-
-    // Configure volume scale
-    chart.priceScale('volume').applyOptions({
-      scaleMargins: {
-        top: 0.8,
-        bottom: 0.08,
-      },
-    });
-
-    // Add state series as histogram at very bottom
-    const stateSeries = chart.addHistogramSeries({
-      priceFormat: {
-        type: 'volume',
-      },
-      priceScaleId: 'states',
-    });
-
-    // Configure state scale (below volume)
-    chart.priceScale('states').applyOptions({
-      scaleMargins: {
-        top: 0.95,
-        bottom: 0,
-      },
-    });
-
-    chartRef.current = chart;
-    candlestickSeriesRef.current = candlestickSeries;
-    volumeSeriesRef.current = volumeSeries;
-    stateSeriesRef.current = stateSeries;
-
-    // Handle visible range change
-    chart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
-      if (logicalRange && onRangeChange && data) {
-        const from = Math.max(0, Math.floor(logicalRange.from));
-        const to = Math.min(data.timestamps.length, Math.ceil(logicalRange.to));
-        onRangeChange(from, to);
-      }
-    });
-
-    // Handle resize
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({
-          width: chartContainerRef.current.clientWidth,
-        });
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-    handleResize();
+    ro.observe(chartContainerRef.current);
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      chart.remove();
-      chartRef.current = null;
-      candlestickSeriesRef.current = null;
-      volumeSeriesRef.current = null;
-      stateSeriesRef.current = null;
-      featureSeriesRef.current.clear();
+      ro.disconnect();
+      instance.dispose();
+      echartsRef.current = null;
     };
   }, []);
 
-  // Update chart data
+  // ── Apply option when it changes ──
   useEffect(() => {
-    if (!windowedData || !candlestickSeriesRef.current || !volumeSeriesRef.current) {
-      return;
-    }
+    if (!echartsRef.current || !chartOption) return;
+    echartsRef.current.setOption(chartOption, { notMerge: true });
+  }, [chartOption]);
 
-    // Prepare candlestick data
-    const candlestickData: CandlestickData[] = windowedData.timestamps.map((ts, i) => ({
-      time: toChartTime(ts),
-      open: windowedData.open[i],
-      high: windowedData.high[i],
-      low: windowedData.low[i],
-      close: windowedData.close[i],
-    }));
-
-    // Prepare volume data with colors based on candle direction
-    const volumeData: HistogramData[] = windowedData.timestamps.map((ts, i) => {
-      const isUp = i === 0 || windowedData.close[i] >= windowedData.open[i];
-      return {
-        time: toChartTime(ts),
-        value: windowedData.volume[i],
-        color: isUp ? 'rgba(63, 185, 80, 0.5)' : 'rgba(248, 81, 73, 0.5)',
-      };
-    });
-
-    candlestickSeriesRef.current.setData(candlestickData);
-    volumeSeriesRef.current.setData(volumeData);
-
-    // Fit content to show all data
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
-    }
-  }, [windowedData]);
-
-  // Update feature overlays
+  // ── Resize on height prop change ──
   useEffect(() => {
-    if (!chartRef.current || !windowedFeatureData) return;
-
-    const chart = chartRef.current;
-    const currentSeries = featureSeriesRef.current;
-
-    // Remove series that are no longer selected
-    for (const [key, series] of currentSeries.entries()) {
-      if (!selectedFeatures.includes(key)) {
-        chart.removeSeries(series);
-        currentSeries.delete(key);
-      }
-    }
-
-    // Add or update series for selected features
-    selectedFeatures.forEach((featureKey, index) => {
-      const featureValues = windowedFeatureData.features[featureKey];
-      if (!featureValues) return;
-
-      // Assign unique color per indicator using index
-      const color = OVERLAY_COLORS[index % OVERLAY_COLORS.length];
-
-      // Prepare line data, filtering out NaN/null values
-      const lineData: LineData[] = [];
-      for (let i = 0; i < windowedFeatureData.timestamps.length; i++) {
-        const value = featureValues[i];
-        if (value !== null && value !== undefined && !isNaN(value) && isFinite(value)) {
-          lineData.push({
-            time: toChartTime(windowedFeatureData.timestamps[i]),
-            value: value,
-          });
-        }
-      }
-
-      if (lineData.length === 0) return;
-
-      // Check if series already exists
-      let series = currentSeries.get(featureKey);
-
-      if (!series) {
-        // Determine price scale
-        const priceScaleId = isPriceScaleFeature(featureKey) ? 'right' : `feature_${featureKey}`;
-
-        // Create new series
-        series = chart.addLineSeries({
-          color: color,
-          lineWidth: 2,
-          priceScaleId: priceScaleId,
-          lastValueVisible: false,
-          priceLineVisible: false,
-        });
-
-        // Configure separate scale for non-price features
-        if (!isPriceScaleFeature(featureKey)) {
-          chart.priceScale(`feature_${featureKey}`).applyOptions({
-            scaleMargins: {
-              top: 0.7,
-              bottom: 0.05,
-            },
-            visible: false,
-          });
-        }
-
-        currentSeries.set(featureKey, series);
-      }
-
-      series.setData(lineData);
-    });
-  }, [windowedFeatureData, selectedFeatures]);
-
-  // Update volume visibility
-  useEffect(() => {
-    if (volumeSeriesRef.current) {
-      volumeSeriesRef.current.applyOptions({
-        visible: showVolume,
-      });
-    }
-  }, [showVolume]);
-
-  // Update state histogram data
-  useEffect(() => {
-    if (!stateSeriesRef.current || !windowedRegimeData) {
-      return;
-    }
-
-    const stateData: HistogramData[] = windowedRegimeData.timestamps.map((ts, i) => {
-      const stateId = windowedRegimeData.state_ids[i];
-      const stateInfo = windowedRegimeData.state_info[String(stateId)];
-      return {
-        time: toChartTime(ts),
-        value: 1, // Constant height for state bars
-        color: stateInfo?.color || '#6b7280',
-      };
-    });
-
-    stateSeriesRef.current.setData(stateData);
-  }, [windowedRegimeData]);
-
-  // Update state visibility
-  useEffect(() => {
-    if (stateSeriesRef.current) {
-      stateSeriesRef.current.applyOptions({
-        visible: showStates && windowedRegimeData !== null,
-      });
-    }
-  }, [showStates, windowedRegimeData]);
-
-  // Update chart height
-  useEffect(() => {
-    if (chartRef.current) {
-      chartRef.current.applyOptions({ height });
-    }
+    if (!echartsRef.current || !chartContainerRef.current) return;
+    chartContainerRef.current.style.height = `${height}px`;
+    echartsRef.current.resize();
   }, [height]);
 
+  // ── DataZoom change → onRangeChange callback ──
+  useEffect(() => {
+    if (!echartsRef.current || !onRangeChange || !windowedData) return;
+    const instance = echartsRef.current;
+
+    const handler = (params: any) => {
+      // params.start / params.end are percentages (0–100)
+      if (params.start != null && params.end != null) {
+        const len = windowedData.timestamps.length;
+        const from = Math.floor((params.start / 100) * len);
+        const to = Math.ceil((params.end / 100) * len);
+        onRangeChange(Math.max(0, from), Math.min(len, to));
+      }
+    };
+
+    instance.on('datazoom', handler);
+    return () => {
+      instance.off('datazoom', handler);
+    };
+  }, [onRangeChange, windowedData]);
+
+  // ── Fit / Reset handlers ──
   const handleFitContent = useCallback(() => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().fitContent();
-    }
+    if (!echartsRef.current) return;
+    echartsRef.current.dispatchAction({
+      type: 'dataZoom',
+      start: 0,
+      end: 100,
+    });
   }, []);
 
   const handleResetZoom = useCallback(() => {
-    if (chartRef.current) {
-      chartRef.current.timeScale().resetTimeScale();
-      chartRef.current.priceScale('right').applyOptions({ autoScale: true });
-    }
+    if (!echartsRef.current) return;
+    echartsRef.current.dispatchAction({
+      type: 'dataZoom',
+      start: 0,
+      end: 100,
+    });
   }, []);
-
-  // Format slider label showing the visible date range (in EST)
-  const sliderLabel = useMemo(() => {
-    if (!windowedData || windowedData.timestamps.length === 0) return '';
-    const startDate = new Date(windowedData.timestamps[0]);
-    const endDate = new Date(windowedData.timestamps[windowedData.timestamps.length - 1]);
-    const fmt = (d: Date) => {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      const est = toEST(d);
-      const hrs = est.hours.toString().padStart(2, '0');
-      const mins = est.minutes.toString().padStart(2, '0');
-      return `${months[est.month]} ${est.day} ${hrs}:${mins}`;
-    };
-    return `${fmt(startDate)} - ${fmt(endDate)} EST`;
-  }, [windowedData]);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -597,7 +544,7 @@ export function OHLCVChart({
         style={{
           width: '100%',
           height: `${height}px`,
-          borderRadius: needsSlider ? '8px 8px 0 0' : '8px',
+          borderRadius: '8px',
           overflow: 'hidden',
         }}
       />
@@ -677,149 +624,6 @@ export function OHLCVChart({
           })}
         </div>
       )}
-      {/* Dual-handle range slider for timeline navigation */}
-      {needsSlider && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '8px 12px',
-            background: '#0d1117',
-            borderTop: '1px solid #21262d',
-            borderRadius: '0 0 8px 8px',
-          }}
-        >
-          <span
-            style={{
-              fontSize: '10px',
-              color: '#8b949e',
-              whiteSpace: 'nowrap',
-              minWidth: '32px',
-            }}
-          >
-            {sliderStart + 1}
-          </span>
-          {/* Range slider track */}
-          <div
-            ref={rangeTrackRef}
-            style={{
-              flex: 1,
-              position: 'relative',
-              height: '20px',
-              display: 'flex',
-              alignItems: 'center',
-              userSelect: 'none',
-            }}
-          >
-            {/* Background track */}
-            <div
-              style={{
-                position: 'absolute',
-                left: 0,
-                right: 0,
-                height: '4px',
-                background: '#21262d',
-                borderRadius: '2px',
-              }}
-            />
-            {/* Active range fill */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `${(sliderStart / totalPoints) * 100}%`,
-                width: `${((clampedEnd - sliderStart) / totalPoints) * 100}%`,
-                height: '4px',
-                background: '#58a6ff',
-                borderRadius: '2px',
-                cursor: 'grab',
-              }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                handleDragStart('middle', e.clientX);
-              }}
-              onTouchStart={(e) => {
-                if (e.touches.length === 1) {
-                  handleDragStart('middle', e.touches[0].clientX);
-                }
-              }}
-            />
-            {/* Left handle */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `${(sliderStart / totalPoints) * 100}%`,
-                width: '12px',
-                height: '16px',
-                background: '#58a6ff',
-                borderRadius: '3px',
-                transform: 'translateX(-6px)',
-                cursor: 'ew-resize',
-                zIndex: 2,
-                border: '1px solid #79c0ff',
-              }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleDragStart('left', e.clientX);
-              }}
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                if (e.touches.length === 1) {
-                  handleDragStart('left', e.touches[0].clientX);
-                }
-              }}
-            />
-            {/* Right handle */}
-            <div
-              style={{
-                position: 'absolute',
-                left: `${(clampedEnd / totalPoints) * 100}%`,
-                width: '12px',
-                height: '16px',
-                background: '#58a6ff',
-                borderRadius: '3px',
-                transform: 'translateX(-6px)',
-                cursor: 'ew-resize',
-                zIndex: 2,
-                border: '1px solid #79c0ff',
-              }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleDragStart('right', e.clientX);
-              }}
-              onTouchStart={(e) => {
-                e.stopPropagation();
-                if (e.touches.length === 1) {
-                  handleDragStart('right', e.touches[0].clientX);
-                }
-              }}
-            />
-          </div>
-          <span
-            style={{
-              fontSize: '10px',
-              color: '#8b949e',
-              whiteSpace: 'nowrap',
-              minWidth: '32px',
-              textAlign: 'right',
-            }}
-          >
-            {clampedEnd}
-          </span>
-          <span
-            style={{
-              fontSize: '10px',
-              color: '#58a6ff',
-              whiteSpace: 'nowrap',
-              marginLeft: '4px',
-            }}
-          >
-            {sliderLabel} ({windowSize.toLocaleString()} pts)
-          </span>
-        </div>
-      )}
       {/* State legend */}
       {showStates && regimeData && (
         <div
@@ -835,7 +639,7 @@ export function OHLCVChart({
           }}
         >
           {Object.entries(regimeData.state_info)
-            .filter(([key]) => key !== '-1') // Hide unknown state from legend
+            .filter(([key]) => key !== '-1')
             .sort(([a], [b]) => Number(a) - Number(b))
             .map(([stateId, info]) => (
               <span
