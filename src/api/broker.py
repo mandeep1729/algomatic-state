@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.api.auth_middleware import get_current_user
 from src.data.database.connection import get_db_manager
 from src.data.database.broker_models import SnapTradeUser, BrokerConnection, TradeHistory
 from src.execution.snaptrade_client import SnapTradeClient
@@ -41,7 +42,6 @@ def get_snaptrade_client():
 # -----------------------------------------------------------------------------
 
 class ConnectRequest(BaseModel):
-    user_id: int = 1  # Default to internal user ID 1
     redirect_url: Optional[str] = None  # URL to redirect after connection
     broker: Optional[str] = None  # Pre-select broker (e.g., 'ALPACA')
     force: bool = False  # Force reconnect even if already connected
@@ -68,8 +68,9 @@ class SyncResponse(BaseModel):
 @router.post("/connect", response_model=ConnectResponse)
 async def connect_broker(
     request: ConnectRequest,
+    user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
-    client: SnapTradeClient = Depends(get_snaptrade_client)
+    client: SnapTradeClient = Depends(get_snaptrade_client),
 ):
     """Initiate broker connection.
 
@@ -82,20 +83,20 @@ async def connect_broker(
 
     # 1. Check if user exists
     snap_user = db.query(SnapTradeUser).filter(
-        SnapTradeUser.user_account_id == request.user_id
+        SnapTradeUser.user_account_id == user_id
     ).first()
 
     # 2. Register if not exists
     if not snap_user:
         # Generate a unique ID for SnapTrade (e.g., "algomatic_user_{id}")
-        snap_user_id = f"algomatic_user_{request.user_id}"
+        snap_user_id = f"algomatic_user_{user_id}"
         
         registration = client.register_user(snap_user_id)
         if not registration:
              raise HTTPException(status_code=500, detail="Failed to register user with SnapTrade")
         
         snap_user = SnapTradeUser(
-            user_account_id=request.user_id,
+            user_account_id=user_id,
             snaptrade_user_id=registration["user_id"],
             snaptrade_user_secret=registration["user_secret"]
         )
@@ -118,9 +119,9 @@ async def connect_broker(
 
 @router.post("/sync", response_model=SyncResponse)
 async def sync_data(
-    user_id: int = 1,
+    user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
-    client: SnapTradeClient = Depends(get_snaptrade_client)
+    client: SnapTradeClient = Depends(get_snaptrade_client),
 ):
     """Sync trades and accounts from connected brokers."""
     if not client.client:
@@ -245,10 +246,10 @@ async def sync_data(
 
 @router.get("/trades", response_model=List[TradeResponse])
 async def get_trades(
-    user_id: int = 1,
+    user_id: int = Depends(get_current_user),
     symbol: Optional[str] = None,
     limit: int = 50,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """Get trade history, optionally filtered by symbol."""
     snap_user = db.query(SnapTradeUser).filter(
@@ -288,9 +289,9 @@ class ConnectionStatusResponse(BaseModel):
 
 @router.get("/status", response_model=ConnectionStatusResponse)
 async def get_connection_status(
-    user_id: int = 1,
+    user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
-    client: SnapTradeClient = Depends(get_snaptrade_client)
+    client: SnapTradeClient = Depends(get_snaptrade_client),
 ):
     """Check if user has any connected brokerages."""
     snap_user = db.query(SnapTradeUser).filter(

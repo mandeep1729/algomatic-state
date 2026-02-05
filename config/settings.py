@@ -223,6 +223,17 @@ class DatabaseConfig(BaseSettings):
         return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
 
+class AuthConfig(BaseSettings):
+    """Authentication configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="AUTH_")
+
+    google_client_id: str = Field(default="", description="Google OAuth client ID")
+    jwt_secret_key: str = Field(default="change-me-in-production", description="JWT signing secret")
+    jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
+    jwt_expiry_hours: int = Field(default=24, description="JWT token expiry in hours")
+
+
 class Settings(BaseSettings):
     """Main settings class combining all configuration."""
 
@@ -246,6 +257,7 @@ class Settings(BaseSettings):
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":

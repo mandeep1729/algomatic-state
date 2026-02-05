@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { appNavSections } from '../lib/nav';
-import { MOCK_USER } from '../mocks/mockUser';
+import { useAuth } from '../context/AuthContext';
 import { useChartContext } from '../context/ChartContext';
 import { FeatureFilter } from '../../components/FeatureFilter';
 
@@ -102,6 +102,7 @@ export default function AppLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const location = useLocation();
+  const { user, logout } = useAuth();
   const { chartActive, featureNames, selectedFeatures, onFeatureToggle } = useChartContext();
 
   const isSettingsActive = location.pathname.startsWith('/app/settings');
@@ -230,20 +231,34 @@ export default function AppLayout() {
         <div className="border-t border-[var(--border-color)] p-4">
           {sidebarCollapsed ? (
             <div className="flex justify-center">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] text-xs font-bold text-white shadow-md">
-                {MOCK_USER.name.charAt(0)}
-              </div>
+              {user?.profile_picture_url ? (
+                <img src={user.profile_picture_url} alt={user.name} className="h-9 w-9 rounded-full object-cover shadow-md" />
+              ) : (
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] text-xs font-bold text-white shadow-md">
+                  {user?.name?.charAt(0) ?? '?'}
+                </div>
+              )}
             </div>
           ) : (
             <div className="flex items-center gap-3 rounded-lg border border-transparent p-2 transition-colors hover:border-[var(--border-color)] hover:bg-[var(--bg-secondary)]">
-              <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] text-xs font-bold text-white shadow-sm">
-                {MOCK_USER.name.charAt(0)}
-              </div>
+              {user?.profile_picture_url ? (
+                <img src={user.profile_picture_url} alt={user.name} className="h-9 w-9 flex-shrink-0 rounded-full object-cover shadow-sm" />
+              ) : (
+                <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[var(--accent-blue)] to-[var(--accent-purple)] text-xs font-bold text-white shadow-sm">
+                  {user?.name?.charAt(0) ?? '?'}
+                </div>
+              )}
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-[var(--text-primary)]">{MOCK_USER.name}</div>
-                <div className="truncate text-xs text-[var(--text-secondary)]">{MOCK_USER.email}</div>
+                <div className="truncate text-sm font-medium text-[var(--text-primary)]">{user?.name}</div>
+                <div className="truncate text-xs text-[var(--text-secondary)]">{user?.email}</div>
               </div>
-              <Settings size={14} className="text-[var(--text-secondary)]" />
+              <button
+                onClick={logout}
+                className="text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                title="Sign out"
+              >
+                <Settings size={14} />
+              </button>
             </div>
           )}
         </div>

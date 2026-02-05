@@ -4,13 +4,15 @@
  * Backend base URL is proxied via Vite config: /api/* → http://localhost:8000/api/*
  *
  * Available real endpoints:
- *   POST /api/trading-buddy/evaluate       → evaluateTrade
- *   GET  /api/trading-buddy/evaluators     → fetchEvaluators
- *   GET  /api/broker/status?user_id=       → fetchBrokerStatus
- *   GET  /api/sync-status/{symbol}         → fetchSyncStatus
- *   POST /api/sync/{symbol}               → triggerSync
- *   GET  /api/ohlcv/{symbol}              → fetchOHLCVData
- *   GET  /api/features/{symbol}           → fetchFeatures
+ *   POST /api/auth/google            → Google OAuth login
+ *   GET  /api/auth/me                → current user
+ *   POST /api/trading-buddy/evaluate → evaluateTrade
+ *   GET  /api/trading-buddy/evaluators → fetchEvaluators
+ *   GET  /api/broker/status           → fetchBrokerStatus
+ *   GET  /api/sync-status/{symbol}    → fetchSyncStatus
+ *   POST /api/sync/{symbol}           → triggerSync
+ *   GET  /api/ohlcv/{symbol}          → fetchOHLCVData
+ *   GET  /api/features/{symbol}       → fetchFeatures
  *
  * All other functions are served by the mock layer (see api/index.ts).
  */
@@ -21,14 +23,33 @@ import type {
   BrokerStatus,
 } from '../types';
 
-// Hardcoded user ID until auth is implemented
-const USER_ID = 1;
+const TOKEN_KEY = 'auth_token';
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+      ...options?.headers,
+    },
     ...options,
   });
+
+  if (res.status === 401) {
+    // Token expired or invalid — clear auth state and redirect
+    localStorage.removeItem(TOKEN_KEY);
+    window.location.href = '/auth/login';
+    throw new Error('Authentication expired');
+  }
+
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw new Error(`API error ${res.status}: ${body || res.statusText}`);
@@ -66,12 +87,12 @@ export async function fetchEvaluators(): Promise<string[]> {
 }
 
 // =============================================================================
-// Broker Status — GET /api/broker/status?user_id=
+// Broker Status — GET /api/broker/status
 // Response: { connected: bool, brokerages: string[] }
 // =============================================================================
 
 export async function fetchBrokerStatus(): Promise<BrokerStatus> {
-  return get<BrokerStatus>(`/api/broker/status?user_id=${USER_ID}`);
+  return get<BrokerStatus>('/api/broker/status');
 }
 
 // =============================================================================

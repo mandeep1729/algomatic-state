@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from src.data.database.trading_buddy_models import (
     UserAccount as UserAccountModel,
+    UserProfile as UserProfileModel,
     UserRule as UserRuleModel,
     TradeIntent as TradeIntentModel,
     TradeEvaluation as TradeEvaluationModel,
@@ -81,13 +82,40 @@ class TradingBuddyRepository:
             UserAccountModel.id == account_id
         ).first()
 
+    def get_account_by_email(self, email: str) -> Optional[UserAccountModel]:
+        """Get user account by email.
+
+        Args:
+            email: User email address
+
+        Returns:
+            UserAccount or None
+        """
+        return self.session.query(UserAccountModel).filter(
+            UserAccountModel.email == email
+        ).first()
+
+    def get_account_by_google_id(self, google_id: str) -> Optional[UserAccountModel]:
+        """Get user account by Google ID.
+
+        Args:
+            google_id: Google OAuth subject ID
+
+        Returns:
+            UserAccount or None
+        """
+        return self.session.query(UserAccountModel).filter(
+            UserAccountModel.google_id == google_id
+        ).first()
+
     def create_account(
         self,
         external_user_id: str,
         name: str,
-        email: Optional[str] = None,
-        account_balance: float = 0.0,
-        **kwargs,
+        email: str,
+        google_id: Optional[str] = None,
+        auth_provider: str = "google",
+        profile_picture_url: Optional[str] = None,
     ) -> UserAccountModel:
         """Create a new user account.
 
@@ -95,8 +123,9 @@ class TradingBuddyRepository:
             external_user_id: External user identifier
             name: User name
             email: User email
-            account_balance: Initial account balance
-            **kwargs: Additional account parameters
+            google_id: Google OAuth subject ID
+            auth_provider: Auth provider name
+            profile_picture_url: User profile picture URL
 
         Returns:
             Created UserAccount
@@ -105,11 +134,9 @@ class TradingBuddyRepository:
             external_user_id=external_user_id,
             name=name,
             email=email,
-            account_balance=account_balance,
-            max_position_size_pct=kwargs.get("max_position_size_pct", 5.0),
-            max_risk_per_trade_pct=kwargs.get("max_risk_per_trade_pct", 1.0),
-            max_daily_loss_pct=kwargs.get("max_daily_loss_pct", 3.0),
-            min_risk_reward_ratio=kwargs.get("min_risk_reward_ratio", 2.0),
+            google_id=google_id,
+            auth_provider=auth_provider,
+            profile_picture_url=profile_picture_url,
         )
         self.session.add(account)
         self.session.flush()
@@ -119,6 +146,7 @@ class TradingBuddyRepository:
         self,
         external_user_id: str,
         name: str,
+        email: str,
         **kwargs,
     ) -> UserAccountModel:
         """Get existing account or create a new one.
@@ -126,6 +154,7 @@ class TradingBuddyRepository:
         Args:
             external_user_id: External user identifier
             name: User name
+            email: User email
             **kwargs: Additional account parameters
 
         Returns:
@@ -133,8 +162,82 @@ class TradingBuddyRepository:
         """
         account = self.get_account_by_external_id(external_user_id)
         if account is None:
-            account = self.create_account(external_user_id, name, **kwargs)
+            account = self.create_account(external_user_id, name, email=email, **kwargs)
         return account
+
+    # -------------------------------------------------------------------------
+    # User Profile Operations
+    # -------------------------------------------------------------------------
+
+    def get_profile(self, account_id: int) -> Optional[UserProfileModel]:
+        """Get user profile by account ID.
+
+        Args:
+            account_id: Account ID
+
+        Returns:
+            UserProfile or None
+        """
+        return self.session.query(UserProfileModel).filter(
+            UserProfileModel.user_account_id == account_id
+        ).first()
+
+    def create_profile(self, account_id: int, **kwargs) -> UserProfileModel:
+        """Create a user profile with default risk params.
+
+        Args:
+            account_id: Account ID
+            **kwargs: Optional overrides for default values
+
+        Returns:
+            Created UserProfile
+        """
+        profile = UserProfileModel(
+            user_account_id=account_id,
+            account_balance=kwargs.get("account_balance", 0.0),
+            max_position_size_pct=kwargs.get("max_position_size_pct", 5.0),
+            max_risk_per_trade_pct=kwargs.get("max_risk_per_trade_pct", 1.0),
+            max_daily_loss_pct=kwargs.get("max_daily_loss_pct", 3.0),
+            min_risk_reward_ratio=kwargs.get("min_risk_reward_ratio", 2.0),
+        )
+        self.session.add(profile)
+        self.session.flush()
+        return profile
+
+    def get_or_create_profile(self, account_id: int) -> UserProfileModel:
+        """Get existing profile or create one with defaults.
+
+        Args:
+            account_id: Account ID
+
+        Returns:
+            UserProfile
+        """
+        profile = self.get_profile(account_id)
+        if profile is None:
+            profile = self.create_profile(account_id)
+        return profile
+
+    def update_profile(self, account_id: int, **kwargs) -> Optional[UserProfileModel]:
+        """Update user profile fields.
+
+        Args:
+            account_id: Account ID
+            **kwargs: Fields to update
+
+        Returns:
+            Updated UserProfile or None
+        """
+        profile = self.get_profile(account_id)
+        if profile is None:
+            return None
+
+        for key, value in kwargs.items():
+            if hasattr(profile, key):
+                setattr(profile, key, value)
+
+        self.session.flush()
+        return profile
 
     # -------------------------------------------------------------------------
     # User Rules Operations
@@ -203,9 +306,9 @@ class TradingBuddyRepository:
         self,
         account_id: int,
     ) -> dict[str, EvaluatorConfig]:
-        """Build EvaluatorConfig objects from user account and rules.
+        """Build EvaluatorConfig objects from user profile and rules.
 
-        Combines account-level defaults with rule-specific overrides
+        Combines profile-level defaults with rule-specific overrides
         to create configuration for each evaluator.
 
         Args:
@@ -218,14 +321,15 @@ class TradingBuddyRepository:
         if not account:
             return {}
 
+        profile = self.get_or_create_profile(account_id)
         rules = self.get_user_rules(account_id)
 
-        # Start with account-level defaults for all evaluators
+        # Start with profile-level defaults for all evaluators
         base_params = {
-            "account_balance": account.account_balance,
-            "max_position_size_pct": account.max_position_size_pct,
-            "max_risk_per_trade_pct": account.max_risk_per_trade_pct,
-            "min_rr_ratio": account.min_risk_reward_ratio,
+            "account_balance": profile.account_balance,
+            "max_position_size_pct": profile.max_position_size_pct,
+            "max_risk_per_trade_pct": profile.max_risk_per_trade_pct,
+            "min_rr_ratio": profile.min_risk_reward_ratio,
         }
 
         # Group rules by evaluator
