@@ -118,11 +118,21 @@ export function OHLCVChart({
   const dragStartXRef = useRef(0);
   const dragStartValuesRef = useRef({ start: 0, end: 0 });
 
-  // Reset slider when data changes
+  // Stable key to detect when data has meaningfully changed (different symbol/timeframe)
+  const dataKey = useMemo(() => {
+    if (!data || data.timestamps.length === 0) return '';
+    return `${data.timestamps[0]}_${data.timestamps.length}`;
+  }, [data]);
+
+  // Reset slider only when the underlying dataset changes (not on re-renders)
+  const prevDataKeyRef = useRef(dataKey);
   useEffect(() => {
-    setSliderStart(0);
-    setSliderEnd(Math.min(totalPoints, MAX_CHART_POINTS));
-  }, [data, totalPoints]);
+    if (dataKey !== prevDataKeyRef.current) {
+      prevDataKeyRef.current = dataKey;
+      setSliderStart(0);
+      setSliderEnd(Math.min(totalPoints, MAX_CHART_POINTS));
+    }
+  }, [dataKey, totalPoints]);
 
   // Clamp window size to MAX_CHART_POINTS
   const clampedEnd = Math.min(sliderEnd, totalPoints);
@@ -305,6 +315,16 @@ export function OHLCVChart({
       },
       handleScroll: {
         vertTouchDrag: false,
+      },
+      localization: {
+        timeFormatter: (time: number) => {
+          const date = new Date(time * 1000);
+          const est = toEST(date);
+          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const hrs = est.hours.toString().padStart(2, '0');
+          const mins = est.minutes.toString().padStart(2, '0');
+          return `${months[est.month]} ${est.day}, ${hrs}:${mins} EST`;
+        },
       },
     });
 
