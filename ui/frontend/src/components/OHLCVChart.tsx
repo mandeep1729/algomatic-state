@@ -12,7 +12,7 @@ import {
 } from 'lightweight-charts';
 
 const MAX_CHART_POINTS = 7200;
-const MIN_CHART_POINTS = 1;
+const MIN_CHART_POINTS = 3;
 
 interface OHLCVData {
   timestamps: string[];
@@ -310,7 +310,7 @@ export function OHLCVChart({
           const date = new Date(time * 1000);
           const hours = date.getUTCHours().toString().padStart(2, '0');
           const minutes = date.getUTCMinutes().toString().padStart(2, '0');
-          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
           if (tickMarkType <= 2) {
             return `${months[date.getUTCMonth()]} ${date.getUTCDate()}`;
           }
@@ -324,7 +324,7 @@ export function OHLCVChart({
         timeFormatter: (time: number) => {
           // Chart times are already EST-shifted-as-UTC, so use getUTC* directly
           const date = new Date(time * 1000);
-          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
           const hrs = date.getUTCHours().toString().padStart(2, '0');
           const mins = date.getUTCMinutes().toString().padStart(2, '0');
           return `${months[date.getUTCMonth()]} ${date.getUTCDate()}, ${hrs}:${mins} EST`;
@@ -581,7 +581,7 @@ export function OHLCVChart({
     const startDate = new Date(windowedData.timestamps[0]);
     const endDate = new Date(windowedData.timestamps[windowedData.timestamps.length - 1]);
     const fmt = (d: Date) => {
-      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       const est = toEST(d);
       const hrs = est.hours.toString().padStart(2, '0');
       const mins = est.minutes.toString().padStart(2, '0');
