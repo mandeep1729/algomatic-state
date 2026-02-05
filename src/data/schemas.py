@@ -1,7 +1,11 @@
 """Data validation schemas for OHLCV data using pandera."""
 
+import logging
+
 import pandera.pandas as pa
 from pandera.typing.pandas import DataFrame, Index, Series
+
+logger = logging.getLogger(__name__)
 
 
 class OHLCVSchema(pa.DataFrameModel):
@@ -58,4 +62,7 @@ def validate_ohlcv(df: DataFrame) -> DataFrame:
     Raises:
         pandera.errors.SchemaError: If validation fails
     """
-    return OHLCVSchema.validate(df)
+    logger.debug("Validating OHLCV schema for DataFrame with %d rows", len(df))
+    validated = OHLCVSchema.validate(df)
+    logger.debug("OHLCV validation passed")
+    return validated

@@ -3,6 +3,7 @@
 Defines data contracts for evaluation results and findings.
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -11,6 +12,8 @@ from typing import Any, Literal, Optional
 import numpy as np
 
 from src.trade.intent import TradeIntent
+
+logger = logging.getLogger(__name__)
 
 
 class Severity(str, Enum):
@@ -195,7 +198,12 @@ class EvaluationResult:
     def __post_init__(self):
         """Validate score range."""
         if not 0 <= self.score <= 100:
+            logger.error("Invalid evaluation score: %.2f (must be 0-100)", self.score)
             raise ValueError(f"Score must be between 0 and 100, got {self.score}")
+        logger.debug(
+            "EvaluationResult created: symbol=%s, score=%.1f, items=%d, blockers=%d",
+            self.intent.symbol, self.score, len(self.items), len(self.blockers)
+        )
 
     @property
     def blockers(self) -> list[EvaluationItem]:

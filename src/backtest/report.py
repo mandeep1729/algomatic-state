@@ -1,5 +1,6 @@
 """Performance reporting and visualization for backtests."""
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -10,6 +11,8 @@ import pandas as pd
 
 from src.backtest.engine import BacktestResult
 from src.backtest.metrics import PerformanceMetrics, calculate_monthly_returns
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -66,6 +69,7 @@ class PerformanceReport:
         Returns:
             Report data dictionary
         """
+        logger.debug("Generating performance report: %s", self._config.title)
         report = {
             "title": self._config.title,
             "generated_at": datetime.now().isoformat(),
@@ -88,6 +92,7 @@ class PerformanceReport:
         if self._config.include_regime_breakdown:
             report["regime_breakdown"] = self._generate_regime_breakdown(result)
 
+        logger.debug("Report generated with sections: %s", list(report.keys()))
         return report
 
     def _generate_summary(self, result: BacktestResult) -> dict[str, Any]:
@@ -401,11 +406,14 @@ class PerformanceReport:
         import json
 
         path = Path(path)
+        logger.debug("Saving report to %s (format=%s)", path, self._config.output_format)
 
         if self._config.output_format == "markdown" or path.suffix == ".md":
             content = self.to_markdown(report)
             path.write_text(content)
+            logger.info("Report saved as markdown: %s", path)
         else:
             # Default to JSON
             with open(path, "w") as f:
                 json.dump(report, f, indent=2, default=str)
+            logger.info("Report saved as JSON: %s", path)

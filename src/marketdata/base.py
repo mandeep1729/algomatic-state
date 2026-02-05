@@ -1,9 +1,12 @@
 """Abstract base class for market data providers."""
 
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class MarketDataProvider(ABC):
@@ -46,6 +49,7 @@ class MarketDataProvider(ABC):
         end: datetime,
     ) -> pd.DataFrame:
         """Convenience wrapper: fetch 1-minute bars."""
+        logger.debug("Fetching 1-minute bars: symbol=%s, start=%s, end=%s", symbol, start, end)
         return self.fetch_bars(symbol, start, end, resolution="1Min")
 
     def fetch_daily_bars(
@@ -55,4 +59,5 @@ class MarketDataProvider(ABC):
         end: datetime,
     ) -> pd.DataFrame:
         """Convenience wrapper: fetch daily bars."""
+        logger.debug("Fetching daily bars: symbol=%s, start=%s, end=%s", symbol, start, end)
         return self.fetch_bars(symbol, start, end, resolution="1Day")

@@ -4,6 +4,7 @@ Provides common calculations and formatting used across
 multiple evaluators for building evidence.
 """
 
+import logging
 from typing import Literal, Optional, Tuple
 
 import numpy as np
@@ -11,6 +12,7 @@ import pandas as pd
 
 from src.trade.evaluation import Evidence, Severity
 
+logger = logging.getLogger(__name__)
 
 # Numerical stability constant
 EPS = 1e-9
@@ -70,11 +72,13 @@ def compute_zscore(
     Returns:
         Tuple of (zscore, evidence)
     """
+    logger.debug("Computing z-score: value=%.4f, window=%s, series_len=%d", value, window, len(series))
     if window is not None:
         series = series.tail(window)
 
     series = series.dropna()
     if len(series) < 2:
+        logger.debug("Insufficient data for z-score computation: %d samples", len(series))
         return 0.0, Evidence(
             metric_name="zscore",
             value=0.0,

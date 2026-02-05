@@ -1,5 +1,6 @@
 """Returns and trend features (momentum backbone)."""
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -14,6 +15,8 @@ from .base import (
     rolling_regression_slope,
     safe_divide,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ReturnFeatureCalculator(BaseFeatureCalculator):
@@ -121,6 +124,7 @@ class ReturnFeatureCalculator(BaseFeatureCalculator):
             DataFrame with columns: r1, r5, r15, r60, cumret_60, ema_diff,
                                    slope_60, trend_strength
         """
+        logger.debug("Computing return features for %d rows", len(df))
         close = df["close"]
 
         result = pd.DataFrame(index=df.index)
@@ -155,4 +159,9 @@ class ReturnFeatureCalculator(BaseFeatureCalculator):
 
         result["trend_strength"] = safe_divide(result["slope_60"].abs(), rv_60)
 
+        logger.debug(
+            "Return features computed: r1 range=[%.6f, %.6f], trend_strength range=[%.4f, %.4f]",
+            result["r1"].min(), result["r1"].max(),
+            result["trend_strength"].min(), result["trend_strength"].max()
+        )
         return result
