@@ -1,10 +1,13 @@
 """Shared utilities for market data providers."""
 
+import logging
 import time
 from datetime import datetime, timedelta
 from typing import Callable, TypeVar
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
@@ -52,9 +55,16 @@ def fetch_with_retry(
             return fn()
         except Exception as e:
             last_error = e
+            logger.debug(
+                "Fetch attempt %d/%d failed: %s",
+                attempt + 1, max_retries, str(e)
+            )
             if attempt < max_retries - 1:
-                time.sleep(2**attempt)
+                delay = 2**attempt
+                logger.debug("Retrying in %d seconds", delay)
+                time.sleep(delay)
 
+    logger.error("All %d fetch attempts failed: %s", max_retries, str(last_error))
     raise RuntimeError(f"Failed after {max_retries} attempts: {last_error}")
 
 
@@ -97,9 +107,11 @@ def normalize_ohlcv(df: pd.DataFrame) -> pd.DataFrame:
     Raises:
         ValueError: If any required OHLCV column is missing.
     """
+    logger.debug("Normalizing OHLCV data: %d rows, columns=%s", len(df), df.columns.tolist())
     ohlcv_cols = ["open", "high", "low", "close", "volume"]
     missing = [c for c in ohlcv_cols if c not in df.columns]
     if missing:
+        logger.error("Missing required OHLCV columns: %s", missing)
         raise ValueError(f"Missing required columns: {missing}. Found: {df.columns.tolist()}")
 
     df = df[ohlcv_cols].copy()

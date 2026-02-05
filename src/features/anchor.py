@@ -1,10 +1,13 @@
 """Anchor and location features (context for continuation)."""
 
+import logging
 from typing import Any
 
 import pandas as pd
 
 from .base import EPS, BaseFeatureCalculator, FeatureSpec, ema, safe_divide
+
+logger = logging.getLogger(__name__)
 
 
 class AnchorFeatureCalculator(BaseFeatureCalculator):
@@ -82,6 +85,7 @@ class AnchorFeatureCalculator(BaseFeatureCalculator):
             DataFrame with columns: vwap_60, dist_vwap_60, dist_ema_48,
                                    breakout_20, pullback_depth
         """
+        logger.debug("Computing anchor features for %d rows", len(df))
         result = pd.DataFrame(index=df.index)
 
         # Typical price for VWAP
@@ -113,4 +117,9 @@ class AnchorFeatureCalculator(BaseFeatureCalculator):
         # Pullback depth: how far below the rolling high
         result["pullback_depth"] = safe_divide(rolling_high - df["close"], rolling_high)
 
+        logger.debug(
+            "Anchor features computed: dist_vwap_60 range=[%.4f, %.4f], breakout_20 range=[%.4f, %.4f]",
+            result["dist_vwap_60"].min(), result["dist_vwap_60"].max(),
+            result["breakout_20"].min(), result["breakout_20"].max()
+        )
         return result

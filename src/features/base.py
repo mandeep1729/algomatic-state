@@ -1,5 +1,6 @@
 """Base classes and utilities for feature engineering."""
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+logger = logging.getLogger(__name__)
 
 # Numerical stability constant
 EPS = 1e-9

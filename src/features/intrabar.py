@@ -1,10 +1,13 @@
 """Intrabar structure features (microstructure-lite)."""
 
+import logging
 from typing import Any
 
 import pandas as pd
 
 from .base import EPS, BaseFeatureCalculator, FeatureSpec
+
+logger = logging.getLogger(__name__)
 
 
 class IntrabarFeatureCalculator(BaseFeatureCalculator):
@@ -57,6 +60,7 @@ class IntrabarFeatureCalculator(BaseFeatureCalculator):
         Returns:
             DataFrame with columns: clv, body_ratio, upper_wick, lower_wick
         """
+        logger.debug("Computing intrabar features for %d rows", len(df))
         o = df["open"]
         h = df["high"]
         l = df["low"]
@@ -79,4 +83,9 @@ class IntrabarFeatureCalculator(BaseFeatureCalculator):
         # Lower wick: distance from bottom of body to low
         result["lower_wick"] = (pd.concat([o, c], axis=1).min(axis=1) - l) / bar_range
 
+        logger.debug(
+            "Intrabar features computed: clv range=[%.4f, %.4f], body_ratio range=[%.4f, %.4f]",
+            result["clv"].min(), result["clv"].max(),
+            result["body_ratio"].min(), result["body_ratio"].max()
+        )
         return result

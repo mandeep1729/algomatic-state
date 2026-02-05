@@ -1,6 +1,10 @@
 """Agent configuration via environment variables."""
 
+import logging
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class AgentConfig(BaseSettings):
@@ -18,3 +22,10 @@ class AgentConfig(BaseSettings):
     position_size_dollars: float = 1
     paper: bool = True
     api_port: int = 8000
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        logger.debug(
+            "AgentConfig loaded: symbol=%s, interval=%d min, provider=%s, paper=%s",
+            self.symbol, self.interval_minutes, self.data_provider, self.paper
+        )

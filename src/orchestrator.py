@@ -89,6 +89,10 @@ class EvaluatorOrchestrator:
             evaluator_names: Specific evaluators to load (all if None)
             enabled_only: Only load enabled evaluators
         """
+        logger.debug(
+            "Loading evaluators: names=%s, enabled_only=%s",
+            evaluator_names or "all", enabled_only
+        )
         if evaluator_names:
             # Load specific evaluators
             self._evaluators = []
@@ -124,10 +128,15 @@ class EvaluatorOrchestrator:
         Returns:
             Aggregated evaluation result
         """
+        logger.debug(
+            "Starting evaluation for %s: direction=%s, entry=%.2f, R:R=%.2f",
+            intent.symbol, intent.direction.value, intent.entry_price, intent.risk_reward_ratio
+        )
         start_time = datetime.utcnow()
 
         # Build context if not provided
         if context is None:
+            logger.debug("Building context for %s", intent.symbol)
             context = self._build_context(intent)
 
         # Ensure evaluators are loaded
@@ -136,8 +145,10 @@ class EvaluatorOrchestrator:
 
         # Run evaluations
         if self.config.parallel_execution and len(self._evaluators) > 1:
+            logger.debug("Running %d evaluators in parallel", len(self._evaluators))
             all_items = self._run_parallel(intent, context)
         else:
+            logger.debug("Running %d evaluators sequentially", len(self._evaluators))
             all_items = self._run_sequential(intent, context)
 
         # Filter INFO items if configured

@@ -65,6 +65,11 @@ class ExitPlanEvaluator(Evaluator):
         Returns:
             List of evaluation findings
         """
+        logger.debug(
+            "Evaluating exit plan for %s: stop=%.2f, target=%.2f, key_levels=%s",
+            intent.symbol, intent.stop_loss, intent.profit_target,
+            "present" if context.key_levels else "absent"
+        )
         cfg = config or self.config
         items: list[EvaluationItem] = []
 
@@ -107,6 +112,7 @@ class ExitPlanEvaluator(Evaluator):
                 config=cfg,
             ))
 
+        logger.debug("Exit plan evaluation complete: %d items found", len(items))
         return items
 
     def _check_missing_exits(
