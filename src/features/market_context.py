@@ -1,10 +1,13 @@
 """Market context features."""
 
+import logging
 from typing import Any
 
 import pandas as pd
 
 from .base import BaseFeatureCalculator, FeatureSpec, log_return, rolling_beta
+
+logger = logging.getLogger(__name__)
 
 
 class MarketContextFeatureCalculator(BaseFeatureCalculator):
@@ -91,8 +94,10 @@ class MarketContextFeatureCalculator(BaseFeatureCalculator):
         Raises:
             ValueError: If market_df is not provided in kwargs.
         """
+        logger.debug("Computing market context features for %d rows", len(df))
         market_df = kwargs.get("market_df")
         if market_df is None:
+            logger.error("market_df is required but not provided")
             raise ValueError("market_df is required for MarketContextFeatureCalculator")
 
         result = pd.DataFrame(index=df.index)
@@ -119,4 +124,9 @@ class MarketContextFeatureCalculator(BaseFeatureCalculator):
         result["beta_60"] = beta
         result["resid_rv_60"] = resid_rv
 
+        logger.debug(
+            "Market context features computed: beta_60 range=[%.4f, %.4f], mkt_rv_60 range=[%.6f, %.6f]",
+            result["beta_60"].min(), result["beta_60"].max(),
+            result["mkt_rv_60"].min(), result["mkt_rv_60"].max()
+        )
         return result

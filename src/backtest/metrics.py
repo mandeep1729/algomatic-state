@@ -1,11 +1,14 @@
 """Performance metrics calculation for backtesting."""
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -115,7 +118,12 @@ def calculate_metrics(
     Returns:
         PerformanceMetrics object
     """
+    logger.debug(
+        "Calculating performance metrics: equity_curve_len=%d, trades=%d",
+        len(equity_curve), len(trades)
+    )
     if len(equity_curve) < 2:
+        logger.debug("Insufficient equity curve data (len=%d), returning empty metrics", len(equity_curve))
         return PerformanceMetrics()
 
     # Calculate returns
@@ -171,7 +179,7 @@ def calculate_metrics(
     # Trade statistics
     trade_metrics = _calculate_trade_metrics(trades)
 
-    return PerformanceMetrics(
+    metrics = PerformanceMetrics(
         total_return=total_return,
         annualized_return=annualized_return,
         sharpe_ratio=sharpe_ratio,
@@ -198,6 +206,11 @@ def calculate_metrics(
         gross_profit=trade_metrics["gross_profit"],
         gross_loss=trade_metrics["gross_loss"],
     )
+    logger.debug(
+        "Metrics calculated: total_return=%.2f%%, sharpe=%.2f, max_dd=%.2f%%, win_rate=%.1f%%",
+        total_return * 100, sharpe_ratio, dd_metrics["max_drawdown"] * 100, trade_metrics["win_rate"] * 100
+    )
+    return metrics
 
 
 def _calculate_drawdown_metrics(equity_curve: pd.Series) -> dict[str, Any]:

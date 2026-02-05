@@ -225,10 +225,11 @@ python -m src.agent.main
 |---|---|---|
 | `AGENT_SYMBOL` | `AAPL` | Ticker symbol to trade |
 | `AGENT_INTERVAL_MINUTES` | `15` | Minutes between each loop iteration |
-| `AGENT_DATA_PROVIDER` | `finnhub` | Market data source (`alpaca` or `finnhub`) |
+| `AGENT_DATA_PROVIDER` | `alpaca` | Market data source (`alpaca` or `finnhub`) |
 | `AGENT_LOOKBACK_DAYS` | `5` | Days of historical data to fetch each cycle |
-| `AGENT_POSITION_SIZE_DOLLARS` | `10000` | Dollar amount per position |
+| `AGENT_POSITION_SIZE_DOLLARS` | `1` | Dollar amount per position (docker-compose uses `100`) |
 | `AGENT_PAPER` | `true` | Use Alpaca paper trading (`true`/`false`) |
+| `AGENT_LOG_LEVEL` | `INFO` | Agent logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `STRATEGY_MOMENTUM_FEATURE` | `r5` | Feature used for momentum signal |
 | `STRATEGY_LONG_THRESHOLD` | `0.001` | Momentum value above which to go long |
 | `STRATEGY_SHORT_THRESHOLD` | `-0.001` | Momentum value below which to go short |

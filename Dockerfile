@@ -2,14 +2,14 @@
 FROM python:3.12-slim AS builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        gcc make wget ca-certificates \
+        gcc g++ make wget ca-certificates libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
-RUN wget -q http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz \
+RUN wget -q https://github.com/TA-Lib/ta-lib/releases/download/v0.4.0/ta-lib-0.4.0-src.tar.gz \
     && tar -xzf ta-lib-0.4.0-src.tar.gz \
     && cd ta-lib \
     && ./configure --prefix=/usr/local \
-    && make -j"$(nproc)" \
+    && make \
     && make install \
     && cd .. \
     && rm -rf ta-lib ta-lib-0.4.0-src.tar.gz

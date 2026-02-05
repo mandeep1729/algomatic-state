@@ -1,10 +1,13 @@
 """Abstract base class for data loaders."""
 
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 class BaseDataLoader(ABC):

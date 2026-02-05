@@ -185,6 +185,11 @@ class Evaluator(ABC):
         cfg = config or self.config
         actual_severity = cfg.get_severity(code, severity)
 
+        logger.debug(
+            "Creating evaluation item: evaluator=%s, code=%s, severity=%s, title=%s",
+            self.name, code, actual_severity.value, title
+        )
+
         return EvaluationItem(
             evaluator=self.name,
             code=code,

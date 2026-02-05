@@ -1,10 +1,13 @@
 """Volatility and range features (regime + risk context)."""
 
+import logging
 from typing import Any
 
 import pandas as pd
 
 from .base import EPS, BaseFeatureCalculator, FeatureSpec, log_return, safe_divide, zscore
+
+logger = logging.getLogger(__name__)
 
 
 class VolatilityFeatureCalculator(BaseFeatureCalculator):
@@ -89,6 +92,7 @@ class VolatilityFeatureCalculator(BaseFeatureCalculator):
             DataFrame with columns: rv_15, rv_60, range_1, atr_60,
                                    range_z_60, vol_of_vol
         """
+        logger.debug("Computing volatility features for %d rows", len(df))
         result = pd.DataFrame(index=df.index)
 
         # Get or compute r1
@@ -120,4 +124,9 @@ class VolatilityFeatureCalculator(BaseFeatureCalculator):
             window=self.long_window, min_periods=self.long_window
         ).std()
 
+        logger.debug(
+            "Volatility features computed: rv_60 range=[%.6f, %.6f], atr_60 range=[%.6f, %.6f]",
+            result["rv_60"].min(), result["rv_60"].max(),
+            result["atr_60"].min(), result["atr_60"].max()
+        )
         return result

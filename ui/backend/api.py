@@ -1,7 +1,6 @@
 """FastAPI backend for regime state visualization UI."""
 
 import logging
-import logging.handlers
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -13,42 +12,28 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
+# Add parent directory to path for imports (needed before importing src modules)
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-# Configure logging with file rotation
-LOG_DIR = Path(__file__).parent.parent.parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
-LOG_FILE = LOG_DIR / "backend.log"
-
-log_format = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-
-# Console handler
-console_handler = logging.StreamHandler(sys.stderr)
-console_handler.setFormatter(log_format)
-
-# File handler with rotation (10MB max, 3 backup files)
-file_handler = logging.handlers.RotatingFileHandler(
-    LOG_FILE,
-    maxBytes=10 * 1024 * 1024,  # 10 MB
-    backupCount=3,
-    encoding="utf-8",
-)
-file_handler.setFormatter(log_format)
-
-# Configure root logger
-logging.basicConfig(
-    level=logging.INFO,
-    handlers=[console_handler, file_handler]
-)
-
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from config.settings import get_settings
+from src.utils.logging import setup_logging
+
+# Configure logging using centralized setup with file output
+# Use settings-based configuration with backend-specific log file
+settings = get_settings()
+setup_logging(
+    level=settings.logging.level,
+    format="text",  # Use text format for readability in backend logs
+    file=Path("logs/backend.log"),
+    rotate_size_mb=settings.logging.rotate_size_mb,
+    retain_count=settings.logging.retain_count,
+)
 from src.data.loaders.csv_loader import CSVLoader
 from src.data.loaders.database_loader import DatabaseLoader
 from src.data.database.connection import get_db_manager

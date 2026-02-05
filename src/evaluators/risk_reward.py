@@ -75,6 +75,11 @@ class RiskRewardEvaluator(Evaluator):
         Returns:
             List of evaluation findings
         """
+        logger.debug(
+            "Evaluating risk/reward for %s: entry=%.2f, stop=%.2f, target=%.2f, R:R=%.2f",
+            intent.symbol, intent.entry_price, intent.stop_loss,
+            intent.profit_target, intent.risk_reward_ratio
+        )
         cfg = config or self.config
         items: list[EvaluationItem] = []
 
@@ -116,6 +121,13 @@ class RiskRewardEvaluator(Evaluator):
             if size_item:
                 items.append(size_item)
 
+        logger.debug(
+            "Risk/reward evaluation complete: %d items found (blockers=%d, critical=%d, warnings=%d)",
+            len(items),
+            sum(1 for i in items if i.severity == Severity.BLOCKER),
+            sum(1 for i in items if i.severity == Severity.CRITICAL),
+            sum(1 for i in items if i.severity == Severity.WARNING)
+        )
         return items
 
     def _check_rr_ratio(

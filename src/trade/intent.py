@@ -3,10 +3,13 @@
 Defines the core data contracts for proposing trades.
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class TradeDirection(str, Enum):
@@ -71,6 +74,10 @@ class TradeIntent:
 
     def __post_init__(self):
         """Validate trade intent parameters."""
+        logger.debug(
+            "Creating TradeIntent: symbol=%s, direction=%s, entry=%.2f, stop=%.2f, target=%.2f",
+            self.symbol, self.direction, self.entry_price, self.stop_loss, self.profit_target
+        )
         self.symbol = self.symbol.upper()
 
         if isinstance(self.direction, str):
@@ -81,26 +88,47 @@ class TradeIntent:
         # Validate price relationships
         if self.direction == TradeDirection.LONG:
             if self.stop_loss >= self.entry_price:
+                logger.error(
+                    "Invalid long trade: stop_loss (%.2f) >= entry_price (%.2f)",
+                    self.stop_loss, self.entry_price
+                )
                 raise ValueError(
                     f"Long trade: stop_loss ({self.stop_loss}) must be below "
                     f"entry_price ({self.entry_price})"
                 )
             if self.profit_target <= self.entry_price:
+                logger.error(
+                    "Invalid long trade: profit_target (%.2f) <= entry_price (%.2f)",
+                    self.profit_target, self.entry_price
+                )
                 raise ValueError(
                     f"Long trade: profit_target ({self.profit_target}) must be above "
                     f"entry_price ({self.entry_price})"
                 )
         else:  # SHORT
             if self.stop_loss <= self.entry_price:
+                logger.error(
+                    "Invalid short trade: stop_loss (%.2f) <= entry_price (%.2f)",
+                    self.stop_loss, self.entry_price
+                )
                 raise ValueError(
                     f"Short trade: stop_loss ({self.stop_loss}) must be above "
                     f"entry_price ({self.entry_price})"
                 )
             if self.profit_target >= self.entry_price:
+                logger.error(
+                    "Invalid short trade: profit_target (%.2f) >= entry_price (%.2f)",
+                    self.profit_target, self.entry_price
+                )
                 raise ValueError(
                     f"Short trade: profit_target ({self.profit_target}) must be below "
                     f"entry_price ({self.entry_price})"
                 )
+
+        logger.debug(
+            "TradeIntent validated: R:R=%.2f, risk_per_share=%.4f",
+            self.risk_reward_ratio, self.risk_per_share
+        )
 
     @property
     def risk_per_share(self) -> float:
@@ -152,6 +180,7 @@ class TradeIntent:
     @classmethod
     def from_dict(cls, data: dict) -> "TradeIntent":
         """Create from dictionary."""
+        logger.debug("Creating TradeIntent from dict: symbol=%s", data.get("symbol"))
         return cls(
             intent_id=data.get("intent_id"),
             user_id=data["user_id"],

@@ -1,11 +1,14 @@
 """Time-of-day encoding features."""
 
+import logging
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from .base import BaseFeatureCalculator, FeatureSpec
+
+logger = logging.getLogger(__name__)
 
 
 class TimeOfDayFeatureCalculator(BaseFeatureCalculator):
@@ -119,6 +122,7 @@ class TimeOfDayFeatureCalculator(BaseFeatureCalculator):
             DataFrame with columns: tod_sin, tod_cos, is_open_window,
                                    is_close_window, is_midday
         """
+        logger.debug("Computing time-of-day features for %d rows", len(df))
         # Get minutes from market open
         tod = self._compute_minutes_from_open(df.index)
 
@@ -139,4 +143,8 @@ class TimeOfDayFeatureCalculator(BaseFeatureCalculator):
             (tod >= self.midday_start_minutes) & (tod <= self.midday_end_minutes)
         ).astype(int)
 
+        logger.debug(
+            "Time-of-day features computed: open_window=%d, close_window=%d, midday=%d",
+            result["is_open_window"].sum(), result["is_close_window"].sum(), result["is_midday"].sum()
+        )
         return result

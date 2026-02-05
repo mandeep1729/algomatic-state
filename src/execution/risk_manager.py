@@ -211,44 +211,111 @@ class RiskManager:
         # Update equity tracking
         self._update_equity_tracking(account)
 
+        order_value = order.quantity * price
+        daily_pnl = account.equity - self._daily_starting_equity
+        drawdown_pct = ((self._peak_equity - account.equity) / self._peak_equity * 100) if self._peak_equity > 0 else 0.0
+        logger.debug(
+            "Risk pre-check: equity=$%.2f buying_power=$%.2f positions=%d "
+            "daily_pnl=$%.2f drawdown=%.2f%% order=%s %s qty=%.4f value=$%.2f",
+            account.equity, account.buying_power, len(positions),
+            daily_pnl, drawdown_pct,
+            order.side.value, order.symbol, order.quantity, order_value,
+        )
+
         # Check trading blocked
         blocked = self._check_trading_blocked(account)
         if blocked:
             violations.append(blocked)
             return violations  # No point checking further
+        logger.debug("trading_blocked check: passed")
 
         # Check buying power
         bp_violation = self._check_buying_power(order, price, account)
         if bp_violation:
             violations.append(bp_violation)
+        else:
+            remaining_bp = account.buying_power - order_value
+            min_bp = account.equity * self._config.min_buying_power_pct
+            logger.debug(
+                "buying_power check: order_value=$%.2f remaining_bp=$%.2f min_required=$%.2f passed",
+                order_value, remaining_bp, min_bp,
+            )
 
         # Check order size limits
         order_violations = self._check_order_size(order, price, account)
         violations.extend(order_violations)
+        if not order_violations:
+            order_pct = order_value / account.equity if account.equity > 0 else 1.0
+            logger.debug(
+                "order_size check: value=$%.2f (max=$%.2f) pct=%.1f%% (max=%.1f%%) passed",
+                order_value, self._config.max_order_value,
+                order_pct * 100, self._config.max_order_pct * 100,
+            )
 
         # Check position size limits
         position_violations = self._check_position_limits(order, price, account, positions)
         violations.extend(position_violations)
+        if not position_violations:
+            current_pos = next((p for p in positions if p.symbol == order.symbol), None)
+            current_val = abs(current_pos.quantity * price) if current_pos else 0.0
+            new_val = current_val + order_value if order.side == OrderSide.BUY else abs(current_val - order_value)
+            pos_pct = new_val / account.equity if account.equity > 0 else 1.0
+            logger.debug(
+                "position_size check: current=$%.2f new=$%.2f (max=$%.2f) pct=%.1f%% (max=%.1f%%) passed",
+                current_val, new_val, self._config.max_position_value,
+                pos_pct * 100, self._config.max_position_pct * 100,
+            )
 
         # Check portfolio concentration
         concentration = self._check_portfolio_concentration(order, price, account, positions)
         if concentration:
             violations.append(concentration)
+        else:
+            total_pos_value = sum(abs(p.market_value) for p in positions)
+            current_pos = next((p for p in positions if p.symbol == order.symbol), None)
+            current_val = abs(current_pos.market_value) if current_pos else 0.0
+            if order.side == OrderSide.BUY:
+                new_val = current_val + order_value
+                new_total = total_pos_value + order_value
+            else:
+                new_val = max(0, current_val - order_value)
+                new_total = max(0, total_pos_value - order_value)
+            conc_pct = (new_val / new_total * 100) if new_total > 0 else 0.0
+            logger.debug(
+                "concentration check: position=$%.2f total=$%.2f concentration=%.1f%% (max=%.1f%%) passed",
+                new_val, new_total, conc_pct, self._config.max_portfolio_concentration * 100,
+            )
 
         # Check symbol limits
         symbol_violation = self._check_symbol_limits(order, positions)
         if symbol_violation:
             violations.append(symbol_violation)
+        else:
+            logger.debug(
+                "symbol_limit check: count=%d (max=%d) passed",
+                len({p.symbol for p in positions}), self._config.max_symbols,
+            )
 
         # Check daily loss limit
         daily_loss = self._check_daily_loss(account)
         if daily_loss:
             violations.append(daily_loss)
+        else:
+            daily_loss_pct = (-daily_pnl / self._daily_starting_equity * 100) if daily_pnl < 0 and self._daily_starting_equity > 0 else 0.0
+            logger.debug(
+                "daily_loss check: loss=%.2f%% (max=%.1f%%) passed",
+                daily_loss_pct, self._config.max_daily_loss_pct * 100,
+            )
 
         # Check max drawdown
         drawdown = self._check_max_drawdown(account)
         if drawdown:
             violations.append(drawdown)
+        else:
+            logger.debug(
+                "max_drawdown check: drawdown=%.2f%% (max=%.1f%%) passed",
+                drawdown_pct, self._config.max_drawdown_pct * 100,
+            )
 
         # Log violations
         if violations:

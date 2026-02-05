@@ -6,6 +6,7 @@ agent scheduler loop in the main asyncio event loop.
 
 import asyncio
 import logging
+import os
 import threading
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from src.agent.config import AgentConfig
 from src.agent.scheduler import run_agent_loop
 from src.utils.logging import setup_logging
 
-setup_logging(level="INFO", format="text", file=Path("logs/agent.log"))
+setup_logging(level=os.environ.get("AGENT_LOG_LEVEL", "INFO"), format="text", file=Path("logs/agent.log"))
 logger = logging.getLogger(__name__)
 
 

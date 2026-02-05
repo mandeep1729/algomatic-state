@@ -1,10 +1,13 @@
 """Volume and participation features."""
 
+import logging
 from typing import Any
 
 import pandas as pd
 
 from .base import EPS, BaseFeatureCalculator, FeatureSpec, safe_divide, zscore
+
+logger = logging.getLogger(__name__)
 
 
 class VolumeFeatureCalculator(BaseFeatureCalculator):
@@ -72,6 +75,7 @@ class VolumeFeatureCalculator(BaseFeatureCalculator):
         Returns:
             DataFrame with columns: vol1, dvol1, relvol_60, vol_z_60, dvol_z_60
         """
+        logger.debug("Computing volume features for %d rows", len(df))
         result = pd.DataFrame(index=df.index)
 
         # Raw volume
@@ -90,4 +94,9 @@ class VolumeFeatureCalculator(BaseFeatureCalculator):
         # Dollar volume z-score
         result["dvol_z_60"] = zscore(result["dvol1"], window=self.window)
 
+        logger.debug(
+            "Volume features computed: relvol_60 range=[%.4f, %.4f], vol_z_60 range=[%.4f, %.4f]",
+            result["relvol_60"].min(), result["relvol_60"].max(),
+            result["vol_z_60"].min(), result["vol_z_60"].max()
+        )
         return result
