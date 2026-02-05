@@ -65,6 +65,19 @@ const toUnixTime = (isoString: string): Time => {
   return Math.floor(new Date(isoString).getTime() / 1000) as Time;
 };
 
+// Convert UTC Date to EST/EDT timezone components
+const toEST = (date: Date): { month: number; day: number; hours: number; minutes: number } => {
+  // Use Intl.DateTimeFormat to get EST/EDT time (handles DST automatically)
+  const estString = date.toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const estDate = new Date(estString);
+  return {
+    month: estDate.getMonth(),
+    day: estDate.getDate(),
+    hours: estDate.getHours(),
+    minutes: estDate.getMinutes(),
+  };
+};
+
 // Check if feature should use price scale (overlays on price chart)
 const isPriceScaleFeature = (featureKey: string): boolean => {
   const priceFeatures = [
@@ -280,12 +293,12 @@ export function OHLCVChart({
         fixRightEdge: true,
         tickMarkFormatter: (time: number, tickMarkType: number) => {
           const date = new Date(time * 1000);
-          const day = date.getUTCDate();
-          const hours = date.getUTCHours().toString().padStart(2, '0');
-          const minutes = date.getUTCMinutes().toString().padStart(2, '0');
+          const est = toEST(date);
+          const hours = est.hours.toString().padStart(2, '0');
+          const minutes = est.minutes.toString().padStart(2, '0');
           const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
           if (tickMarkType <= 2) {
-            return `${months[date.getUTCMonth()]} ${day}`;
+            return `${months[est.month]} ${est.day}`;
           }
           return `${hours}:${minutes}`;
         },
@@ -538,18 +551,19 @@ export function OHLCVChart({
     }
   }, []);
 
-  // Format slider label showing the visible date range
+  // Format slider label showing the visible date range (in EST)
   const sliderLabel = useMemo(() => {
     if (!windowedData || windowedData.timestamps.length === 0) return '';
     const startDate = new Date(windowedData.timestamps[0]);
     const endDate = new Date(windowedData.timestamps[windowedData.timestamps.length - 1]);
     const fmt = (d: Date) => {
       const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-      const hrs = d.getUTCHours().toString().padStart(2, '0');
-      const mins = d.getUTCMinutes().toString().padStart(2, '0');
-      return `${months[d.getUTCMonth()]} ${d.getUTCDate()} ${hrs}:${mins}`;
+      const est = toEST(d);
+      const hrs = est.hours.toString().padStart(2, '0');
+      const mins = est.minutes.toString().padStart(2, '0');
+      return `${months[est.month]} ${est.day} ${hrs}:${mins}`;
     };
-    return `${fmt(startDate)} - ${fmt(endDate)}`;
+    return `${fmt(startDate)} - ${fmt(endDate)} EST`;
   }, [windowedData]);
 
   return (
