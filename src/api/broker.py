@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
 from src.data.database.connection import get_db_manager
-from src.data.database.broker_models import SnapTradeUser, BrokerConnection, TradeHistory
+from src.data.database.broker_models import SnapTradeUser, BrokerConnection, TradeFill
 from src.execution.snaptrade_client import SnapTradeClient
 
 logger = logging.getLogger(__name__)
@@ -214,7 +214,7 @@ async def sync_data(
 
             # Check if trade already exists
             trade_id = str(activity.get("id"))
-            exists = db.query(TradeHistory).filter(TradeHistory.external_trade_id == trade_id).first()
+            exists = db.query(TradeFill).filter(TradeFill.external_trade_id == trade_id).first()
             if exists:
                 continue
 
@@ -235,7 +235,7 @@ async def sync_data(
                 executed_at = datetime.utcnow()
 
             # Create Trade
-            trade = TradeHistory(
+            trade = TradeFill(
                 broker_connection_id=conn.id,
                 symbol=symbol,
                 side=activity_type.lower(),
@@ -270,19 +270,19 @@ async def get_trades(
         return TradeListAPIResponse(trades=[], total=0, page=page, limit=limit)
 
     # Join tables
-    query = db.query(TradeHistory).join(BrokerConnection).filter(
+    query = db.query(TradeFill).join(BrokerConnection).filter(
         BrokerConnection.snaptrade_user_id == snap_user.id
     )
 
     if symbol:
-        query = query.filter(TradeHistory.symbol == symbol)
+        query = query.filter(TradeFill.symbol == symbol)
 
     total = query.count()
 
     # Sorting
     desc_sort = sort.startswith("-")
     sort_field = sort.lstrip("-")
-    column = getattr(TradeHistory, sort_field, TradeHistory.executed_at)
+    column = getattr(TradeFill, sort_field, TradeFill.executed_at)
     query = query.order_by(column.desc() if desc_sort else column.asc())
 
     # Pagination

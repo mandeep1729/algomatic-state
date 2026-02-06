@@ -10,6 +10,8 @@ from src.data.database.trading_buddy_models import (
     TradeEvaluation,
     TradeEvaluationItem,
 )
+from src.data.database.broker_models import TradeFill
+from src.data.database.trade_lifecycle_models import PositionLot, LotClosure, RoundTrip
 
 __all__ = [
     # Connection
@@ -29,4 +31,9 @@ __all__ = [
     "TradeIntent",
     "TradeEvaluation",
     "TradeEvaluationItem",
+    # Trade lifecycle models
+    "TradeFill",
+    "PositionLot",
+    "LotClosure",
+    "RoundTrip",
 ]

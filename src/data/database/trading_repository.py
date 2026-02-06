@@ -4,6 +4,7 @@ Provides methods for:
 - Loading user accounts and rules
 - Persisting trade intents and evaluations
 - Converting database models to domain objects
+- Trade lifecycle operations (fills, lots, closures, round trips)
 """
 
 import logging
@@ -19,6 +20,12 @@ from src.data.database.trading_buddy_models import (
     TradeIntent as TradeIntentModel,
     TradeEvaluation as TradeEvaluationModel,
     TradeEvaluationItem as TradeEvaluationItemModel,
+)
+from src.data.database.broker_models import TradeFill as TradeFillModel
+from src.data.database.trade_lifecycle_models import (
+    PositionLot as PositionLotModel,
+    LotClosure as LotClosureModel,
+    RoundTrip as RoundTripModel,
 )
 from src.trade.intent import (
     TradeIntent,
@@ -558,3 +565,224 @@ class TradingBuddyRepository:
         return self.session.query(TradeEvaluationItemModel).filter(
             TradeEvaluationItemModel.evaluation_id == evaluation_id
         ).order_by(TradeEvaluationItemModel.severity_priority.desc()).all()
+
+    # -------------------------------------------------------------------------
+    # Trade Fill Operations
+    # -------------------------------------------------------------------------
+
+    def create_trade_fill(self, **kwargs) -> TradeFillModel:
+        """Create a trade fill record.
+
+        Args:
+            **kwargs: TradeFill column values
+
+        Returns:
+            Created TradeFillModel
+        """
+        fill = TradeFillModel(**kwargs)
+        self.session.add(fill)
+        self.session.flush()
+        logger.info("Created trade fill id=%s symbol=%s side=%s", fill.id, fill.symbol, fill.side)
+        return fill
+
+    def get_fills_for_account(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+        since: Optional[datetime] = None,
+    ) -> list[TradeFillModel]:
+        """Get trade fills for an account, optionally filtered.
+
+        Args:
+            account_id: Account ID
+            symbol: Optional symbol filter
+            since: Optional start datetime filter
+
+        Returns:
+            List of TradeFillModel ordered by executed_at desc
+        """
+        query = self.session.query(TradeFillModel).filter(
+            TradeFillModel.account_id == account_id
+        )
+        if symbol:
+            query = query.filter(TradeFillModel.symbol == symbol)
+        if since:
+            query = query.filter(TradeFillModel.executed_at >= since)
+        return query.order_by(TradeFillModel.executed_at.desc()).all()
+
+    def get_fill_by_external_id(self, external_trade_id: str) -> Optional[TradeFillModel]:
+        """Get a trade fill by its external (broker) trade ID.
+
+        Args:
+            external_trade_id: Broker-assigned trade ID
+
+        Returns:
+            TradeFillModel or None
+        """
+        return self.session.query(TradeFillModel).filter(
+            TradeFillModel.external_trade_id == external_trade_id
+        ).first()
+
+    # -------------------------------------------------------------------------
+    # Position Lot Operations
+    # -------------------------------------------------------------------------
+
+    def create_lot(self, **kwargs) -> PositionLotModel:
+        """Create a position lot.
+
+        Args:
+            **kwargs: PositionLot column values
+
+        Returns:
+            Created PositionLotModel
+        """
+        lot = PositionLotModel(**kwargs)
+        self.session.add(lot)
+        self.session.flush()
+        logger.info(
+            "Created position lot id=%s symbol=%s direction=%s qty=%s",
+            lot.id, lot.symbol, lot.direction, lot.open_qty,
+        )
+        return lot
+
+    def get_open_lots(
+        self,
+        account_id: int,
+        symbol: str,
+    ) -> list[PositionLotModel]:
+        """Get open position lots for an account and symbol.
+
+        Args:
+            account_id: Account ID
+            symbol: Symbol to filter by
+
+        Returns:
+            List of open PositionLotModel ordered by opened_at asc (FIFO)
+        """
+        return self.session.query(PositionLotModel).filter(
+            PositionLotModel.account_id == account_id,
+            PositionLotModel.symbol == symbol,
+            PositionLotModel.status == "open",
+        ).order_by(PositionLotModel.opened_at.asc()).all()
+
+    def update_lot_remaining_qty(
+        self,
+        lot_id: int,
+        new_qty: float,
+    ) -> Optional[PositionLotModel]:
+        """Update the remaining quantity on a lot.
+
+        Automatically sets status to 'closed' if remaining_qty reaches 0.
+
+        Args:
+            lot_id: Lot ID
+            new_qty: New remaining quantity
+
+        Returns:
+            Updated PositionLotModel or None
+        """
+        lot = self.session.query(PositionLotModel).filter(
+            PositionLotModel.id == lot_id
+        ).first()
+        if not lot:
+            logger.warning("Lot id=%s not found for qty update", lot_id)
+            return None
+
+        lot.remaining_qty = new_qty
+        if new_qty <= 0:
+            lot.status = "closed"
+            logger.info("Lot id=%s fully closed", lot_id)
+
+        self.session.flush()
+        return lot
+
+    def close_lot(self, lot_id: int) -> Optional[PositionLotModel]:
+        """Close a position lot by setting remaining_qty=0 and status='closed'.
+
+        Args:
+            lot_id: Lot ID
+
+        Returns:
+            Closed PositionLotModel or None
+        """
+        return self.update_lot_remaining_qty(lot_id, 0.0)
+
+    # -------------------------------------------------------------------------
+    # Lot Closure Operations
+    # -------------------------------------------------------------------------
+
+    def create_closure(self, **kwargs) -> LotClosureModel:
+        """Create a lot closure record (open↔close pairing).
+
+        Args:
+            **kwargs: LotClosure column values
+
+        Returns:
+            Created LotClosureModel
+        """
+        closure = LotClosureModel(**kwargs)
+        self.session.add(closure)
+        self.session.flush()
+        logger.info(
+            "Created lot closure id=%s lot_id=%s qty=%s pnl=%s",
+            closure.id, closure.lot_id, closure.matched_qty, closure.realized_pnl,
+        )
+        return closure
+
+    def get_closures_for_lot(self, lot_id: int) -> list[LotClosureModel]:
+        """Get all closures for a given lot.
+
+        Args:
+            lot_id: Position lot ID
+
+        Returns:
+            List of LotClosureModel ordered by matched_at asc
+        """
+        return self.session.query(LotClosureModel).filter(
+            LotClosureModel.lot_id == lot_id
+        ).order_by(LotClosureModel.matched_at.asc()).all()
+
+    # -------------------------------------------------------------------------
+    # Round Trip Operations
+    # -------------------------------------------------------------------------
+
+    def create_round_trip(self, **kwargs) -> RoundTripModel:
+        """Create a round trip record.
+
+        Args:
+            **kwargs: RoundTrip column values
+
+        Returns:
+            Created RoundTripModel
+        """
+        rt = RoundTripModel(**kwargs)
+        self.session.add(rt)
+        self.session.flush()
+        logger.info(
+            "Created round trip id=%s symbol=%s direction=%s pnl=%s",
+            rt.id, rt.symbol, rt.direction, rt.realized_pnl,
+        )
+        return rt
+
+    def get_round_trips(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[RoundTripModel]:
+        """Get round trips for an account, optionally filtered by symbol.
+
+        Args:
+            account_id: Account ID
+            symbol: Optional symbol filter
+            limit: Maximum number of results
+
+        Returns:
+            List of RoundTripModel ordered by created_at desc
+        """
+        query = self.session.query(RoundTripModel).filter(
+            RoundTripModel.account_id == account_id
+        )
+        if symbol:
+            query = query.filter(RoundTripModel.symbol == symbol)
+        return query.order_by(RoundTripModel.created_at.desc()).limit(limit).all()
