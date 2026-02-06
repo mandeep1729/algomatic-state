@@ -35,6 +35,7 @@ import type {
   EvaluationControls,
   OnboardingStatus,
   BrokerStatus,
+  TickerPnlSummary,
 } from '../types';
 
 // Simulate network delay
@@ -147,6 +148,38 @@ export async function createManualTrade(trade: Omit<TradeSummary, 'id' | 'is_fla
     tags: [],
   };
   return newTrade;
+}
+
+// --- Ticker PnL ---
+
+export async function fetchTickerPnl(symbol: string): Promise<TickerPnlSummary> {
+  await delay();
+  const allTrades = getTradeSummaries();
+  const tickerTrades = allTrades
+    .filter(t => t.symbol.toUpperCase() === symbol.toUpperCase())
+    .sort((a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime());
+
+  // Look up full trade details to access pnl fields
+  const tickerDetails = MOCK_TRADES
+    .filter(t => t.symbol.toUpperCase() === symbol.toUpperCase())
+    .sort((a, b) => new Date(a.entry_time).getTime() - new Date(b.entry_time).getTime());
+
+  const closedTrades = tickerDetails.filter(t => t.status === 'closed' && t.pnl != null);
+
+  const totalPnl = closedTrades.reduce((sum, t) => sum + (t.pnl ?? 0), 0);
+
+  // Weighted average PnL % based on position cost (entry_price * quantity)
+  const totalCost = closedTrades.reduce((sum, t) => sum + t.entry_price * t.quantity, 0);
+  const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+
+  return {
+    symbol: symbol.toUpperCase(),
+    total_pnl: +totalPnl.toFixed(2),
+    total_pnl_pct: +totalPnlPct.toFixed(2),
+    trade_count: tickerTrades.length,
+    closed_count: closedTrades.length,
+    first_entry_time: tickerTrades.length > 0 ? tickerTrades[0].entry_time : new Date().toISOString(),
+  };
 }
 
 // --- Evaluation ---

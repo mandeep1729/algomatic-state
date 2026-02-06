@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import api, { fetchSyncStatus, triggerSync, fetchOHLCVData, fetchFeatures, fetchMockOHLCVData, fetchMockFeatures } from '../../api';
-import type { TradeSummary, InsightsSummary, BrokerStatus, JournalEntry, BehavioralInsight } from '../../types';
+import type { TradeSummary, InsightsSummary, BrokerStatus, JournalEntry, BehavioralInsight, TickerPnlSummary } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
 import { useChartContext } from '../../context/ChartContext';
@@ -23,6 +23,7 @@ export default function Overview() {
   const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [tickerPnl, setTickerPnl] = useState<TickerPnlSummary | null>(null);
   const selectedTickerRef = useRef<string | null>(null);
 
   const { setChartActive, setFeatureNames, selectedFeatures } = useChartContext();
@@ -141,6 +142,13 @@ export default function Overview() {
     if (selectedTicker === symbol) return;
     setSelectedTicker(symbol);
     loadChartData(symbol, chartTimeframe);
+    // Fetch running PnL for this ticker
+    try {
+      const pnl = await api.fetchTickerPnl(symbol);
+      setTickerPnl(pnl);
+    } catch {
+      setTickerPnl(null);
+    }
   }, [selectedTicker, chartTimeframe, loadChartData]);
 
   const handleTimeframeChange = useCallback((newTimeframe: string) => {
@@ -158,6 +166,7 @@ export default function Overview() {
     setChartActive(false);
     setFeatureNames([]);
     setSyncing(false);
+    setTickerPnl(null);
   }, [setChartActive, setFeatureNames]);
 
   if (loading) {
@@ -229,6 +238,18 @@ export default function Overview() {
                   <option value="1Day">1d</option>
                 </select>
                 {syncing && <span className="text-[10px] text-[var(--accent-yellow)]">Syncing...</span>}
+                {tickerPnl && tickerPnl.closed_count > 0 && (
+                  <span className="ml-1 flex items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0.5 text-xs">
+                    <span className="text-[var(--text-secondary)]">PnL:</span>
+                    <span className={`font-mono font-medium ${tickerPnl.total_pnl >= 0 ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
+                      {tickerPnl.total_pnl >= 0 ? '+' : ''}${tickerPnl.total_pnl.toFixed(2)}
+                    </span>
+                    <span className={`font-mono ${tickerPnl.total_pnl_pct >= 0 ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
+                      ({tickerPnl.total_pnl_pct >= 0 ? '+' : ''}{tickerPnl.total_pnl_pct.toFixed(2)}%)
+                    </span>
+                    <span className="text-[var(--text-secondary)]">{tickerPnl.closed_count} trade{tickerPnl.closed_count !== 1 ? 's' : ''}</span>
+                  </span>
+                )}
               </div>
               <button
                 onClick={handleCloseChart}

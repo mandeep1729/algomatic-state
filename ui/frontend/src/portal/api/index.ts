@@ -52,6 +52,7 @@ const api = USE_MOCKS
       fetchEvaluationControls: mockApi.fetchEvaluationControls,
       updateEvaluationControls: mockApi.updateEvaluationControls,
       fetchOnboardingStatus: mockApi.fetchOnboardingStatus,
+      fetchTickerPnl: mockApi.fetchTickerPnl,
     };
 
 export default api;

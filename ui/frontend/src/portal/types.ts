@@ -260,6 +260,17 @@ export interface OnboardingStatus {
   all_complete: boolean;
 }
 
+// --- Ticker PnL ---
+
+export interface TickerPnlSummary {
+  symbol: string;
+  total_pnl: number;
+  total_pnl_pct: number;
+  trade_count: number;
+  closed_count: number;
+  first_entry_time: string;
+}
+
 // --- Broker (re-export from existing types for convenience) ---
 
 export interface BrokerConnectResponse {
