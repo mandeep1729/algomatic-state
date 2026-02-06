@@ -43,6 +43,8 @@ from src.features.pipeline import FeaturePipeline, get_minimal_features
 from src.features.state.hmm.artifacts import get_model_path, list_models
 from src.features.state.hmm.inference import InferenceEngine
 from src.features.state.hmm.labeling import state_mapping_to_labels, StateLabel as HMMStateLabel
+from src.api.auth import router as auth_router
+from src.api.user_profile import router as user_profile_router
 from src.api.trading_buddy import router as trading_buddy_router
 from src.api.broker import router as broker_router
 
@@ -51,6 +53,8 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Regime State Visualization API", version="1.0.0")
 
 # Include routers
+app.include_router(auth_router)
+app.include_router(user_profile_router)
 app.include_router(trading_buddy_router)
 app.include_router(broker_router)
 

@@ -10,8 +10,10 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+from src.api.auth_middleware import get_current_user
 
 from src.data.database.connection import get_db_manager
 from src.data.database.trading_repository import TradingBuddyRepository
@@ -121,9 +123,6 @@ class EvaluateRequest(BaseModel):
     """Request model for evaluation."""
 
     intent: TradeIntentCreate
-    account_id: Optional[int] = Field(
-        None, description="User account ID for loading risk defaults and rules"
-    )
     evaluators: Optional[list[str]] = Field(
         None, description="Specific evaluators to run (all if not specified)"
     )
@@ -147,21 +146,19 @@ class EvaluateResponse(BaseModel):
 
 def _create_domain_intent(
     data: TradeIntentCreate,
-    user_id: int = 1,
-    account_id: int = 1,
+    account_id: int,
 ) -> DomainTradeIntent:
     """Convert API model to domain model.
 
     Args:
         data: API request model
-        user_id: User ID (default for now)
-        account_id: Account ID (default for now)
+        account_id: Authenticated user's account ID
 
     Returns:
         Domain TradeIntent
     """
     return DomainTradeIntent(
-        user_id=user_id,
+        user_id=account_id,
         account_id=account_id,
         symbol=data.symbol.upper(),
         direction=TradeDirection(data.direction.lower()),
@@ -244,7 +241,10 @@ def _build_evaluation_response(result) -> EvaluationResponse:
 
 
 @router.post("/intents", response_model=TradeIntentResponse)
-async def create_trade_intent(data: TradeIntentCreate):
+async def create_trade_intent(
+    data: TradeIntentCreate,
+    user_id: int = Depends(get_current_user),
+):
     """Create a new trade intent (draft).
 
     Creates a trade intent in DRAFT status for later evaluation.
@@ -252,7 +252,7 @@ async def create_trade_intent(data: TradeIntentCreate):
     and persisted to the database.
     """
     try:
-        intent = _create_domain_intent(data)
+        intent = _create_domain_intent(data, account_id=user_id)
 
         db_manager = get_db_manager()
         with db_manager.get_session() as session:
@@ -266,7 +266,10 @@ async def create_trade_intent(data: TradeIntentCreate):
 
 
 @router.post("/evaluate", response_model=EvaluateResponse)
-async def evaluate_trade_intent(request: EvaluateRequest):
+async def evaluate_trade_intent(
+    request: EvaluateRequest,
+    user_id: int = Depends(get_current_user),
+):
     """Evaluate a trade intent against all configured evaluators.
 
     This endpoint:
@@ -285,7 +288,7 @@ async def evaluate_trade_intent(request: EvaluateRequest):
     - All evaluation items grouped by severity
     """
     try:
-        account_id = request.account_id or 1
+        account_id = user_id
 
         # Create domain intent
         intent = _create_domain_intent(

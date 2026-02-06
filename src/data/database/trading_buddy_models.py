@@ -1,7 +1,8 @@
 """SQLAlchemy ORM models for Trading Buddy platform.
 
 Defines tables for:
-- UserAccount: User trading accounts with risk parameters
+- UserAccount: User account with auth and personal details
+- UserProfile: Trading/risk preferences (1-to-1 with UserAccount)
 - UserRule: Custom evaluation rules per user
 - TradeIntent: User trade proposals
 - TradeEvaluation: Evaluation results
@@ -15,6 +16,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -31,10 +33,10 @@ from src.data.database.models import Base
 
 
 class UserAccount(Base):
-    """User trading account with risk parameters.
+    """User account with auth and personal details.
 
-    Stores user account settings and default risk parameters
-    used during trade evaluation.
+    Stores authentication info and personal details.
+    Trading/risk preferences live in UserProfile.
     """
 
     __tablename__ = "user_accounts"
@@ -42,19 +44,18 @@ class UserAccount(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     external_user_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    email: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
 
-    # Account balance and risk parameters
-    account_balance: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    max_position_size_pct: Mapped[float] = mapped_column(Float, default=5.0, nullable=False)
-    max_risk_per_trade_pct: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
-    max_daily_loss_pct: Mapped[float] = mapped_column(Float, default=3.0, nullable=False)
-    min_risk_reward_ratio: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
+    # Auth fields
+    google_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
+    auth_provider: Mapped[str] = mapped_column(String(50), default="google", nullable=False)
+    profile_picture_url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
 
-    # Default timeframes for analysis
-    default_timeframes: Mapped[dict] = mapped_column(
-        JSONB, default=lambda: ["1Min", "5Min", "15Min", "1Hour"], nullable=False
-    )
+    # Personal details
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    date_of_birth: Mapped[Optional[datetime]] = mapped_column(Date, nullable=True)
+    gender: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
     # Account status
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -71,6 +72,12 @@ class UserAccount(Base):
     )
 
     # Relationships
+    profile: Mapped[Optional["UserProfile"]] = relationship(
+        "UserProfile",
+        uselist=False,
+        back_populates="account",
+        cascade="all, delete-orphan",
+    )
     rules: Mapped[list["UserRule"]] = relationship(
         "UserRule",
         back_populates="account",
@@ -82,17 +89,70 @@ class UserAccount(Base):
         cascade="all, delete-orphan",
     )
 
+    def __repr__(self) -> str:
+        return f"<UserAccount(id={self.id}, name='{self.name}')>"
+
+
+class UserProfile(Base):
+    """Trading and risk preferences for a user.
+
+    One-to-one relationship with UserAccount. Stores risk parameters,
+    trading style, and experience level.
+    """
+
+    __tablename__ = "user_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_account_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+
+    # Account balance and risk parameters
+    account_balance: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    max_position_size_pct: Mapped[float] = mapped_column(Float, default=5.0, nullable=False)
+    max_risk_per_trade_pct: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    max_daily_loss_pct: Mapped[float] = mapped_column(Float, default=3.0, nullable=False)
+    min_risk_reward_ratio: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
+
+    # Default timeframes for analysis
+    default_timeframes: Mapped[dict] = mapped_column(
+        JSONB, default=lambda: ["1Min", "5Min", "15Min", "1Hour"], nullable=False
+    )
+
+    # Trading profile
+    experience_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    trading_style: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    # Relationships
+    account: Mapped["UserAccount"] = relationship("UserAccount", back_populates="profile")
+
     # Constraints
     __table_args__ = (
-        CheckConstraint("account_balance >= 0", name="ck_account_balance_positive"),
-        CheckConstraint("max_position_size_pct > 0 AND max_position_size_pct <= 100", name="ck_max_position_pct_range"),
-        CheckConstraint("max_risk_per_trade_pct > 0 AND max_risk_per_trade_pct <= 100", name="ck_max_risk_pct_range"),
-        CheckConstraint("max_daily_loss_pct > 0 AND max_daily_loss_pct <= 100", name="ck_max_daily_loss_range"),
-        CheckConstraint("min_risk_reward_ratio > 0", name="ck_min_rr_positive"),
+        CheckConstraint("account_balance >= 0", name="ck_profile_balance_positive"),
+        CheckConstraint("max_position_size_pct > 0 AND max_position_size_pct <= 100", name="ck_profile_max_position_pct_range"),
+        CheckConstraint("max_risk_per_trade_pct > 0 AND max_risk_per_trade_pct <= 100", name="ck_profile_max_risk_pct_range"),
+        CheckConstraint("max_daily_loss_pct > 0 AND max_daily_loss_pct <= 100", name="ck_profile_max_daily_loss_range"),
+        CheckConstraint("min_risk_reward_ratio > 0", name="ck_profile_min_rr_positive"),
     )
 
     def __repr__(self) -> str:
-        return f"<UserAccount(id={self.id}, name='{self.name}')>"
+        return f"<UserProfile(id={self.id}, account_id={self.user_account_id})>"
 
 
 class UserRule(Base):

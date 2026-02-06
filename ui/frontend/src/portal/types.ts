@@ -8,6 +8,9 @@ export interface User {
   id: number;
   email: string;
   name: string;
+  profile_picture_url?: string | null;
+  google_id?: string | null;
+  auth_provider?: string;
   onboarding_complete: boolean;
   created_at: string;
 }

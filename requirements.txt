@@ -28,5 +28,9 @@ uvicorn>=0.24.0
 # Broker dependencies
 snaptrade-python-sdk>=11.0.0
 
+# Auth dependencies
+python-jose[cryptography]>=3.3.0
+google-auth>=2.25.0
+
 # Agent dependencies
 httpx>=0.25.0
