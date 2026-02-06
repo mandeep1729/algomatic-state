@@ -3,16 +3,20 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Union
 
 import httpx
 import pandas as pd
 
 from config.settings import StrategyConfig
+from src.agent.breakout_config import BreakoutAgentConfig, BreakoutStrategyConfig
+from src.agent.breakout_strategy import BreakoutStrategy
 from src.agent.config import AgentConfig
 from src.agent.contrarian_config import ContrarianAgentConfig, ContrarianStrategyConfig
 from src.agent.contrarian_strategy import ContrarianStrategy
 from src.agent.strategy import MomentumStrategy
+from src.agent.vwap_config import VWAPAgentConfig, VWAPStrategyConfig
+from src.agent.vwap_strategy import VWAPReversionStrategy
 from src.execution.client import AlpacaClient
 from src.execution.order_manager import OrderManager, SignalDirection
 from src.execution.risk_manager import RiskManager, RiskConfig
@@ -20,11 +24,58 @@ from src.features.pipeline import FeaturePipeline
 
 logger = logging.getLogger(__name__)
 
+# Type aliases for clarity
+AgentConfigType = Union[AgentConfig, ContrarianAgentConfig, BreakoutAgentConfig, VWAPAgentConfig]
+StrategyConfigType = Union[StrategyConfig, ContrarianStrategyConfig, BreakoutStrategyConfig, VWAPStrategyConfig]
+StrategyType = Literal["momentum", "contrarian", "breakout", "vwap"]
+
+
+def _create_strategy(
+    strategy_type: StrategyType,
+    strategy_config: StrategyConfigType,
+    agent_config: AgentConfigType,
+):
+    """Create the appropriate strategy instance based on strategy_type."""
+    if strategy_type == "contrarian":
+        return ContrarianStrategy(
+            config=strategy_config,
+            symbol=agent_config.symbol,
+            position_size=agent_config.position_size_dollars,
+        )
+    elif strategy_type == "breakout":
+        return BreakoutStrategy(
+            config=strategy_config,
+            symbol=agent_config.symbol,
+            position_size=agent_config.position_size_dollars,
+        )
+    elif strategy_type == "vwap":
+        return VWAPReversionStrategy(
+            config=strategy_config,
+            symbol=agent_config.symbol,
+            position_size=agent_config.position_size_dollars,
+        )
+    else:
+        return MomentumStrategy(
+            config=strategy_config,
+            symbol=agent_config.symbol,
+            position_size=agent_config.position_size_dollars,
+        )
+
+
+def _get_signal_feature(strategy_type: StrategyType, strategy_config: StrategyConfigType) -> str:
+    """Get the primary feature name used by the strategy for logging."""
+    if strategy_type == "breakout":
+        return strategy_config.breakout_feature
+    elif strategy_type == "vwap":
+        return strategy_config.vwap_feature
+    else:
+        return strategy_config.momentum_feature
+
 
 async def run_agent_loop(
-    agent_config: AgentConfig | ContrarianAgentConfig,
-    strategy_config: StrategyConfig | ContrarianStrategyConfig,
-    strategy_type: Literal["momentum", "contrarian"] = "momentum",
+    agent_config: AgentConfigType,
+    strategy_config: StrategyConfigType,
+    strategy_type: StrategyType = "momentum",
 ) -> None:
     """Run the trading agent loop indefinitely.
 
@@ -36,27 +87,16 @@ async def run_agent_loop(
     5. Risk-check and submit orders.
 
     Args:
-        agent_config: Agent configuration (either momentum or contrarian).
+        agent_config: Agent configuration.
         strategy_config: Strategy configuration.
-        strategy_type: Which strategy to use ("momentum" or "contrarian").
+        strategy_type: Which strategy to use.
     """
     client = AlpacaClient(paper=agent_config.paper)
     order_manager = OrderManager(client)
     risk_manager = RiskManager(client, RiskConfig())
     risk_manager.initialize()
 
-    if strategy_type == "contrarian":
-        strategy = ContrarianStrategy(
-            config=strategy_config,
-            symbol=agent_config.symbol,
-            position_size=agent_config.position_size_dollars,
-        )
-    else:
-        strategy = MomentumStrategy(
-            config=strategy_config,
-            symbol=agent_config.symbol,
-            position_size=agent_config.position_size_dollars,
-        )
+    strategy = _create_strategy(strategy_type, strategy_config, agent_config)
 
     pipeline = FeaturePipeline.default()
     base_url = f"http://127.0.0.1:{agent_config.api_port}"
@@ -117,11 +157,11 @@ async def run_agent_loop(
                 await asyncio.sleep(interval)
                 continue
 
-            momentum_col = strategy_config.momentum_feature
-            nan_count = int(features[momentum_col].isna().sum()) if momentum_col in features.columns else -1
+            signal_feature = _get_signal_feature(strategy_type, strategy_config)
+            nan_count = int(features[signal_feature].isna().sum()) if signal_feature in features.columns else -1
             logger.debug(
                 "Features computed: shape=%s, %s NaN count=%d",
-                features.shape, momentum_col, nan_count,
+                features.shape, signal_feature, nan_count,
             )
 
             # 5. Generate signals
