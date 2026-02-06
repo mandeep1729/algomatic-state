@@ -152,15 +152,19 @@ print(f"Is OOD: {output.is_ood}")
 
 The web UI provides interactive regime state visualization with price charts, feature exploration, and regime statistics. It consists of a FastAPI backend and a React frontend.
 
-**Prerequisites:** Python virtual environment activated, Node.js 18+.
+**Prerequisites:**
+- Python virtual environment activated with dependencies installed
+- Node.js 18+
+- Database initialized (see step 1 above)
+- `.env` file configured (copy from `.env.example` if not already done)
 
 #### Option A: Using the startup script
 
 ```bash
 # From the project root
-cd ui
-./start_ui.sh       # Linux/macOS
-start_ui.bat         # Windows
+./ui/start_ui.sh       # Linux/macOS
+# or
+cd ui && start_ui.bat  # Windows
 ```
 
 This starts both the backend (port 8000) and frontend (port 5173) together.
@@ -272,6 +276,7 @@ Each agent has its own environment variable prefix:
 | Contrarian | `CONTRARIAN_` | `r5` | long: -0.001, short: 0.001 |
 | Breakout | `BREAKOUT_` | `breakout_20` (distance from 20-bar high) | long: 0.001, short: -0.02 |
 | VWAP | `VWAP_` | `dist_vwap_60` (distance from VWAP) | long: 0.005, short: -0.005 |
+
 
 ## Project Structure
 
