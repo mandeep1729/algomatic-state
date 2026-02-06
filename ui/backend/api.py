@@ -9,11 +9,14 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
+# Determine project root directory for consistent path resolution
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
 # Load environment variables from .env file
-load_dotenv(Path(__file__).parent.parent.parent / ".env")
+load_dotenv(PROJECT_ROOT / ".env")
 
 # Add parent directory to path for imports (needed before importing src modules)
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import pandas as pd
@@ -26,11 +29,13 @@ from src.utils.logging import setup_logging
 
 # Configure logging using centralized setup with file output
 # Use settings-based configuration with backend-specific log file
+# Use absolute path based on project root to ensure logs are created in consistent location
 settings = get_settings()
+LOGS_DIR = PROJECT_ROOT / "logs"
 setup_logging(
     level=settings.logging.level,
     format="text",  # Use text format for readability in backend logs
-    file=Path("logs/backend.log"),
+    file=LOGS_DIR / "backend.log",
     rotate_size_mb=settings.logging.rotate_size_mb,
     retain_count=settings.logging.retain_count,
 )
@@ -68,7 +73,7 @@ app.add_middleware(
 )
 
 # Global data directory
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+DATA_DIR = PROJECT_ROOT / "data"
 
 
 class DataSourceInfo(BaseModel):
@@ -377,7 +382,7 @@ async def get_regimes(
 
     try:
         # Determine which model to use
-        models_root = Path(__file__).parent.parent.parent / "models"
+        models_root = PROJECT_ROOT / "models"
 
         if model_id is None:
             # Get latest model for this symbol
@@ -919,7 +924,7 @@ async def analyze_symbol(
         )
 
     symbol = symbol.upper()
-    models_root = Path(__file__).parent.parent.parent / "models"
+    models_root = PROJECT_ROOT / "models"
 
     result = {
         "symbol": symbol,
@@ -1200,7 +1205,7 @@ async def analyze_symbol_pca(
         )
 
     symbol = symbol.upper()
-    models_root = Path(__file__).parent.parent.parent / "models"
+    models_root = PROJECT_ROOT / "models"
 
     result = {
         "symbol": symbol,
@@ -1371,7 +1376,7 @@ async def get_pca_regimes(
     from src.features.state.pca import PCAStateEngine, get_pca_model_path, list_pca_models
 
     symbol = symbol.upper()
-    models_root = Path(__file__).parent.parent.parent / "models"
+    models_root = PROJECT_ROOT / "models"
 
     try:
         # Check for available models
