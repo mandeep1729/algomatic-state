@@ -3,12 +3,15 @@
 import asyncio
 import logging
 from datetime import datetime
+from typing import Literal
 
 import httpx
 import pandas as pd
 
 from config.settings import StrategyConfig
 from src.agent.config import AgentConfig
+from src.agent.contrarian_config import ContrarianAgentConfig, ContrarianStrategyConfig
+from src.agent.contrarian_strategy import ContrarianStrategy
 from src.agent.strategy import MomentumStrategy
 from src.execution.client import AlpacaClient
 from src.execution.order_manager import OrderManager, SignalDirection
@@ -19,10 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 async def run_agent_loop(
-    agent_config: AgentConfig,
-    strategy_config: StrategyConfig,
+    agent_config: AgentConfig | ContrarianAgentConfig,
+    strategy_config: StrategyConfig | ContrarianStrategyConfig,
+    strategy_type: Literal["momentum", "contrarian"] = "momentum",
 ) -> None:
-    """Run the momentum agent loop indefinitely.
+    """Run the trading agent loop indefinitely.
 
     Each iteration:
     1. Check whether the market is open.
@@ -30,17 +34,29 @@ async def run_agent_loop(
     3. Compute features.
     4. Generate signals.
     5. Risk-check and submit orders.
+
+    Args:
+        agent_config: Agent configuration (either momentum or contrarian).
+        strategy_config: Strategy configuration.
+        strategy_type: Which strategy to use ("momentum" or "contrarian").
     """
     client = AlpacaClient(paper=agent_config.paper)
     order_manager = OrderManager(client)
     risk_manager = RiskManager(client, RiskConfig())
     risk_manager.initialize()
 
-    strategy = MomentumStrategy(
-        config=strategy_config,
-        symbol=agent_config.symbol,
-        position_size=agent_config.position_size_dollars,
-    )
+    if strategy_type == "contrarian":
+        strategy = ContrarianStrategy(
+            config=strategy_config,
+            symbol=agent_config.symbol,
+            position_size=agent_config.position_size_dollars,
+        )
+    else:
+        strategy = MomentumStrategy(
+            config=strategy_config,
+            symbol=agent_config.symbol,
+            position_size=agent_config.position_size_dollars,
+        )
 
     pipeline = FeaturePipeline.default()
     base_url = f"http://127.0.0.1:{agent_config.api_port}"
@@ -49,6 +65,7 @@ async def run_agent_loop(
     logger.info(
         "Agent loop started",
         extra={
+            "strategy_type": strategy_type,
             "symbol": agent_config.symbol,
             "interval_minutes": agent_config.interval_minutes,
             "data_provider": agent_config.data_provider,
