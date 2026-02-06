@@ -53,6 +53,7 @@ const api = USE_MOCKS
       updateEvaluationControls: mockApi.updateEvaluationControls,
       fetchOnboardingStatus: mockApi.fetchOnboardingStatus,
       fetchTickerPnl: mockApi.fetchTickerPnl,
+      fetchTickerPnlTimeseries: mockApi.fetchTickerPnlTimeseries,
     };
 
 export default api;
@@ -62,3 +63,6 @@ export { fetchSyncStatus, triggerSync, fetchOHLCVData, fetchFeatures } from './c
 
 // Re-export mock chart data helpers for fallback use
 export { fetchMockOHLCVData, fetchMockFeatures } from '../mocks/mockApi';
+
+// Re-export PnL timeseries for direct use
+export { fetchTickerPnlTimeseries } from '../mocks/mockApi';

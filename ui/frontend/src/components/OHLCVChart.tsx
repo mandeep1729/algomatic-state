@@ -6,6 +6,7 @@ import {
   TooltipComponent,
   DataZoomComponent,
   LegendComponent,
+  MarkLineComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { EChartsOption } from 'echarts';
@@ -22,6 +23,7 @@ echarts.use([
   TooltipComponent,
   DataZoomComponent,
   LegendComponent,
+  MarkLineComponent,
   CanvasRenderer,
 ]);
 
@@ -56,10 +58,16 @@ interface RegimeData {
   state_info: Record<string, StateInfo>;
 }
 
+interface PnlData {
+  timestamps: string[];
+  cumulative_pnl: number[];
+}
+
 interface OHLCVChartProps {
   data: OHLCVData | null;
   featureData?: FeatureData | null;
   regimeData?: RegimeData | null;
+  pnlData?: PnlData | null;
   selectedFeatures?: string[];
   showVolume?: boolean;
   showStates?: boolean;
@@ -132,6 +140,7 @@ export function OHLCVChart({
   data,
   featureData,
   regimeData,
+  pnlData,
   selectedFeatures = [],
   showVolume = true,
   showStates = true,
@@ -175,6 +184,7 @@ export function OHLCVChart({
     const hasStates = showStates && regimeData && regimeData.state_ids.length > 0;
     const nonPriceFeatures = selectedFeatures.filter((f) => !isPriceScaleFeature(f));
     const hasIndicatorPane = nonPriceFeatures.length > 0;
+    const hasPnl = pnlData && pnlData.cumulative_pnl.length > 0;
 
     // ── Grid layout computation ──
     // Each grid is positioned via top/height percentages.
@@ -194,10 +204,11 @@ export function OHLCVChart({
     let volumeFrac = hasVolume ? 0.15 : 0;
     let stateFrac = hasStates ? 0.06 : 0;
     let indicatorFrac = hasIndicatorPane ? 0.18 : 0;
-    let priceFrac = 1 - volumeFrac - stateFrac - indicatorFrac;
+    let pnlFrac = hasPnl ? 0.15 : 0;
+    let priceFrac = 1 - volumeFrac - stateFrac - indicatorFrac - pnlFrac;
 
     // Convert to pixels
-    const gapCount = [hasVolume, hasStates, hasIndicatorPane].filter(Boolean).length;
+    const gapCount = [hasVolume, hasStates, hasIndicatorPane, hasPnl].filter(Boolean).length;
     const gapTotal = gapCount * gapPx;
     const avail = usable - gapTotal;
 
@@ -205,6 +216,7 @@ export function OHLCVChart({
     const volumeH = Math.round(avail * volumeFrac);
     const stateH = Math.round(avail * stateFrac);
     const indicatorH = Math.round(avail * indicatorFrac);
+    const pnlH = Math.round(avail * pnlFrac);
 
     let curTop = topPad;
     let gridIdx = 0;
@@ -214,7 +226,15 @@ export function OHLCVChart({
     grids.push({ left: 60, right: 60, top: curTop, height: priceH });
     curTop += priceH + gapPx;
 
-    // Grid 1: Volume
+    // Grid: Cumulative PnL
+    let pnlGridIdx = -1;
+    if (hasPnl) {
+      pnlGridIdx = gridIdx++;
+      grids.push({ left: 60, right: 60, top: curTop, height: pnlH });
+      curTop += pnlH + gapPx;
+    }
+
+    // Grid: Volume
     let volumeGridIdx = -1;
     if (hasVolume) {
       volumeGridIdx = gridIdx++;
@@ -222,7 +242,7 @@ export function OHLCVChart({
       curTop += volumeH + gapPx;
     }
 
-    // Grid 2: Regime states
+    // Grid: Regime states
     let stateGridIdx = -1;
     if (hasStates) {
       stateGridIdx = gridIdx++;
@@ -230,7 +250,7 @@ export function OHLCVChart({
       curTop += stateH + gapPx;
     }
 
-    // Grid 3: Non-price indicator overlays
+    // Grid: Non-price indicator overlays
     let indicatorGridIdx = -1;
     if (hasIndicatorPane) {
       indicatorGridIdx = gridIdx++;
@@ -367,6 +387,41 @@ export function OHLCVChart({
       (yAxes as any[])[stateGridIdx].show = false;
     }
 
+    // Cumulative PnL line
+    if (hasPnl && pnlGridIdx >= 0 && pnlData) {
+      const aligned = alignToCategories(ts, pnlData.timestamps, pnlData.cumulative_pnl, NaN);
+      const pnlLineData = aligned.map((v) => (isNaN(v) || !isFinite(v) ? null : v));
+      series.push({
+        name: 'Cumulative PnL',
+        type: 'line',
+        data: pnlLineData,
+        xAxisIndex: pnlGridIdx,
+        yAxisIndex: pnlGridIdx,
+        symbol: 'none',
+        lineStyle: { width: 2, color: '#d29922' },
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(210, 153, 34, 0.25)' },
+              { offset: 1, color: 'rgba(210, 153, 34, 0.02)' },
+            ],
+          },
+        },
+        connectNulls: false,
+        z: 2,
+      });
+      // Add a zero reference line via markLine
+      series[series.length - 1].markLine = {
+        silent: true,
+        symbol: 'none',
+        lineStyle: { color: '#484f58', type: 'dashed', width: 1 },
+        data: [{ yAxis: 0 }],
+        label: { show: false },
+      };
+    }
+
     // Non-price feature overlays (in indicator grid)
     if (hasIndicatorPane && indicatorGridIdx >= 0) {
       nonPriceFeatures.forEach((featureKey) => {
@@ -434,6 +489,14 @@ export function OHLCVChart({
             html += `<div style="color:#8b949e">Vol: ${Number(vol).toLocaleString()}</div>`;
           } else if (p.seriesName === 'Regime') {
             // skip in tooltip
+          } else if (p.seriesName === 'Cumulative PnL') {
+            const pnlVal = typeof p.value === 'object' ? p.value.value : p.value;
+            if (pnlVal != null) {
+              const pnlNum = Number(pnlVal);
+              const pnlColor = pnlNum >= 0 ? '#3fb950' : '#f85149';
+              const sign = pnlNum >= 0 ? '+' : '';
+              html += `<div style="color:${pnlColor}">PnL: ${sign}$${pnlNum.toFixed(2)}</div>`;
+            }
           } else if (p.value != null) {
             html += `<div><span style="color:${p.color}">\u25CF</span> ${p.seriesName}: ${Number(p.value).toFixed(4)}</div>`;
           }
@@ -459,6 +522,7 @@ export function OHLCVChart({
     showStates,
     regimeData,
     featureData,
+    pnlData,
     selectedFeatures,
     height,
   ]);
@@ -590,8 +654,8 @@ export function OHLCVChart({
           Reset
         </button>
       </div>
-      {/* Feature legend */}
-      {selectedFeatures.length > 0 && (
+      {/* Feature + PnL legend */}
+      {(selectedFeatures.length > 0 || (pnlData && pnlData.cumulative_pnl.length > 0)) && (
         <div
           style={{
             position: 'absolute',
@@ -604,6 +668,20 @@ export function OHLCVChart({
             maxWidth: '60%',
           }}
         >
+          {pnlData && pnlData.cumulative_pnl.length > 0 && (
+            <span
+              style={{
+                padding: '2px 6px',
+                fontSize: '10px',
+                background: 'rgba(0,0,0,0.7)',
+                color: '#d29922',
+                borderRadius: '3px',
+                border: '1px solid #d29922',
+              }}
+            >
+              Cumulative PnL
+            </span>
+          )}
           {selectedFeatures.map((feature, index) => {
             const color = OVERLAY_COLORS[index % OVERLAY_COLORS.length];
             return (

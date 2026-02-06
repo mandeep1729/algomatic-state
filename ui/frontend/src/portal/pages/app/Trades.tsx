@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import api, { fetchMockOHLCVData, fetchMockFeatures } from '../../api';
-import type { TradeSummary, TickerPnlSummary } from '../../types';
+import type { TradeSummary, TickerPnlSummary, PnlTimeseries } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
 import { useChartContext } from '../../context/ChartContext';
@@ -55,6 +55,7 @@ export default function Trades() {
   const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
   const [tickerPnl, setTickerPnl] = useState<TickerPnlSummary | null>(null);
+  const [pnlTimeseries, setPnlTimeseries] = useState<PnlTimeseries | null>(null);
 
   const { setChartActive, setFeatureNames, selectedFeatures } = useChartContext();
 
@@ -121,10 +122,15 @@ export default function Trades() {
       setOhlcvData(ohlcv);
       setFeatureData(features);
       setFeatureNames(features.feature_names);
+      // Fetch PnL timeseries in background using OHLCV data
+      api.fetchTickerPnlTimeseries(symbol, ohlcv.timestamps, ohlcv.close)
+        .then((pnl) => setPnlTimeseries(pnl))
+        .catch(() => setPnlTimeseries(null));
     } catch {
       setOhlcvData(null);
       setFeatureData(null);
       setFeatureNames([]);
+      setPnlTimeseries(null);
     } finally {
       setChartLoading(false);
     }
@@ -144,6 +150,7 @@ export default function Trades() {
     setChartActive(false);
     setFeatureNames([]);
     setTickerPnl(null);
+    setPnlTimeseries(null);
   }, [setChartActive, setFeatureNames]);
 
   const handleTimeframeChange = useCallback(async (newTimeframe: string) => {
@@ -158,10 +165,15 @@ export default function Trades() {
       setOhlcvData(ohlcv);
       setFeatureData(features);
       setFeatureNames(features.feature_names);
+      // Re-fetch PnL timeseries for new timeframe data
+      api.fetchTickerPnlTimeseries(selectedTicker, ohlcv.timestamps, ohlcv.close)
+        .then((pnl) => setPnlTimeseries(pnl))
+        .catch(() => setPnlTimeseries(null));
     } catch {
       setOhlcvData(null);
       setFeatureData(null);
       setFeatureNames([]);
+      setPnlTimeseries(null);
     } finally {
       setChartLoading(false);
     }
@@ -299,6 +311,7 @@ export default function Trades() {
                 <OHLCVChart
                   data={ohlcvData}
                   featureData={featureData}
+                  pnlData={pnlTimeseries}
                   selectedFeatures={selectedFeatures}
                   showVolume={true}
                   showStates={false}

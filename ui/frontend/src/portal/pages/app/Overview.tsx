@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import api, { fetchSyncStatus, triggerSync, fetchOHLCVData, fetchFeatures, fetchMockOHLCVData, fetchMockFeatures } from '../../api';
-import type { TradeSummary, InsightsSummary, BrokerStatus, JournalEntry, BehavioralInsight, TickerPnlSummary } from '../../types';
+import type { TradeSummary, InsightsSummary, BrokerStatus, JournalEntry, BehavioralInsight, TickerPnlSummary, PnlTimeseries } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
 import { useChartContext } from '../../context/ChartContext';
@@ -24,6 +24,7 @@ export default function Overview() {
   const [chartLoading, setChartLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [tickerPnl, setTickerPnl] = useState<TickerPnlSummary | null>(null);
+  const [pnlTimeseries, setPnlTimeseries] = useState<PnlTimeseries | null>(null);
   const selectedTickerRef = useRef<string | null>(null);
 
   const { setChartActive, setFeatureNames, selectedFeatures } = useChartContext();
@@ -83,12 +84,25 @@ export default function Overview() {
       return { ohlcv, features };
     }
 
+    // Helper: fetch PnL timeseries using OHLCV data
+    async function loadPnlTimeseries(ohlcv: { timestamps: string[]; close: number[] }) {
+      try {
+        const pnl = await api.fetchTickerPnlTimeseries(symbol, ohlcv.timestamps, ohlcv.close);
+        if (selectedTickerRef.current === symbol) {
+          setPnlTimeseries(pnl);
+        }
+      } catch {
+        setPnlTimeseries(null);
+      }
+    }
+
     // 1. Immediately render with whatever data the DB already has
     try {
       const { ohlcv, features } = await fetchChartData();
       setOhlcvData(ohlcv);
       setFeatureData(features);
       setFeatureNames(features.feature_names);
+      loadPnlTimeseries(ohlcv);
     } catch {
       // Backend unavailable — fall back to mocks for immediate render
       try {
@@ -99,10 +113,12 @@ export default function Overview() {
         setOhlcvData(ohlcv);
         setFeatureData(features);
         setFeatureNames(features.feature_names);
+        loadPnlTimeseries(ohlcv);
       } catch {
         setOhlcvData(null);
         setFeatureData(null);
         setFeatureNames([]);
+        setPnlTimeseries(null);
       }
       setChartLoading(false);
       return; // No backend — nothing to sync
@@ -130,6 +146,7 @@ export default function Overview() {
         setOhlcvData(ohlcv);
         setFeatureData(features);
         setFeatureNames(features.feature_names);
+        loadPnlTimeseries(ohlcv);
       }
     } catch {
       // Sync failed — chart already shows existing data, nothing to do
@@ -167,6 +184,7 @@ export default function Overview() {
     setFeatureNames([]);
     setSyncing(false);
     setTickerPnl(null);
+    setPnlTimeseries(null);
   }, [setChartActive, setFeatureNames]);
 
   if (loading) {
@@ -268,6 +286,7 @@ export default function Overview() {
                 <OHLCVChart
                   data={ohlcvData}
                   featureData={featureData}
+                  pnlData={pnlTimeseries}
                   selectedFeatures={selectedFeatures}
                   showVolume={true}
                   showStates={false}

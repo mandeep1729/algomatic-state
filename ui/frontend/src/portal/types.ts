@@ -271,6 +271,12 @@ export interface TickerPnlSummary {
   first_entry_time: string;
 }
 
+/** Cumulative PnL timeseries aligned to OHLCV chart timestamps. */
+export interface PnlTimeseries {
+  timestamps: string[];
+  cumulative_pnl: number[];
+}
+
 // --- Broker (re-export from existing types for convenience) ---
 
 export interface BrokerConnectResponse {

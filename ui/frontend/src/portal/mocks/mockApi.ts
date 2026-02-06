@@ -36,6 +36,7 @@ import type {
   OnboardingStatus,
   BrokerStatus,
   TickerPnlSummary,
+  PnlTimeseries,
 } from '../types';
 
 // Simulate network delay
@@ -179,6 +180,67 @@ export async function fetchTickerPnl(symbol: string): Promise<TickerPnlSummary> 
     trade_count: tickerTrades.length,
     closed_count: closedTrades.length,
     first_entry_time: tickerTrades.length > 0 ? tickerTrades[0].entry_time : new Date().toISOString(),
+  };
+}
+
+// --- Ticker PnL Timeseries ---
+
+/**
+ * Compute cumulative PnL timeseries for a ticker aligned to OHLCV timestamps.
+ *
+ * For each OHLCV candle timestamp:
+ *   - Closed trades that exited at or before this timestamp contribute their realized PnL.
+ *   - Open trades that were entered at or before this timestamp contribute unrealized PnL
+ *     based on (close_price - entry_price) * quantity * direction_sign.
+ *
+ * The result is an array of cumulative PnL values (one per OHLCV timestamp).
+ */
+export async function fetchTickerPnlTimeseries(
+  symbol: string,
+  ohlcvTimestamps: string[],
+  ohlcvClose: number[],
+): Promise<PnlTimeseries> {
+  await delay();
+
+  const tickerDetails = MOCK_TRADES
+    .filter(t => t.symbol.toUpperCase() === symbol.toUpperCase());
+
+  const cumPnl: number[] = [];
+
+  for (let i = 0; i < ohlcvTimestamps.length; i++) {
+    const tsMs = new Date(ohlcvTimestamps[i]).getTime();
+    const closePrice = ohlcvClose[i];
+    let pnl = 0;
+
+    for (const trade of tickerDetails) {
+      const entryMs = new Date(trade.entry_time).getTime();
+
+      // Trade has not started yet at this timestamp
+      if (entryMs > tsMs) continue;
+
+      const dirSign = trade.direction === 'long' ? 1 : -1;
+
+      if (trade.status === 'closed' && trade.exit_time) {
+        const exitMs = new Date(trade.exit_time).getTime();
+        if (tsMs >= exitMs) {
+          // Realized PnL: use the actual PnL from the trade
+          pnl += trade.pnl ?? 0;
+        } else {
+          // Trade is still open at this point -- unrealized PnL
+          pnl += (closePrice - trade.entry_price) * trade.quantity * dirSign;
+        }
+      } else {
+        // Open/proposed trade -- unrealized PnL
+        pnl += (closePrice - trade.entry_price) * trade.quantity * dirSign;
+      }
+    }
+
+    cumPnl.push(+pnl.toFixed(2));
+  }
+
+  return {
+    timestamps: ohlcvTimestamps,
+    cumulative_pnl: cumPnl,
   };
 }
 
