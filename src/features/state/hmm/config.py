@@ -6,6 +6,7 @@ Handles loading and validation of:
 - Per-timeframe settings
 """
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Optional
@@ -14,6 +15,8 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 from src.features.state.hmm.contracts import VALID_TIMEFRAMES
+
+logger = logging.getLogger(__name__)
 
 
 # Default feature set for state vector training (from implementation plan)
@@ -206,8 +209,10 @@ def load_feature_spec(
     """
     config_path = Path(config_path)
     if not config_path.exists():
+        logger.error(f"Config file not found: {config_path}")
         raise FileNotFoundError(f"Config file not found: {config_path}")
 
+    logger.debug(f"Loading feature spec from {config_path} for timeframe={timeframe}")
     with open(config_path) as f:
         raw_config = yaml.safe_load(f) or {}
 
@@ -222,6 +227,7 @@ def load_feature_spec(
         else:
             features.append(FeatureSpecEntry(name=name))
 
+    logger.info(f"Loaded feature spec for {timeframe} with {len(features)} features")
     return StateVectorFeatureSpec(
         features=features,
         timeframe=timeframe,
@@ -261,6 +267,7 @@ def save_config(config: StateVectorConfig, path: Path | str) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    logger.debug(f"Saving config to {path}")
     with open(path, "w") as f:
         yaml.dump(
             config.model_dump(exclude_none=True),
@@ -268,3 +275,4 @@ def save_config(config: StateVectorConfig, path: Path | str) -> None:
             default_flow_style=False,
             sort_keys=False,
         )
+    logger.info(f"Config saved to {path}")
