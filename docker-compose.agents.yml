@@ -1,0 +1,74 @@
+# Trading agents compose file
+# Usage:
+#   docker compose up -d postgres  # Start infrastructure first
+#   docker compose -f docker-compose.agents.yml up -d  # Start all agents
+#   docker compose -f docker-compose.agents.yml up -d momentum-agent  # Start specific agent
+
+services:
+  momentum-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: algomatic-momentum-agent
+    environment:
+      - AGENT_SYMBOL=${AGENT_SYMBOL:-AAPL}
+      - AGENT_INTERVAL_MINUTES=${AGENT_INTERVAL_MINUTES:-15}
+      - AGENT_DATA_PROVIDER=${AGENT_DATA_PROVIDER:-alpaca}
+      - AGENT_LOOKBACK_DAYS=${AGENT_LOOKBACK_DAYS:-5}
+      - AGENT_POSITION_SIZE_DOLLARS=${AGENT_POSITION_SIZE_DOLLARS:-100}
+      - AGENT_PAPER=${AGENT_PAPER:-true}
+      - AGENT_API_PORT=${AGENT_API_PORT:-8000}
+      - AGENT_LOG_LEVEL=${AGENT_LOG_LEVEL:-INFO}
+      - STRATEGY_MOMENTUM_FEATURE=${STRATEGY_MOMENTUM_FEATURE:-r5}
+      - STRATEGY_LONG_THRESHOLD=${STRATEGY_LONG_THRESHOLD:-0.001}
+      - STRATEGY_SHORT_THRESHOLD=${STRATEGY_SHORT_THRESHOLD:--0.001}
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-algomatic}
+      - DB_USER=${DB_USER:-algomatic}
+      - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+    volumes:
+      - /home/mandeep/projects/algomatic/momentum-agent-logs:/app/logs
+    networks:
+      - algomatic
+    restart: unless-stopped
+
+  contrarian-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: algomatic-contrarian-agent
+    environment:
+      - CONTRARIAN_SYMBOL=${CONTRARIAN_SYMBOL:-AAPL}
+      - CONTRARIAN_INTERVAL_MINUTES=${CONTRARIAN_INTERVAL_MINUTES:-15}
+      - CONTRARIAN_DATA_PROVIDER=${CONTRARIAN_DATA_PROVIDER:-alpaca}
+      - CONTRARIAN_LOOKBACK_DAYS=${CONTRARIAN_LOOKBACK_DAYS:-5}
+      - CONTRARIAN_POSITION_SIZE_DOLLARS=${CONTRARIAN_POSITION_SIZE_DOLLARS:-100}
+      - CONTRARIAN_PAPER=${CONTRARIAN_PAPER:-true}
+      - CONTRARIAN_API_PORT=${CONTRARIAN_API_PORT:-8001}
+      - CONTRARIAN_LOG_LEVEL=${CONTRARIAN_LOG_LEVEL:-INFO}
+      - CONTRARIAN_STRATEGY_MOMENTUM_FEATURE=${CONTRARIAN_STRATEGY_MOMENTUM_FEATURE:-r5}
+      - CONTRARIAN_STRATEGY_LONG_THRESHOLD=${CONTRARIAN_STRATEGY_LONG_THRESHOLD:-0.001}
+      - CONTRARIAN_STRATEGY_SHORT_THRESHOLD=${CONTRARIAN_STRATEGY_SHORT_THRESHOLD:--0.001}
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY:-}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-algomatic}
+      - DB_USER=${DB_USER:-algomatic}
+      - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+    volumes:
+      - /home/mandeep/projects/algomatic/contrarian-agent-logs:/app/logs
+    command: python -m src.agent.contrarian_main
+    networks:
+      - algomatic
+    restart: unless-stopped
+
+networks:
+  algomatic:
+    name: tradewing-finnhub_default
+    external: true
