@@ -15,7 +15,6 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import Overview from '../pages/app/Overview';
 import Trades from '../pages/app/Trades';
 import TradeDetail from '../pages/app/TradeDetail';
-import Evaluate from '../pages/app/Evaluate';
 import Insights from '../pages/app/Insights';
 import Journal from '../pages/app/Journal';
 
@@ -111,7 +110,6 @@ export const router = createBrowserRouter([
           { index: true, element: <Overview /> },
           { path: 'trades', element: <Trades /> },
           { path: 'trades/:tradeId', element: <TradeDetail /> },
-          { path: 'evaluate', element: <Evaluate /> },
           { path: 'insights', element: <Insights /> },
           { path: 'journal', element: <Journal /> },
           { path: 'settings/profile', element: <SettingsProfile /> },

@@ -3,7 +3,6 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   ArrowRightLeft,
-  ClipboardCheck,
   TrendingUp,
   BookOpen,
   Settings,
@@ -29,7 +28,6 @@ import { FeatureFilter } from '../../components/FeatureFilter';
 const BREADCRUMB_LABELS: Record<string, string> = {
   '/app': 'Overview',
   '/app/trades': 'Trades',
-  '/app/evaluate': 'Evaluate',
   '/app/insights': 'Insights',
   '/app/journal': 'Journal',
   '/app/settings/profile': 'Profile',
@@ -86,7 +84,6 @@ function Breadcrumbs() {
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard,
   ArrowRightLeft,
-  ClipboardCheck,
   TrendingUp,
   BookOpen,
   Settings,
