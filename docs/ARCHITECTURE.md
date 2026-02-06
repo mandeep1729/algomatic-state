@@ -98,21 +98,34 @@ algomatic-state/
 │   ├── features.json           # Feature configuration
 │   ├── assets.yaml             # Asset universe
 │   ├── trading.yaml            # Trading strategy and backtest config
-│   └── state_vector_feature_spec.yaml  # HMM feature spec
+│   ├── state_vector_feature_spec.yaml  # HMM feature spec
+│   └── seed/                   # Database seed data (initial tickers, etc.)
 │
 ├── src/                        # Source code
 │   ├── __init__.py
 │   │
-│   ├── agent/                  # Standalone momentum trading agent
-│   │   ├── main.py             # Entry point (FastAPI + scheduler in threads)
+│   ├── agent/                  # Standalone trading agents
+│   │   ├── main.py             # Momentum agent entry point (FastAPI + scheduler)
 │   │   ├── config.py           # AgentConfig (AGENT_ env prefix)
 │   │   ├── strategy.py         # MomentumStrategy
 │   │   ├── scheduler.py        # Async fetch-compute-trade loop
-│   │   └── api.py              # Internal /market-data endpoint
+│   │   ├── api.py              # Internal /market-data endpoint
+│   │   ├── breakout_main.py    # Breakout agent entry point
+│   │   ├── breakout_config.py  # Breakout agent configuration
+│   │   ├── breakout_strategy.py # Breakout trading strategy
+│   │   ├── contrarian_main.py  # Contrarian agent entry point
+│   │   ├── contrarian_config.py # Contrarian agent configuration
+│   │   ├── contrarian_strategy.py # Contrarian trading strategy
+│   │   ├── vwap_main.py        # VWAP agent entry point
+│   │   ├── vwap_config.py      # VWAP agent configuration
+│   │   └── vwap_strategy.py    # VWAP trading strategy
 │   │
 │   ├── api/                    # Public API routers
 │   │   ├── trading_buddy.py    # Trading Buddy REST endpoints
-│   │   └── broker.py           # SnapTrade broker integration routes
+│   │   ├── broker.py           # SnapTrade broker integration routes
+│   │   ├── auth.py             # Google OAuth authentication endpoints
+│   │   ├── auth_middleware.py  # JWT token validation middleware
+│   │   └── user_profile.py     # User profile and risk preference endpoints
 │   │
 │   ├── data/                   # Data layer
 │   │   ├── __init__.py
@@ -232,14 +245,15 @@ algomatic-state/
 │   │   ├── data.py
 │   │   ├── logging_setup.py
 │   │   └── output.py
-│   ├── download_data.py
-│   ├── compute_features.py
-│   ├── import_csv_to_db.py
-│   ├── init_db.py
-│   ├── train_hmm.py
-│   ├── analyze_hmm_states.py
-│   ├── run_paper_trading.py
-│   └── run_live_trading.py
+│   ├── download_data.py        # Download OHLCV data from Alpaca
+│   ├── download_tickers.py     # Download and seed ticker metadata
+│   ├── compute_features.py     # Compute technical features
+│   ├── import_csv_to_db.py     # Import CSV/Parquet data to database
+│   ├── init_db.py              # Initialize database schema
+│   ├── train_hmm.py            # Train HMM regime model
+│   ├── analyze_hmm_states.py   # Analyze trained HMM states
+│   ├── run_paper_trading.py    # Run paper trading session
+│   └── run_live_trading.py     # Run live trading session
 │
 ├── alembic/                    # Database migrations
 │   ├── env.py
@@ -266,8 +280,9 @@ algomatic-state/
 │               ├── metadata.json
 │               └── feature_spec.yaml
 │
-├── Dockerfile                  # Docker image for momentum agent
-├── docker-compose.yml          # PostgreSQL + pgAdmin + agent
+├── Dockerfile                  # Docker image for trading agents
+├── docker-compose.yml          # PostgreSQL + pgAdmin services
+├── docker-compose.agents.yml   # Trading agent services (momentum, breakout, contrarian, vwap)
 │
 └── docs/                       # Documentation
     ├── ARCHITECTURE.md
@@ -589,6 +604,54 @@ EvaluationResult (score, items, summary)
 - Data provider switchable: Alpaca or Finnhub
 - Uses `MomentumStrategy` with configurable thresholds
 - Docker Compose service with PostgreSQL dependency
+
+### 10. Additional Trading Strategies
+
+**Purpose**: Alternative trading strategies beyond basic momentum, each with its own entry/exit logic.
+
+**Location**: `src/agent/` (strategy-specific files)
+
+#### Available Strategies
+
+| Strategy | Entry Point | Feature | Logic |
+|----------|-------------|---------|-------|
+| Momentum | `main.py` | `r5` | Long when momentum > threshold, short when < negative threshold |
+| Contrarian | `contrarian_main.py` | `r5` | Opposite of momentum: long on negative momentum, short on positive |
+| Breakout | `breakout_main.py` | `breakout_20` | Long on breakouts above 20-bar high, short on breakdowns |
+| VWAP | `vwap_main.py` | `dist_vwap_60` | Mean reversion: long below VWAP, short above VWAP |
+
+Each strategy follows the same architecture as the momentum agent (FastAPI + scheduler loop) but uses different signal generation logic. All strategies are configured via environment variables with strategy-specific prefixes.
+
+### 11. Authentication Layer
+
+**Purpose**: Secure API access with Google OAuth and JWT tokens.
+
+**Location**: `src/api/auth.py`, `src/api/auth_middleware.py`
+
+#### Authentication Flow
+```
+Google Sign-In (Frontend)
+         │
+         ▼
+POST /api/auth/google (ID Token)
+         │
+         ├─► Verify Google ID Token
+         ├─► Find or Create User Account
+         ├─► Create User Profile (if new)
+         │
+         ▼
+Return JWT Access Token
+         │
+         ▼
+Subsequent Requests: Authorization: Bearer <JWT>
+         │
+         ▼
+get_current_user() Middleware (validates JWT)
+```
+
+- Dev mode bypass via `AUTH_DEV_MODE=true` (returns user_id=1)
+- JWT expiration configurable via `AUTH_JWT_EXPIRY_HOURS`
+- Google OAuth client ID via `AUTH_GOOGLE_CLIENT_ID`
 
 ## Data Flow Diagrams
 

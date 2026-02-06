@@ -413,3 +413,121 @@ Get trade history.
   }
 ]
 ```
+
+## Authentication
+
+### `POST /api/auth/google`
+Authenticate with Google OAuth. Verifies the Google ID token, finds or creates the user account, and returns a JWT.
+
+**Request Body:**
+```json
+{
+  "credential": "<Google ID token from frontend>"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "bearer",
+  "user": {
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com",
+    "profile_picture_url": "https://...",
+    "auth_provider": "google"
+  }
+}
+```
+
+### `GET /api/auth/me`
+Get the current authenticated user's information. Requires Bearer token.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "id": 1,
+  "name": "John Doe",
+  "email": "john@example.com",
+  "profile_picture_url": "https://...",
+  "google_id": "...",
+  "auth_provider": "google",
+  "is_active": true,
+  "created_at": "2024-01-01T00:00:00"
+}
+```
+
+### `POST /api/auth/logout`
+Logout endpoint. Since JWT is stateless, the client should discard the token.
+
+**Response:**
+```json
+{
+  "message": "Logged out successfully"
+}
+```
+
+## User Profile
+
+### `GET /api/user/profile`
+Get the authenticated user's trading profile. Requires Bearer token.
+
+**Response:**
+```json
+{
+  "account_balance": 100000.0,
+  "max_position_size_pct": 10.0,
+  "max_risk_per_trade_pct": 2.0,
+  "max_daily_loss_pct": 5.0,
+  "min_risk_reward_ratio": 2.0,
+  "default_timeframes": ["1Min", "15Min", "1Hour"],
+  "experience_level": "intermediate",
+  "trading_style": "swing"
+}
+```
+
+### `PUT /api/user/profile`
+Update the authenticated user's trading profile.
+
+**Request Body:**
+```json
+{
+  "account_balance": 150000.0,
+  "max_position_size_pct": 5.0,
+  "experience_level": "advanced"
+}
+```
+
+**Response:** Same as `GET /api/user/profile`
+
+### `GET /api/user/risk`
+Get the authenticated user's risk preferences (subset of profile).
+
+**Response:**
+```json
+{
+  "max_position_size_pct": 10.0,
+  "max_risk_per_trade_pct": 2.0,
+  "max_daily_loss_pct": 5.0,
+  "min_risk_reward_ratio": 2.0
+}
+```
+
+### `PUT /api/user/risk`
+Update the authenticated user's risk preferences.
+
+**Request Body:**
+```json
+{
+  "max_risk_per_trade_pct": 1.5,
+  "min_risk_reward_ratio": 3.0
+}
+```
+
+**Response:** Same as `GET /api/user/risk`

@@ -236,6 +236,43 @@ python -m src.agent.main
 
 The agent requires `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` to be set for order submission. If using Finnhub as the data provider, also set `FINNHUB_API_KEY`.
 
+### 8. Launch Additional Trading Agents (Optional)
+
+Besides the basic momentum agent, the project includes three additional trading strategy agents that can be run independently:
+
+- **Breakout Agent**: Trades price breakouts above recent highs and breakdowns below recent lows
+- **Contrarian Agent**: Takes positions against the prevailing momentum (mean reversion)
+- **VWAP Agent**: Trades based on distance from Volume Weighted Average Price
+
+#### Running Multiple Agents
+
+Use the dedicated `docker-compose.agents.yml` file to run any combination of agents:
+
+```bash
+# Start infrastructure first
+docker compose up -d postgres
+
+# Start all agents
+docker compose -f docker-compose.agents.yml up -d
+
+# Or start specific agents
+docker compose -f docker-compose.agents.yml up -d breakout-agent vwap-agent
+
+# View logs for a specific agent
+docker logs -f algomatic-breakout-agent
+```
+
+#### Agent-Specific Environment Variables
+
+Each agent has its own environment variable prefix:
+
+| Agent | Prefix | Key Feature | Default Thresholds |
+|---|---|---|---|
+| Momentum | `AGENT_` | `r5` (5-bar return) | long: 0.001, short: -0.001 |
+| Contrarian | `CONTRARIAN_` | `r5` | long: -0.001, short: 0.001 |
+| Breakout | `BREAKOUT_` | `breakout_20` (distance from 20-bar high) | long: 0.001, short: -0.02 |
+| VWAP | `VWAP_` | `dist_vwap_60` (distance from VWAP) | long: 0.005, short: -0.005 |
+
 ## Project Structure
 
 ```
@@ -245,19 +282,32 @@ algomatic-state/
 │   ├── assets.yaml                 # Asset universe
 │   ├── features.json               # Feature configuration
 │   ├── trading.yaml                # Trading strategy and backtest config
-│   └── state_vector_feature_spec.yaml  # HMM feature and model config
+│   ├── state_vector_feature_spec.yaml  # HMM feature and model config
+│   └── seed/                       # Database seed data (initial tickers, etc.)
 │
 ├── src/
-│   ├── agent/                      # Standalone momentum trading agent
-│   │   ├── main.py                # Entry point (FastAPI + scheduler)
+│   ├── agent/                      # Standalone trading agents
+│   │   ├── main.py                # Momentum agent entry point (FastAPI + scheduler)
 │   │   ├── config.py              # AgentConfig (env-based)
 │   │   ├── strategy.py            # MomentumStrategy
 │   │   ├── scheduler.py           # Async fetch-compute-trade loop
-│   │   └── api.py                 # Internal /market-data endpoint
+│   │   ├── api.py                 # Internal /market-data endpoint
+│   │   ├── breakout_main.py       # Breakout agent entry point
+│   │   ├── breakout_config.py     # Breakout agent configuration
+│   │   ├── breakout_strategy.py   # Breakout trading strategy
+│   │   ├── contrarian_main.py     # Contrarian agent entry point
+│   │   ├── contrarian_config.py   # Contrarian agent configuration
+│   │   ├── contrarian_strategy.py # Contrarian trading strategy
+│   │   ├── vwap_main.py           # VWAP agent entry point
+│   │   ├── vwap_config.py         # VWAP agent configuration
+│   │   └── vwap_strategy.py       # VWAP trading strategy
 │   │
 │   ├── api/                        # Public API routers
 │   │   ├── trading_buddy.py       # Trading Buddy REST endpoints
-│   │   └── broker.py              # SnapTrade broker integration
+│   │   ├── broker.py              # SnapTrade broker integration
+│   │   ├── auth.py                # Google OAuth authentication endpoints
+│   │   ├── auth_middleware.py     # JWT token validation middleware
+│   │   └── user_profile.py        # User profile and risk preference endpoints
 │   │
 │   ├── data/                       # Data loading and storage
 │   │   ├── loaders/               # CSV, Alpaca, Database loaders
@@ -365,17 +415,20 @@ algomatic-state/
 │   └── frontend/                  # React + TypeScript frontend
 │
 ├── scripts/                        # CLI scripts
-│   ├── download_data.py
-│   ├── compute_features.py
-│   ├── import_csv_to_db.py
-│   ├── init_db.py
-│   ├── train_hmm.py
-│   ├── analyze_hmm_states.py
-│   ├── run_paper_trading.py
-│   └── run_live_trading.py
+│   ├── helpers/                   # Shared helper modules
+│   ├── download_data.py           # Download OHLCV data from Alpaca
+│   ├── download_tickers.py        # Download and seed ticker metadata
+│   ├── compute_features.py        # Compute technical features
+│   ├── import_csv_to_db.py        # Import CSV/Parquet data to database
+│   ├── init_db.py                 # Initialize database schema
+│   ├── train_hmm.py               # Train HMM regime model
+│   ├── analyze_hmm_states.py      # Analyze trained HMM states
+│   ├── run_paper_trading.py       # Run paper trading session
+│   └── run_live_trading.py        # Run live trading session
 │
-├── Dockerfile                      # Docker image for momentum agent
-├── docker-compose.yml              # PostgreSQL + pgAdmin + agent
+├── Dockerfile                      # Docker image for trading agents
+├── docker-compose.yml              # PostgreSQL + pgAdmin services
+├── docker-compose.agents.yml       # Trading agent services (momentum, breakout, etc.)
 │
 └── docs/                           # Documentation
     ├── ARCHITECTURE.md
