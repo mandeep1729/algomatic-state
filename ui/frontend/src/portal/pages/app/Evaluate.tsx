@@ -3,12 +3,12 @@ import api from '../../api';
 import type { TradeIntentCreate, EvaluateResponse } from '../../types';
 import EvaluationDisplay from '../../components/EvaluationDisplay';
 
-const TIMEFRAME_OPTIONS = ['1Min', '5Min', '15Min', '1Hour', '1Day'];
+const TIMEFRAME_OPTIONS = ['1Min', '15Min', '1Hour', '1Day'];
 
 const INITIAL_FORM: TradeIntentCreate = {
   symbol: '',
   direction: 'long',
-  timeframe: '5Min',
+  timeframe: '15Min',
   entry_price: 0,
   stop_loss: 0,
   profit_target: 0,

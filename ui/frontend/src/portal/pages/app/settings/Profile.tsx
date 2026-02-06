@@ -16,7 +16,7 @@ const TRADING_STYLES = [
 ] as const;
 
 const MARKET_OPTIONS = ['US_EQUITIES', 'FOREX', 'CRYPTO', 'OPTIONS', 'FUTURES'];
-const TIMEFRAME_OPTIONS = ['1Min', '5Min', '15Min', '1Hour', '4Hour', '1Day'];
+const TIMEFRAME_OPTIONS = ['1Min', '15Min', '1Hour', '1Day'];
 const ACCOUNT_SIZES = ['< $1k', '$1k-$10k', '$10k-$50k', '$50k-$100k', '$100k+'];
 
 export default function SettingsProfile() {
