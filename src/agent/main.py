@@ -27,6 +27,16 @@ def _run_api(config: AgentConfig) -> None:
     uvicorn.run(app, host="0.0.0.0", port=config.api_port, log_level="info")
 
 
+def _create_provider(data_provider: str):
+    """Create the appropriate MarketDataProvider from config name."""
+    if data_provider == "finnhub":
+        from src.marketdata.finnhub_provider import FinnhubProvider
+        return FinnhubProvider()
+    else:
+        from src.marketdata.alpaca_provider import AlpacaProvider
+        return AlpacaProvider()
+
+
 def main() -> None:
     agent_config = AgentConfig()
     strategy_config = StrategyConfig()
@@ -42,6 +52,14 @@ def main() -> None:
             "paper": agent_config.paper,
         },
     )
+
+    # Start MarketDataOrchestrator so that messaging-based data requests
+    # are fulfilled automatically.
+    from src.marketdata.orchestrator import MarketDataOrchestrator
+
+    provider = _create_provider(agent_config.data_provider)
+    orchestrator = MarketDataOrchestrator(provider)
+    orchestrator.start()
 
     # Start FastAPI in a daemon thread so the process exits when the main
     # loop ends (or is interrupted).

@@ -311,8 +311,9 @@ async def evaluate_trade_intent(
             # Load user-specific evaluator configs
             evaluator_configs = repo.build_evaluator_configs(account_id)
 
-        # Build context
-        context_builder = ContextPackBuilder()
+        # Build context (ensure_fresh_data triggers a messaging request
+        # so that the orchestrator fetches any missing bars before we read)
+        context_builder = ContextPackBuilder(ensure_fresh_data=True)
         context = context_builder.build(
             symbol=intent.symbol,
             timeframe=intent.timeframe,

@@ -57,6 +57,46 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Regime State Visualization API", version="1.0.0")
 
+# MarketDataOrchestrator instance (set during startup)
+_market_data_orchestrator = None
+
+
+@app.on_event("startup")
+def _startup_market_data_orchestrator():
+    """Start the MarketDataOrchestrator so messaging-based data requests work."""
+    global _market_data_orchestrator
+    try:
+        from src.marketdata.orchestrator import MarketDataOrchestrator
+
+        # Build a provider from environment credentials
+        provider = None
+        if os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_SECRET_KEY"):
+            try:
+                from src.marketdata.alpaca_provider import AlpacaProvider
+                provider = AlpacaProvider()
+            except Exception as e:
+                logger.warning("Failed to create AlpacaProvider for orchestrator: %s", e)
+
+        if provider is None:
+            logger.info("No market data provider available; MarketDataOrchestrator not started")
+            return
+
+        _market_data_orchestrator = MarketDataOrchestrator(provider)
+        _market_data_orchestrator.start()
+        logger.info("MarketDataOrchestrator started on app startup")
+    except Exception as e:
+        logger.warning("Failed to start MarketDataOrchestrator: %s", e)
+
+
+@app.on_event("shutdown")
+def _shutdown_market_data_orchestrator():
+    """Stop the MarketDataOrchestrator cleanly."""
+    global _market_data_orchestrator
+    if _market_data_orchestrator is not None:
+        _market_data_orchestrator.stop()
+        _market_data_orchestrator = None
+        logger.info("MarketDataOrchestrator stopped on app shutdown")
+
 # Include routers
 app.include_router(auth_router)
 app.include_router(user_profile_router)
@@ -691,7 +731,9 @@ async def trigger_sync(
 ):
     """Trigger data synchronization for a symbol.
 
-    This will fetch data from Alpaca and store it in the database.
+    Publishes a MARKET_DATA_REQUEST via the messaging bus.  The
+    MarketDataOrchestrator (started at app startup) handles fetching
+    from the provider and inserting into the database.
     """
     if timeframe not in VALID_TIMEFRAMES:
         raise HTTPException(
@@ -700,13 +742,8 @@ async def trigger_sync(
         )
 
     try:
-        db_loader = get_database_loader()
-
-        if db_loader.alpaca_loader is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Alpaca credentials not configured. Cannot sync data."
-            )
+        from src.messaging.events import Event, EventType
+        from src.messaging.bus import get_message_bus
 
         # Parse dates (default to configured history_months)
         settings = get_settings()
@@ -714,11 +751,28 @@ async def trigger_sync(
         end = datetime.fromisoformat(end_date) if end_date else datetime.now()
         start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=history_days)
 
-        # Trigger sync by loading data (auto_fetch is enabled)
-        df = db_loader.load(symbol.upper(), start=start, end=end, timeframe=timeframe)
+        # Publish request via messaging bus (synchronous — data is in DB
+        # when publish() returns)
+        bus = get_message_bus()
+        bus.publish(Event(
+            event_type=EventType.MARKET_DATA_REQUEST,
+            payload={
+                "symbol": symbol.upper(),
+                "timeframes": [timeframe],
+                "start": start,
+                "end": end,
+            },
+            source="ui.backend.api",
+        ))
 
         # Invalidate cached API responses so subsequent GETs read fresh data from DB
         invalidate_cache_for_symbol(symbol)
+
+        # Read updated row count from DB for the response
+        db_manager = get_db_manager()
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+            df = repo.get_bars(symbol.upper(), timeframe, start, end)
 
         return {
             "message": f"Sync completed for {symbol.upper()}/{timeframe}",

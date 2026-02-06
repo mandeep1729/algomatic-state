@@ -320,6 +320,7 @@ class ContextPackBuilder:
         include_regimes: bool = True,
         include_key_levels: bool = True,
         cache_enabled: bool = True,
+        ensure_fresh_data: bool = False,
     ):
         """Initialize builder.
 
@@ -328,11 +329,15 @@ class ContextPackBuilder:
             include_regimes: Whether to include regime data
             include_key_levels: Whether to compute key levels
             cache_enabled: Whether to cache context packs
+            ensure_fresh_data: If True, publish a MARKET_DATA_REQUEST via
+                the messaging bus before reading from the DB so that stale
+                data is refreshed.
         """
         self.include_features = include_features
         self.include_regimes = include_regimes
         self.include_key_levels = include_key_levels
         self.cache_enabled = cache_enabled
+        self.ensure_fresh_data = ensure_fresh_data
         self._cache: dict[str, tuple[datetime, ContextPack]] = {}
 
     def build(
@@ -365,6 +370,13 @@ class ContextPackBuilder:
             if (datetime.utcnow() - cached_time).total_seconds() < self.CACHE_TTL:
                 logger.debug(f"Using cached ContextPack for {cache_key}")
                 return cached_pack
+
+        # Request fresh data via messaging before reading from DB
+        if self.ensure_fresh_data:
+            all_tfs = [timeframe]
+            if additional_timeframes:
+                all_tfs.extend([tf for tf in additional_timeframes if tf != timeframe])
+            self._request_fresh_data(symbol, all_tfs)
 
         # Build context
         timeframes = [timeframe]
@@ -477,6 +489,36 @@ class ContextPackBuilder:
         )
 
         return context
+
+    def _request_fresh_data(self, symbol: str, timeframes: list[str]) -> None:
+        """Publish a ``MARKET_DATA_REQUEST`` so the orchestrator fetches
+        any missing bars *before* the builder reads from the DB.
+
+        Uses a lazy import to avoid circular dependencies (messaging
+        does not depend on evaluators and vice-versa).
+        """
+        try:
+            from src.messaging.events import Event, EventType
+            from src.messaging.bus import get_message_bus
+
+            bus = get_message_bus()
+            bus.publish(Event(
+                event_type=EventType.MARKET_DATA_REQUEST,
+                payload={
+                    "symbol": symbol,
+                    "timeframes": timeframes,
+                    "start": None,
+                    "end": None,
+                },
+                source="ContextPackBuilder",
+            ))
+        except Exception:
+            logger.warning(
+                "Failed to request fresh data via messaging for %s; "
+                "proceeding with existing DB data",
+                symbol,
+                exc_info=True,
+            )
 
     def _compute_key_levels(self, daily_bars: pd.DataFrame) -> KeyLevels:
         """Compute key price levels from daily bars.

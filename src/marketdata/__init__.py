@@ -3,6 +3,7 @@
 from src.marketdata.base import MarketDataProvider
 from src.marketdata.alpaca_provider import AlpacaProvider
 from src.marketdata.finnhub_provider import FinnhubProvider
+from src.marketdata.service import MarketDataService, get_market_data_service
 from src.marketdata.utils import (
     RateLimiter,
     fetch_with_retry,
@@ -15,6 +16,8 @@ __all__ = [
     "MarketDataProvider",
     "AlpacaProvider",
     "FinnhubProvider",
+    "MarketDataService",
+    "get_market_data_service",
     "RateLimiter",
     "fetch_with_retry",
     "generate_date_chunks",
