@@ -12,7 +12,7 @@ export const MOCK_PROFILE: TradingProfile = {
   experience_level: 'intermediate',
   trading_style: 'day_trading',
   primary_markets: ['US_EQUITIES'],
-  typical_timeframes: ['1Min', '5Min', '1Hour'],
+  typical_timeframes: ['1Min', '15Min', '1Hour'],
   account_size_range: '$10k-$50k',
 };
 

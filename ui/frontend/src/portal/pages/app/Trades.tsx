@@ -256,11 +256,8 @@ export default function Trades() {
                   className="h-6 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-1.5 text-xs text-[var(--text-primary)] focus:border-[var(--accent-blue)] focus:outline-none"
                 >
                   <option value="1Min">1m</option>
-                  <option value="5Min">5m</option>
                   <option value="15Min">15m</option>
-                  <option value="30Min">30m</option>
                   <option value="1Hour">1h</option>
-                  <option value="4Hour">4h</option>
                   <option value="1Day">1d</option>
                 </select>
               </div>

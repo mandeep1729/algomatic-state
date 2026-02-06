@@ -8,7 +8,7 @@ const DIRECTION_OPTIONS: { value: TradeDirection | 'both'; label: string }[] = [
   { value: 'both', label: 'Both' },
 ];
 
-const TIMEFRAME_OPTIONS = ['1Min', '5Min', '15Min', '1Hour', '4Hour', '1Day'];
+const TIMEFRAME_OPTIONS = ['1Min', '15Min', '1Hour', '1Day'];
 
 const EMPTY_STRATEGY: Omit<StrategyDefinition, 'id'> = {
   name: '',
