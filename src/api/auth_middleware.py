@@ -34,6 +34,13 @@ def get_current_user(
     Raises:
         HTTPException: 401 if token is missing/invalid/expired
     """
+    settings = get_settings()
+
+    # Dev mode: bypass OAuth and return default user
+    if settings.auth.dev_mode:
+        logger.debug("Auth dev_mode enabled, using default user_id=1")
+        return 1
+
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -41,7 +48,6 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    settings = get_settings()
     token = credentials.credentials
 
     try:

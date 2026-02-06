@@ -232,6 +232,7 @@ class AuthConfig(BaseSettings):
     jwt_secret_key: str = Field(default="change-me-in-production", description="JWT signing secret")
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expiry_hours: int = Field(default=24, description="JWT token expiry in hours")
+    dev_mode: bool = Field(default=False, description="Bypass OAuth and use dev user (user_id=1)")
 
 
 class Settings(BaseSettings):
