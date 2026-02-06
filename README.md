@@ -196,20 +196,23 @@ The momentum agent runs a configurable loop that fetches market data, computes f
 
 #### Option A: Docker Compose (recommended)
 
-This starts PostgreSQL, the momentum agent, and optionally pgAdmin together.
+This starts PostgreSQL, builds the agent image, and runs the momentum agent container.
 
 ```bash
 # 1. Copy and configure your environment
 cp .env.example .env
 # Edit .env to set ALPACA_API_KEY, ALPACA_SECRET_KEY, and optionally FINNHUB_API_KEY
 
-# 2. Start the database and agent
+# 2. Start the database
 docker compose up -d
 
-# 3. (Optional) Include pgAdmin for database management
+# 3. Start the momentum agent
+docker compose -f docker-compose.agents.yml up -d momentum-agent
+
+# 4. (Optional) Include pgAdmin for database management
 docker compose --profile tools up -d
 
-# 4. View agent logs
+# 5. View agent logs
 docker logs -f algomatic-momentum-agent
 ```
 
