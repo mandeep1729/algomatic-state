@@ -25,22 +25,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState(true);
 
-  // On mount (or token change), validate the token by calling /api/auth/me
+  // On mount (or token change), validate authentication by calling /api/auth/me
+  // In dev mode (AUTH_DEV_MODE=true), backend returns user without token
   useEffect(() => {
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
     let cancelled = false;
 
     async function fetchMe() {
       try {
-        const res = await fetch('/api/auth/me', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        // First try without token (works if backend has AUTH_DEV_MODE=true)
+        let res = await fetch('/api/auth/me');
+
+        // If unauthorized and we have a token, try with it
+        if (res.status === 401 && token) {
+          res = await fetch('/api/auth/me', {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+
         if (!res.ok) {
-          // Token invalid/expired — clear it
+          // Token invalid/expired or no auth — clear it
           localStorage.removeItem(TOKEN_KEY);
           setToken(null);
           setUser(null);
