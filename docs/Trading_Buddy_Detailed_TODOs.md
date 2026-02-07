@@ -228,7 +228,7 @@ The following existing infrastructure will be **reused** (no need to rebuild):
 
 - [ ] **Strategy Profiling Jobs (`src/profiling/`)**
   - [ ] Implement `StrategyProfileBuilder`:
-    - [ ] Aggregate past trade stats (from `trade_histories` synced via SnapTrade or manual entries).
+    - [ ] Aggregate past trade stats (from `trade_fills` synced via SnapTrade or manual entries).
     - [ ] Compute win/loss behavior distributions.
   - [ ] Implement `PlaybookClusterer`:
     - [ ] Generate trade vectors (embeddings) from attributes.
@@ -270,7 +270,7 @@ The following existing infrastructure will be **reused** (no need to rebuild):
     - [ ] Revenge Trading (trading immediately after loss).
     - [ ] FOMO (chasing parabolic moves).
   - [ ] Define `BehaviorEvent` model and logging.
-  - [ ] Use `trade_histories` (from broker sync) and `trade_intents` for behavioral pattern detection.
+  - [ ] Use `trade_fills` (from broker sync) and `trade_intents` for behavioral pattern detection.
 
 - [ ] **Behavior Nudges Evaluator (`src/evaluators/behavior.py`)**
   - [ ] Register with `@register_evaluator("behavior")`.

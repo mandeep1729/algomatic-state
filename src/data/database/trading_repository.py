@@ -4,6 +4,7 @@ Provides methods for:
 - Loading user accounts and rules
 - Persisting trade intents and evaluations
 - Converting database models to domain objects
+- Trade lifecycle operations (fills, lots, closures, round trips)
 """
 
 import logging
@@ -19,6 +20,15 @@ from src.data.database.trading_buddy_models import (
     TradeIntent as TradeIntentModel,
     TradeEvaluation as TradeEvaluationModel,
     TradeEvaluationItem as TradeEvaluationItemModel,
+)
+from src.data.database.broker_models import TradeFill as TradeFillModel
+from src.data.database.trade_lifecycle_models import (
+    PositionLot as PositionLotModel,
+    LotClosure as LotClosureModel,
+    PositionCampaign as PositionCampaignModel,
+    CampaignLeg as CampaignLegModel,
+    LegFillMap as LegFillMapModel,
+    DecisionContext as DecisionContextModel,
 )
 from src.trade.intent import (
     TradeIntent,
@@ -558,3 +568,344 @@ class TradingBuddyRepository:
         return self.session.query(TradeEvaluationItemModel).filter(
             TradeEvaluationItemModel.evaluation_id == evaluation_id
         ).order_by(TradeEvaluationItemModel.severity_priority.desc()).all()
+
+    # -------------------------------------------------------------------------
+    # Trade Fill Operations
+    # -------------------------------------------------------------------------
+
+    def create_trade_fill(self, **kwargs) -> TradeFillModel:
+        """Create a trade fill record.
+
+        Args:
+            **kwargs: TradeFill column values
+
+        Returns:
+            Created TradeFillModel
+        """
+        fill = TradeFillModel(**kwargs)
+        self.session.add(fill)
+        self.session.flush()
+        logger.info("Created trade fill id=%s symbol=%s side=%s", fill.id, fill.symbol, fill.side)
+        return fill
+
+    def get_fills_for_account(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+        since: Optional[datetime] = None,
+    ) -> list[TradeFillModel]:
+        """Get trade fills for an account, optionally filtered.
+
+        Args:
+            account_id: Account ID
+            symbol: Optional symbol filter
+            since: Optional start datetime filter
+
+        Returns:
+            List of TradeFillModel ordered by executed_at desc
+        """
+        query = self.session.query(TradeFillModel).filter(
+            TradeFillModel.account_id == account_id
+        )
+        if symbol:
+            query = query.filter(TradeFillModel.symbol == symbol)
+        if since:
+            query = query.filter(TradeFillModel.executed_at >= since)
+        return query.order_by(TradeFillModel.executed_at.desc()).all()
+
+    def get_fill_by_external_id(self, external_trade_id: str) -> Optional[TradeFillModel]:
+        """Get a trade fill by its external (broker) trade ID.
+
+        Args:
+            external_trade_id: Broker-assigned trade ID
+
+        Returns:
+            TradeFillModel or None
+        """
+        return self.session.query(TradeFillModel).filter(
+            TradeFillModel.external_trade_id == external_trade_id
+        ).first()
+
+    # -------------------------------------------------------------------------
+    # Position Lot Operations
+    # -------------------------------------------------------------------------
+
+    def create_lot(self, **kwargs) -> PositionLotModel:
+        """Create a position lot.
+
+        Args:
+            **kwargs: PositionLot column values
+
+        Returns:
+            Created PositionLotModel
+        """
+        lot = PositionLotModel(**kwargs)
+        self.session.add(lot)
+        self.session.flush()
+        logger.info(
+            "Created position lot id=%s symbol=%s direction=%s qty=%s",
+            lot.id, lot.symbol, lot.direction, lot.open_qty,
+        )
+        return lot
+
+    def get_open_lots(
+        self,
+        account_id: int,
+        symbol: str,
+    ) -> list[PositionLotModel]:
+        """Get open position lots for an account and symbol.
+
+        Args:
+            account_id: Account ID
+            symbol: Symbol to filter by
+
+        Returns:
+            List of open PositionLotModel ordered by opened_at asc (FIFO)
+        """
+        return self.session.query(PositionLotModel).filter(
+            PositionLotModel.account_id == account_id,
+            PositionLotModel.symbol == symbol,
+            PositionLotModel.status == "open",
+        ).order_by(PositionLotModel.opened_at.asc()).all()
+
+    def update_lot_remaining_qty(
+        self,
+        lot_id: int,
+        new_qty: float,
+    ) -> Optional[PositionLotModel]:
+        """Update the remaining quantity on a lot.
+
+        Automatically sets status to 'closed' if remaining_qty reaches 0.
+
+        Args:
+            lot_id: Lot ID
+            new_qty: New remaining quantity
+
+        Returns:
+            Updated PositionLotModel or None
+        """
+        lot = self.session.query(PositionLotModel).filter(
+            PositionLotModel.id == lot_id
+        ).first()
+        if not lot:
+            logger.warning("Lot id=%s not found for qty update", lot_id)
+            return None
+
+        lot.remaining_qty = new_qty
+        if new_qty <= 0:
+            lot.status = "closed"
+            logger.info("Lot id=%s fully closed", lot_id)
+
+        self.session.flush()
+        return lot
+
+    def close_lot(self, lot_id: int) -> Optional[PositionLotModel]:
+        """Close a position lot by setting remaining_qty=0 and status='closed'.
+
+        Args:
+            lot_id: Lot ID
+
+        Returns:
+            Closed PositionLotModel or None
+        """
+        return self.update_lot_remaining_qty(lot_id, 0.0)
+
+    # -------------------------------------------------------------------------
+    # Lot Closure Operations
+    # -------------------------------------------------------------------------
+
+    def create_closure(self, **kwargs) -> LotClosureModel:
+        """Create a lot closure record (open↔close pairing).
+
+        Args:
+            **kwargs: LotClosure column values
+
+        Returns:
+            Created LotClosureModel
+        """
+        closure = LotClosureModel(**kwargs)
+        self.session.add(closure)
+        self.session.flush()
+        logger.info(
+            "Created lot closure id=%s lot_id=%s qty=%s pnl=%s",
+            closure.id, closure.lot_id, closure.matched_qty, closure.realized_pnl,
+        )
+        return closure
+
+    def get_closures_for_lot(self, lot_id: int) -> list[LotClosureModel]:
+        """Get all closures for a given lot.
+
+        Args:
+            lot_id: Position lot ID
+
+        Returns:
+            List of LotClosureModel ordered by matched_at asc
+        """
+        return self.session.query(LotClosureModel).filter(
+            LotClosureModel.lot_id == lot_id
+        ).order_by(LotClosureModel.matched_at.asc()).all()
+
+    # -------------------------------------------------------------------------
+    # Position Campaign Operations
+    # -------------------------------------------------------------------------
+
+    def create_campaign(self, **kwargs) -> PositionCampaignModel:
+        """Create a position campaign record.
+
+        Args:
+            **kwargs: PositionCampaign column values
+
+        Returns:
+            Created PositionCampaignModel
+        """
+        campaign = PositionCampaignModel(**kwargs)
+        self.session.add(campaign)
+        self.session.flush()
+        logger.info(
+            "Created campaign id=%s symbol=%s direction=%s status=%s",
+            campaign.id, campaign.symbol, campaign.direction, campaign.status,
+        )
+        return campaign
+
+    def get_campaign(self, campaign_id: int) -> Optional[PositionCampaignModel]:
+        """Get a campaign by ID.
+
+        Args:
+            campaign_id: Campaign ID
+
+        Returns:
+            PositionCampaignModel or None
+        """
+        return self.session.query(PositionCampaignModel).filter(
+            PositionCampaignModel.id == campaign_id
+        ).first()
+
+    def get_campaigns(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[PositionCampaignModel]:
+        """Get campaigns for an account, optionally filtered.
+
+        Args:
+            account_id: Account ID
+            symbol: Optional symbol filter
+            status: Optional status filter ('open' or 'closed')
+            limit: Maximum number of results
+
+        Returns:
+            List of PositionCampaignModel ordered by created_at desc
+        """
+        query = self.session.query(PositionCampaignModel).filter(
+            PositionCampaignModel.account_id == account_id
+        )
+        if symbol:
+            query = query.filter(PositionCampaignModel.symbol == symbol)
+        if status:
+            query = query.filter(PositionCampaignModel.status == status)
+        return query.order_by(PositionCampaignModel.created_at.desc()).limit(limit).all()
+
+    # -------------------------------------------------------------------------
+    # Campaign Leg Operations
+    # -------------------------------------------------------------------------
+
+    def create_leg(self, **kwargs) -> CampaignLegModel:
+        """Create a campaign leg record.
+
+        Args:
+            **kwargs: CampaignLeg column values
+
+        Returns:
+            Created CampaignLegModel
+        """
+        leg = CampaignLegModel(**kwargs)
+        self.session.add(leg)
+        self.session.flush()
+        logger.info(
+            "Created leg id=%s campaign_id=%s type=%s side=%s qty=%s",
+            leg.id, leg.campaign_id, leg.leg_type, leg.side, leg.quantity,
+        )
+        return leg
+
+    def get_legs_for_campaign(self, campaign_id: int) -> list[CampaignLegModel]:
+        """Get legs for a campaign ordered by started_at.
+
+        Args:
+            campaign_id: Campaign ID
+
+        Returns:
+            List of CampaignLegModel
+        """
+        return self.session.query(CampaignLegModel).filter(
+            CampaignLegModel.campaign_id == campaign_id
+        ).order_by(CampaignLegModel.started_at.asc()).all()
+
+    # -------------------------------------------------------------------------
+    # Leg Fill Map Operations
+    # -------------------------------------------------------------------------
+
+    def create_leg_fill_map(self, **kwargs) -> LegFillMapModel:
+        """Create a leg-fill mapping record.
+
+        Args:
+            **kwargs: LegFillMap column values (leg_id, fill_id, allocated_qty)
+
+        Returns:
+            Created LegFillMapModel
+        """
+        mapping = LegFillMapModel(**kwargs)
+        self.session.add(mapping)
+        self.session.flush()
+        return mapping
+
+    # -------------------------------------------------------------------------
+    # Decision Context Operations
+    # -------------------------------------------------------------------------
+
+    def create_decision_context(self, **kwargs) -> DecisionContextModel:
+        """Create a decision context record.
+
+        Args:
+            **kwargs: DecisionContext column values
+
+        Returns:
+            Created DecisionContextModel
+        """
+        context = DecisionContextModel(**kwargs)
+        self.session.add(context)
+        self.session.flush()
+        logger.info(
+            "Created decision context id=%s type=%s campaign_id=%s",
+            context.id, context.context_type, context.campaign_id,
+        )
+        return context
+
+    def get_contexts_for_campaign(
+        self, campaign_id: int
+    ) -> list[DecisionContextModel]:
+        """Get decision contexts for a campaign.
+
+        Args:
+            campaign_id: Campaign ID
+
+        Returns:
+            List of DecisionContextModel ordered by created_at
+        """
+        return self.session.query(DecisionContextModel).filter(
+            DecisionContextModel.campaign_id == campaign_id
+        ).order_by(DecisionContextModel.created_at.asc()).all()
+
+    def get_context(self, context_id: int) -> Optional[DecisionContextModel]:
+        """Get a decision context by ID.
+
+        Args:
+            context_id: Context ID
+
+        Returns:
+            DecisionContextModel or None
+        """
+        return self.session.query(DecisionContextModel).filter(
+            DecisionContextModel.id == context_id
+        ).first()

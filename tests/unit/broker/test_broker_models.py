@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from src.data.database.broker_models import SnapTradeUser, BrokerConnection, TradeHistory
+from src.data.database.broker_models import SnapTradeUser, BrokerConnection, TradeFill
 
 def test_snaptrade_user_model():
     user = SnapTradeUser(
@@ -23,18 +23,20 @@ def test_broker_connection_model():
     assert conn.authorization_id == "auth_123"
     assert conn.meta["name"] == "My Account"
 
-def test_trade_history_model():
-    trade = TradeHistory(
+def test_trade_fill_model():
+    fill = TradeFill(
         symbol="AAPL",
-        side="BUY",
+        side="buy",
         quantity=10.0,
         price=150.0,
         fees=0.0,
+        currency="USD",
         executed_at=datetime.now(timezone.utc),
         external_trade_id="trade_123",
         raw_data={"foo": "bar"}
     )
-    assert trade.symbol == "AAPL"
-    assert trade.side == "BUY"
-    assert trade.quantity == 10.0
-    assert trade.fees == 0.0
+    assert fill.symbol == "AAPL"
+    assert fill.side == "buy"
+    assert fill.quantity == 10.0
+    assert fill.fees == 0.0
+    assert fill.currency == "USD"
