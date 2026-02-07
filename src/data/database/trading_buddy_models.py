@@ -242,7 +242,11 @@ class TradeIntent(Base):
     # User input
     rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     hypothesis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    strategy_tags: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+    strategy_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Workflow status
     status: Mapped[str] = mapped_column(
@@ -270,6 +274,7 @@ class TradeIntent(Base):
 
     # Relationships
     account: Mapped["UserAccount"] = relationship("UserAccount", back_populates="trade_intents")
+    strategy: Mapped[Optional["Strategy"]] = relationship("Strategy")
     evaluation: Mapped[Optional["TradeEvaluation"]] = relationship(
         "TradeEvaluation",
         uselist=False,

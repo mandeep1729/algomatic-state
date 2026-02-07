@@ -58,7 +58,11 @@ class PositionLot(Base):
     remaining_qty: Mapped[float] = mapped_column(Float, nullable=False)
     avg_open_price: Mapped[float] = mapped_column(Float, nullable=False)
 
-    strategy_tag: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    strategy_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     status: Mapped[str] = mapped_column(String(10), default="open", nullable=False, index=True)
 
     # Link to parent campaign
@@ -78,6 +82,7 @@ class PositionLot(Base):
     account: Mapped["UserAccount"] = relationship("UserAccount")
     open_fill: Mapped["TradeFill"] = relationship("TradeFill")
     campaign: Mapped[Optional["PositionCampaign"]] = relationship("PositionCampaign")
+    strategy: Mapped[Optional["Strategy"]] = relationship("Strategy")
     closures: Mapped[list["LotClosure"]] = relationship(
         "LotClosure",
         back_populates="lot",
@@ -216,6 +221,11 @@ class PositionCampaign(Base):
         ForeignKey("trade_intents.id", ondelete="SET NULL"),
         nullable=True,
     )
+    strategy_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -232,6 +242,7 @@ class PositionCampaign(Base):
     # Relationships
     account: Mapped["UserAccount"] = relationship("UserAccount")
     intent: Mapped[Optional["TradeIntent"]] = relationship("TradeIntent")
+    strategy: Mapped[Optional["Strategy"]] = relationship("Strategy")
     legs: Mapped[list["CampaignLeg"]] = relationship(
         "CampaignLeg",
         back_populates="campaign",
@@ -393,8 +404,14 @@ class DecisionContext(Base):
 
     context_type: Mapped[str] = mapped_column(String(30), nullable=False)
 
+    # Strategy reference (replaces free-text strategy_tags)
+    strategy_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("strategies.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Behavioral metadata
-    strategy_tags: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
     hypothesis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     exit_intent: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     feelings_then: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
@@ -418,6 +435,7 @@ class DecisionContext(Base):
     campaign: Mapped[Optional["PositionCampaign"]] = relationship("PositionCampaign")
     leg: Mapped[Optional["CampaignLeg"]] = relationship("CampaignLeg")
     intent: Mapped[Optional["TradeIntent"]] = relationship("TradeIntent")
+    strategy: Mapped[Optional["Strategy"]] = relationship("Strategy")
 
     __table_args__ = (
         CheckConstraint(
