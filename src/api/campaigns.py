@@ -3,11 +3,13 @@
 Provides endpoints for:
 - Fetching campaign details with legs and fill information
 - Fetching P&L summary aggregated by ticker symbol
-- This replaces the mock fetchTradeDetail and fetchTickerPnl functions in the frontend
+- Fetching P&L timeseries for charting
+- This replaces the mock fetchTradeDetail, fetchTickerPnl, and fetchTickerPnlTimeseries
+  functions in the frontend
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, date
 from typing import Optional, List, Literal
 
 from fastapi import APIRouter, HTTPException, Depends, Query
@@ -108,6 +110,28 @@ class TickerPnlListResponse(BaseModel):
     tickers: List[TickerPnlResponse]
 
 
+class PnlTimeseriesPoint(BaseModel):
+    """A single point in the P&L timeseries."""
+
+    timestamp: datetime
+    realized_pnl: float
+    cumulative_pnl: float
+    trade_count: int
+
+
+class PnlTimeseriesResponse(BaseModel):
+    """P&L timeseries response for charting.
+
+    Returns time series of cumulative P&L grouped by date.
+    """
+
+    symbol: Optional[str] = None
+    points: List[PnlTimeseriesPoint]
+    total_pnl: float
+    period_start: Optional[datetime] = None
+    period_end: Optional[datetime] = None
+
+
 # -----------------------------------------------------------------------------
 # Endpoints
 # -----------------------------------------------------------------------------
@@ -197,6 +221,114 @@ async def get_pnl_by_ticker(
         )
 
     return TickerPnlListResponse(tickers=tickers)
+
+
+@router.get("/pnl/timeseries", response_model=PnlTimeseriesResponse)
+async def get_pnl_timeseries(
+    symbol: Optional[str] = Query(None, description="Filter by ticker symbol"),
+    start_date: Optional[date] = Query(None, description="Start date (inclusive)"),
+    end_date: Optional[date] = Query(None, description="End date (inclusive)"),
+    granularity: Literal["day", "week", "month"] = Query(
+        "day", description="Time granularity for grouping"
+    ),
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get P&L timeseries for charting.
+
+    Returns cumulative P&L over time based on closed position campaigns.
+    Useful for rendering P&L charts aligned with price data.
+
+    Args:
+        symbol: Optional filter by ticker symbol (case-insensitive)
+        start_date: Start date for the time range (inclusive)
+        end_date: End date for the time range (inclusive)
+        granularity: Time grouping - 'day', 'week', or 'month'
+
+    Returns:
+        Timeseries of daily/weekly/monthly P&L with running cumulative totals.
+    """
+    logger.debug(
+        "Fetching P&L timeseries for user_id=%d, symbol=%s, start=%s, end=%s, granularity=%s",
+        user_id,
+        symbol,
+        start_date,
+        end_date,
+        granularity,
+    )
+
+    # Build date truncation expression based on granularity
+    if granularity == "week":
+        # Truncate to start of week (Monday)
+        date_trunc = func.date_trunc("week", PositionCampaign.closed_at)
+    elif granularity == "month":
+        date_trunc = func.date_trunc("month", PositionCampaign.closed_at)
+    else:  # day
+        date_trunc = func.date(PositionCampaign.closed_at)
+
+    # Build base query: aggregate P&L by time period
+    base_query = db.query(
+        date_trunc.label("period"),
+        func.coalesce(func.sum(PositionCampaign.realized_pnl), 0.0).label("realized_pnl"),
+        func.count(PositionCampaign.id).label("trade_count"),
+    ).filter(
+        PositionCampaign.account_id == user_id,
+        PositionCampaign.status == "closed",
+        PositionCampaign.closed_at.isnot(None),
+    )
+
+    # Apply optional filters
+    if symbol:
+        base_query = base_query.filter(PositionCampaign.symbol == symbol.upper())
+
+    if start_date:
+        base_query = base_query.filter(
+            func.date(PositionCampaign.closed_at) >= start_date
+        )
+
+    if end_date:
+        base_query = base_query.filter(
+            func.date(PositionCampaign.closed_at) <= end_date
+        )
+
+    # Group by period and order chronologically
+    results = (
+        base_query.group_by(date_trunc)
+        .order_by(date_trunc.asc())
+        .all()
+    )
+
+    logger.debug("Found %d periods with P&L data", len(results))
+
+    # Build response with running cumulative total
+    points = []
+    cumulative = 0.0
+    for row in results:
+        cumulative += row.realized_pnl
+        # Convert period to datetime for response
+        period_ts = row.period
+        if isinstance(period_ts, date) and not isinstance(period_ts, datetime):
+            period_ts = datetime.combine(period_ts, datetime.min.time())
+        points.append(
+            PnlTimeseriesPoint(
+                timestamp=period_ts,
+                realized_pnl=round(row.realized_pnl, 2),
+                cumulative_pnl=round(cumulative, 2),
+                trade_count=row.trade_count,
+            )
+        )
+
+    # Calculate period bounds from data
+    period_start = points[0].timestamp if points else None
+    period_end = points[-1].timestamp if points else None
+
+    return PnlTimeseriesResponse(
+        symbol=symbol.upper() if symbol else None,
+        points=points,
+        total_pnl=round(cumulative, 2),
+        period_start=period_start,
+        period_end=period_end,
+    )
 
 
 @router.get("/pnl/{symbol}", response_model=TickerPnlResponse)

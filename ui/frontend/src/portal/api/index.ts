@@ -10,16 +10,17 @@ import * as realApi from './client';
  * falls back to mocks for everything else.
  *
  * Real backend endpoints available:
- *   - evaluateTrade      → POST /api/trading-buddy/evaluate
- *   - fetchEvaluators    → GET  /api/trading-buddy/evaluators
- *   - fetchBrokerStatus  → GET  /api/broker/status
- *   - fetchTrades        → GET  /api/broker/trades
- *   - fetchTradeDetail   → GET  /api/campaigns/{campaignId}
- *   - fetchTickerPnl     → GET  /api/campaigns/pnl/{symbol}
- *   - fetchSyncStatus    → GET  /api/sync-status/{symbol}
- *   - triggerSync        → POST /api/sync/{symbol}
- *   - fetchOHLCVData     → GET  /api/ohlcv/{symbol}
- *   - fetchFeatures      → GET  /api/features/{symbol}
+ *   - evaluateTrade           → POST /api/trading-buddy/evaluate
+ *   - fetchEvaluators         → GET  /api/trading-buddy/evaluators
+ *   - fetchBrokerStatus       → GET  /api/broker/status
+ *   - fetchTrades             → GET  /api/broker/trades
+ *   - fetchTradeDetail        → GET  /api/campaigns/{campaignId}
+ *   - fetchTickerPnl          → GET  /api/campaigns/pnl/{symbol}
+ *   - fetchTickerPnlTimeseries → GET /api/campaigns/pnl/timeseries
+ *   - fetchSyncStatus         → GET  /api/sync-status/{symbol}
+ *   - triggerSync             → POST /api/sync/{symbol}
+ *   - fetchOHLCVData          → GET  /api/ohlcv/{symbol}
+ *   - fetchFeatures           → GET  /api/features/{symbol}
  */
 const api = USE_MOCKS
   ? mockApi
@@ -31,6 +32,7 @@ const api = USE_MOCKS
       fetchTrades: realApi.fetchTrades,
       fetchTradeDetail: realApi.fetchTradeDetail,
       fetchTickerPnl: realApi.fetchTickerPnl,
+      fetchTickerPnlTimeseries: realApi.fetchTickerPnlTimeseries,
 
       // Mock fallbacks — no backend endpoints yet
       fetchCurrentUser: mockApi.fetchCurrentUser,
@@ -55,16 +57,21 @@ const api = USE_MOCKS
       fetchEvaluationControls: mockApi.fetchEvaluationControls,
       updateEvaluationControls: mockApi.updateEvaluationControls,
       fetchOnboardingStatus: mockApi.fetchOnboardingStatus,
-      fetchTickerPnlTimeseries: mockApi.fetchTickerPnlTimeseries,
     };
 
 export default api;
 
 // Re-export real chart data functions from client
-export { fetchSyncStatus, triggerSync, fetchOHLCVData, fetchFeatures } from './client';
+export {
+  fetchSyncStatus,
+  triggerSync,
+  fetchOHLCVData,
+  fetchFeatures,
+  fetchTickerPnlTimeseries,
+} from './client';
 
 // Re-export mock chart data helpers for fallback use
 export { fetchMockOHLCVData, fetchMockFeatures } from '../mocks/mockApi';
 
-// Re-export PnL timeseries for direct use
-export { fetchTickerPnlTimeseries } from '../mocks/mockApi';
+// Re-export mock PnL timeseries for fallback use
+export { fetchTickerPnlTimeseries as fetchMockTickerPnlTimeseries } from '../mocks/mockApi';

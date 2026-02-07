@@ -4,18 +4,19 @@
  * Backend base URL is proxied via Vite config: /api/* → http://localhost:8000/api/*
  *
  * Available real endpoints:
- *   POST /api/auth/google            → Google OAuth login
- *   GET  /api/auth/me                → current user
- *   POST /api/trading-buddy/evaluate → evaluateTrade
+ *   POST /api/auth/google              → Google OAuth login
+ *   GET  /api/auth/me                  → current user
+ *   POST /api/trading-buddy/evaluate   → evaluateTrade
  *   GET  /api/trading-buddy/evaluators → fetchEvaluators
- *   GET  /api/broker/status           → fetchBrokerStatus
- *   GET  /api/broker/trades           → fetchTrades
- *   GET  /api/campaigns/{campaignId}  → fetchTradeDetail
- *   GET  /api/campaigns/pnl/{symbol}  → fetchTickerPnl
- *   GET  /api/sync-status/{symbol}    → fetchSyncStatus
- *   POST /api/sync/{symbol}           → triggerSync
- *   GET  /api/ohlcv/{symbol}          → fetchOHLCVData
- *   GET  /api/features/{symbol}       → fetchFeatures
+ *   GET  /api/broker/status            → fetchBrokerStatus
+ *   GET  /api/broker/trades            → fetchTrades
+ *   GET  /api/campaigns/{campaignId}   → fetchTradeDetail
+ *   GET  /api/campaigns/pnl/{symbol}   → fetchTickerPnl
+ *   GET  /api/campaigns/pnl/timeseries → fetchTickerPnlTimeseries
+ *   GET  /api/sync-status/{symbol}     → fetchSyncStatus
+ *   POST /api/sync/{symbol}            → triggerSync
+ *   GET  /api/ohlcv/{symbol}           → fetchOHLCVData
+ *   GET  /api/features/{symbol}        → fetchFeatures
  *
  * All other functions are served by the mock layer (see api/index.ts).
  */
@@ -362,7 +363,7 @@ export async function fetchTradeDetail(campaignId: string): Promise<TradeDetail>
 // Returns P&L summary for a single ticker symbol
 // =============================================================================
 
-import type { TickerPnlSummary } from '../types';
+import type { TickerPnlSummary, PnlTimeseries } from '../types';
 
 interface TickerPnlBackendResponse {
   symbol: string;
@@ -385,5 +386,96 @@ export async function fetchTickerPnl(symbol: string): Promise<TickerPnlSummary> 
     trade_count: res.trade_count,
     closed_count: res.closed_count,
     first_entry_time: res.first_entry_time ?? new Date().toISOString(),
+  };
+}
+
+// =============================================================================
+// Ticker P&L Timeseries — GET /api/campaigns/pnl/timeseries
+// Returns cumulative P&L over time for charting
+// =============================================================================
+
+interface PnlTimeseriesPoint {
+  timestamp: string;
+  realized_pnl: number;
+  cumulative_pnl: number;
+  trade_count: number;
+}
+
+interface PnlTimeseriesBackendResponse {
+  symbol: string | null;
+  points: PnlTimeseriesPoint[];
+  total_pnl: number;
+  period_start: string | null;
+  period_end: string | null;
+}
+
+/**
+ * Fetch P&L timeseries from backend and interpolate to match OHLCV timestamps.
+ *
+ * The backend returns daily realized P&L points. This function maps those
+ * onto the provided OHLCV timestamps by carrying forward the cumulative P&L
+ * from the most recent trade date at or before each OHLCV timestamp.
+ *
+ * @param symbol - Ticker symbol
+ * @param ohlcvTimestamps - Array of OHLCV bar timestamps (ISO strings)
+ * @param _ohlcvClose - Array of close prices (unused, kept for API compatibility)
+ */
+export async function fetchTickerPnlTimeseries(
+  symbol: string,
+  ohlcvTimestamps: string[],
+  _ohlcvClose: number[],
+): Promise<PnlTimeseries> {
+  // Determine date range from OHLCV timestamps
+  if (ohlcvTimestamps.length === 0) {
+    return { timestamps: [], cumulative_pnl: [] };
+  }
+
+  const startDate = ohlcvTimestamps[0].split('T')[0];
+  const endDate = ohlcvTimestamps[ohlcvTimestamps.length - 1].split('T')[0];
+
+  // Fetch P&L timeseries from backend
+  const params = new URLSearchParams();
+  params.set('symbol', symbol);
+  params.set('start_date', startDate);
+  params.set('end_date', endDate);
+  params.set('granularity', 'day');
+
+  const res = await get<PnlTimeseriesBackendResponse>(
+    `/api/campaigns/pnl/timeseries?${params.toString()}`
+  );
+
+  // Build a map of date -> cumulative P&L for fast lookup
+  const pnlByDate = new Map<string, number>();
+  for (const point of res.points) {
+    // Extract date from timestamp (YYYY-MM-DD)
+    const date = point.timestamp.split('T')[0];
+    pnlByDate.set(date, point.cumulative_pnl);
+  }
+
+  // Interpolate: for each OHLCV timestamp, find the cumulative P&L
+  // from the most recent trade date at or before that timestamp
+  const cumulative_pnl: number[] = [];
+
+  // Sort backend dates for binary search (already sorted from backend)
+  const sortedDates = Array.from(pnlByDate.keys()).sort();
+
+  for (const ts of ohlcvTimestamps) {
+    const tsDate = ts.split('T')[0];
+
+    // Find the latest date <= tsDate
+    let pnl = 0;
+    for (let i = sortedDates.length - 1; i >= 0; i--) {
+      if (sortedDates[i] <= tsDate) {
+        pnl = pnlByDate.get(sortedDates[i]) ?? 0;
+        break;
+      }
+    }
+
+    cumulative_pnl.push(pnl);
+  }
+
+  return {
+    timestamps: ohlcvTimestamps,
+    cumulative_pnl,
   };
 }
