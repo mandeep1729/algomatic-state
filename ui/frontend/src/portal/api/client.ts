@@ -9,6 +9,8 @@
  *   POST /api/trading-buddy/evaluate → evaluateTrade
  *   GET  /api/trading-buddy/evaluators → fetchEvaluators
  *   GET  /api/broker/status           → fetchBrokerStatus
+ *   GET  /api/broker/trades           → fetchTrades
+ *   GET  /api/campaigns/{campaignId}  → fetchTradeDetail
  *   GET  /api/sync-status/{symbol}    → fetchSyncStatus
  *   POST /api/sync/{symbol}           → triggerSync
  *   GET  /api/ohlcv/{symbol}          → fetchOHLCVData
@@ -23,6 +25,10 @@ import type {
   BrokerStatus,
   TradeListResponse,
   TradeSummary,
+  TradeDetail,
+  TradeDirection,
+  TradeSource,
+  TradeStatus,
 } from '../types';
 
 const TOKEN_KEY = 'auth_token';
@@ -232,7 +238,7 @@ export async function fetchTrades(params: {
   }
 
   const qs = new URLSearchParams();
-  qs.set('user_id', String(USER_ID));
+  // user_id is extracted from JWT token by the auth middleware
   if (params.symbol) qs.set('symbol', params.symbol);
   const sortVal = mapSort(params.sort);
   if (sortVal) qs.set('sort', sortVal);
@@ -259,4 +265,93 @@ export async function fetchTrades(params: {
   }));
 
   return { trades, total: res.total, page: res.page, limit: res.limit };
+}
+
+// =============================================================================
+// Campaign Detail — GET /api/campaigns/{campaignId}
+// Maps backend CampaignDetailResponse → portal TradeDetail
+// =============================================================================
+
+interface CampaignLegResponse {
+  id: number;
+  leg_type: string;
+  side: string;
+  quantity: number;
+  avg_price: number | null;
+  started_at: string;
+  ended_at: string | null;
+  fill_count: number;
+  notes: string | null;
+  fills: { fill_id: number; allocated_qty: number | null }[];
+}
+
+interface CampaignDetailResponse {
+  id: number;
+  symbol: string;
+  direction: string;
+  status: string;
+  opened_at: string | null;
+  closed_at: string | null;
+  holding_period_sec: number | null;
+  qty_opened: number | null;
+  qty_closed: number | null;
+  avg_open_price: number | null;
+  avg_close_price: number | null;
+  realized_pnl: number | null;
+  return_pct: number | null;
+  r_multiple: number | null;
+  legs: CampaignLegResponse[];
+  tags: Record<string, unknown>;
+  notes: string | null;
+}
+
+export async function fetchTradeDetail(campaignId: string): Promise<TradeDetail> {
+  const res = await get<CampaignDetailResponse>(
+    `/api/campaigns/${encodeURIComponent(campaignId)}`
+  );
+
+  // Map campaign direction to TradeDirection
+  const direction: TradeDirection = res.direction === 'long' ? 'long' : 'short';
+
+  // Map campaign status to TradeStatus
+  const status: TradeStatus = res.status === 'open' ? 'open' : 'closed';
+
+  // Extract tags as string array from the tags object
+  const tags: string[] = res.tags && typeof res.tags === 'object'
+    ? Object.keys(res.tags)
+    : [];
+
+  // Get entry and exit times from legs or campaign timestamps
+  const entryTime = res.opened_at ?? (res.legs.length > 0 ? res.legs[0].started_at : '');
+  const exitTime = res.closed_at ?? (res.status === 'closed' && res.legs.length > 0
+    ? res.legs[res.legs.length - 1].ended_at
+    : null);
+
+  // Sum quantities from legs
+  const quantity = res.qty_opened ?? res.legs.reduce((sum, leg) => sum + leg.quantity, 0);
+
+  return {
+    id: String(res.id),
+    symbol: res.symbol,
+    direction,
+    entry_price: res.avg_open_price ?? 0,
+    exit_price: res.avg_close_price,
+    quantity,
+    entry_time: entryTime,
+    exit_time: exitTime,
+    source: 'synced' as TradeSource,
+    brokerage: null,
+    is_flagged: false,
+    flag_count: 0,
+    status,
+    timeframe: '',
+    stop_loss: null,
+    profit_target: null,
+    risk_reward_ratio: res.r_multiple,
+    pnl: res.realized_pnl,
+    pnl_pct: res.return_pct,
+    evaluation: null,
+    notes: res.notes,
+    tags,
+  };
 }
