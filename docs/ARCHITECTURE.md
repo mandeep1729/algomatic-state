@@ -123,6 +123,8 @@ algomatic-state/
 │   ├── api/                    # Public API routers
 │   │   ├── trading_buddy.py    # Trading Buddy REST endpoints
 │   │   ├── broker.py           # SnapTrade broker integration routes
+│   │   ├── alpaca.py           # Direct Alpaca trade sync endpoints
+│   │   ├── campaigns.py        # Position campaigns and P&L endpoints
 │   │   ├── auth.py             # Google OAuth authentication endpoints
 │   │   ├── auth_middleware.py  # JWT token validation middleware
 │   │   └── user_profile.py     # User profile and risk preference endpoints
@@ -134,23 +136,34 @@ algomatic-state/
 │   │   │   ├── base.py         # Abstract loader interface
 │   │   │   ├── csv_loader.py   # Local CSV files
 │   │   │   ├── database_loader.py # PostgreSQL database
-│   │   │   └── alpaca_loader.py # Alpaca API
+│   │   │   ├── alpaca_loader.py # Alpaca API
+│   │   │   └── multi_asset.py  # Multi-asset loading with timestamp alignment
 │   │   ├── database/
 │   │   │   ├── __init__.py
-│   │   │   ├── connection.py   # Database connection
-│   │   │   ├── models.py       # SQLAlchemy OHLCV models
-│   │   │   ├── broker_models.py # Broker integration models
-│   │   │   ├── trading_buddy_models.py # Trading Buddy models
+│   │   │   ├── connection.py   # Database connection and session management
+│   │   │   ├── models.py       # Core models (Ticker, OHLCVBar, DataSyncLog, ComputedFeature)
+│   │   │   ├── broker_models.py # Broker integration (BrokerConnection, TradeFill, SnapTradeUser)
+│   │   │   ├── trading_buddy_models.py # Trading Buddy (UserAccount, TradeIntent, etc.)
+│   │   │   ├── strategy_models.py # User-defined trading strategies
+│   │   │   ├── trade_lifecycle_models.py # Position lots, campaigns, legs, decision contexts
 │   │   │   ├── market_repository.py   # Market data access layer
 │   │   │   └── trading_repository.py  # Trading Buddy data access layer
 │   │   ├── cache.py            # Data caching
 │   │   ├── schemas.py          # Pandera OHLCV schema validation
 │   │   └── quality.py          # Data quality checks
 │   │
+│   ├── messaging/              # In-memory pub/sub message bus
+│   │   ├── __init__.py
+│   │   ├── events.py           # Event, EventType (REQUEST/UPDATED/FAILED)
+│   │   └── bus.py              # MessageBus, get_message_bus singleton
+│   │
 │   ├── marketdata/             # Market data provider abstraction
+│   │   ├── __init__.py
 │   │   ├── base.py             # MarketDataProvider ABC
 │   │   ├── alpaca_provider.py  # Alpaca data provider
 │   │   ├── finnhub_provider.py # Finnhub data provider
+│   │   ├── service.py          # MarketDataService (ensure_data, gap detection)
+│   │   ├── orchestrator.py     # MarketDataOrchestrator (bus <-> service)
 │   │   └── utils.py            # Rate limiter, retry, normalisation
 │   │
 │   ├── trade/                  # Domain objects
@@ -187,7 +200,9 @@ algomatic-state/
 │   │   ├── pipeline.py         # Feature orchestration
 │   │   ├── registry.py         # Feature registry
 │   │   └── state/              # State representation modules
+│   │       ├── __init__.py
 │   │       ├── hmm/            # HMM regime tracking
+│   │       │   ├── __init__.py
 │   │       │   ├── contracts.py    # FeatureVector, HMMOutput, ModelMetadata
 │   │       │   ├── config.py       # Configuration loading
 │   │       │   ├── artifacts.py    # Model artifact management
@@ -202,6 +217,7 @@ algomatic-state/
 │   │       │   ├── validation.py   # Model validation and diagnostics
 │   │       │   └── monitoring.py   # Drift detection and operations
 │   │       └── pca/            # PCA + K-means state computation
+│   │           ├── __init__.py
 │   │           ├── contracts.py    # PCAStateOutput, PCAModelMetadata
 │   │           ├── artifacts.py    # Model path management
 │   │           ├── training.py     # PCAStateTrainer
@@ -227,7 +243,7 @@ algomatic-state/
 │   │
 │   └── utils/                  # Utilities
 │       ├── __init__.py
-│       └── logging.py          # Structured logging
+│       └── logging.py          # Centralized logging setup with file logging
 │
 ├── tests/                      # Test suite
 │   ├── conftest.py             # Shared fixtures
@@ -242,9 +258,9 @@ algomatic-state/
 │
 ├── scripts/                    # CLI scripts
 │   ├── helpers/                # Shared helper modules
-│   │   ├── data.py
-│   │   ├── logging_setup.py
-│   │   └── output.py
+│   │   ├── data.py             # Data loading helpers
+│   │   ├── logging_setup.py    # Logging configuration
+│   │   └── output.py           # Output formatting helpers
 │   ├── download_data.py        # Download OHLCV data from Alpaca
 │   ├── download_tickers.py     # Download and seed ticker metadata
 │   ├── compute_features.py     # Compute technical features
@@ -263,12 +279,19 @@ algomatic-state/
 │       ├── 003_remove_vwap.py
 │       ├── 004_consolidate_states_to_features.py
 │       ├── 005_trading_buddy_tables.py
-│       └── 006_broker_integration_tables.py
+│       ├── 006_broker_integration_tables.py
+│       ├── 007_auth_and_user_profiles.py
+│       ├── 008_trade_lifecycle_schema.py
+│       ├── 009_position_campaigns.py
+│       └── 010_strategies_first_class.py
 │
 ├── ui/                         # Web UI
 │   ├── backend/
 │   │   └── api.py              # FastAPI backend
-│   └── frontend/               # React + TypeScript frontend
+│   ├── frontend/               # React + TypeScript frontend
+│   ├── run_backend.py          # Backend entry point
+│   ├── start_ui.sh             # Linux/macOS startup script
+│   └── start_ui.bat            # Windows startup script
 │
 ├── models/                     # Trained models (per ticker/timeframe)
 │   └── ticker=AAPL/
@@ -285,15 +308,18 @@ algomatic-state/
 ├── docker-compose.agents.yml   # Trading agent services (momentum, breakout, contrarian, vwap)
 │
 └── docs/                       # Documentation
-    ├── ARCHITECTURE.md
-    ├── APIs.md
-    ├── DATABASE.md
-    ├── FEATURE.md
-    ├── PRD.md
-    ├── PITFALLS.md
-    ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
-    ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md
-    └── Trading_Buddy_Detailed_TODOs.md
+    ├── ARCHITECTURE.md         # System design and data flow
+    ├── APIs.md                 # REST API reference
+    ├── DATABASE.md             # Database schema and migrations
+    ├── FEATURE.md              # Feature engineering specification
+    ├── PRD.md                  # Product requirements document
+    ├── PITFALLS.md             # ML and trading pitfalls research
+    ├── UI_REQUIREMENTS.md      # UI requirements and design
+    ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md  # HMM implementation plan
+    ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md  # Evaluation platform architecture
+    ├── Trading_Buddy_Detailed_TODOs.md  # Detailed implementation status
+    ├── tradingbuddy_trade_schema.md   # Trade schema documentation
+    └── position_campaigns_ui_schema_plan.md  # Position campaigns UI plan
 ```
 
 ## Core Components
