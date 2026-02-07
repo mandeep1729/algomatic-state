@@ -57,6 +57,7 @@ def contains_prediction(text: str) -> bool:
     """
     for pattern in _COMPILED_PATTERNS:
         if pattern.search(text):
+            logger.debug("Predictive language detected: pattern=%s", pattern.pattern)
             return True
     return False
 
@@ -73,6 +74,7 @@ def sanitize_message(text: str) -> str:
     Returns:
         Sanitized message
     """
+    logger.debug("Sanitizing message: length=%d", len(text))
     # Replace common predictive phrases with risk-focused alternatives
     replacements = [
         (r"\bwill go up\b", "may face upward pressure"),
@@ -103,6 +105,7 @@ def validate_evaluation_result(result: EvaluationResult) -> list[str]:
     Returns:
         List of validation warnings (empty if clean)
     """
+    logger.debug("Validating evaluation result: %d items to check", len(result.items))
     warnings = []
 
     # Check summary
@@ -133,6 +136,7 @@ def sanitize_evaluation_result(result: EvaluationResult) -> EvaluationResult:
     Returns:
         Sanitized evaluation result
     """
+    logger.debug("Sanitizing evaluation result: %d items", len(result.items))
     # Sanitize summary
     sanitized_summary = sanitize_message(result.summary)
 

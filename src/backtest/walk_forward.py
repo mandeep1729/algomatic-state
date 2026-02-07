@@ -156,6 +156,7 @@ class WalkForwardValidator:
             WalkForwardResult with aggregated results
         """
         # Generate windows
+        logger.debug("Generating walk-forward windows from data with %d symbols", len(data))
         windows = self._generate_windows(data)
 
         if not windows:
@@ -229,6 +230,13 @@ class WalkForwardValidator:
             if window.test_result:
                 all_test_equities.append(window.test_result.equity_curve)
                 all_test_trades.extend(window.test_result.trades)
+                logger.debug(
+                    "Window %d complete: train_sharpe=%.2f, test_sharpe=%.2f, test_trades=%d",
+                    window.window_id,
+                    window.train_result.metrics.sharpe_ratio if window.train_result else 0,
+                    window.test_result.metrics.sharpe_ratio,
+                    len(window.test_result.trades),
+                )
 
         # Combine test equity curves
         combined_equity = self._combine_equity_curves(all_test_equities)
@@ -274,6 +282,10 @@ class WalkForwardValidator:
         Returns:
             List of windows
         """
+        logger.debug(
+            "Generating windows: train=%d days, test=%d days, step=%d days",
+            self._config.train_period_days, self._config.test_period_days, self._config.step_days,
+        )
         # Get date range from data
         all_timestamps = set()
         for df in data.values():
@@ -320,6 +332,7 @@ class WalkForwardValidator:
             window_id += 1
             current_start += timedelta(days=step_days)
 
+        logger.debug("Generated %d walk-forward windows", len(windows))
         return windows
 
     def _slice_data(

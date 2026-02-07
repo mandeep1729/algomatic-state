@@ -69,7 +69,14 @@ class RegimeFitEvaluator(Evaluator):
 
         regime = context.primary_regime
         if regime is None:
+            logger.debug("RegimeFit evaluate: no regime data available")
             return items
+
+        logger.debug(
+            "RegimeFit evaluate: symbol=%s, direction=%s, regime=%s, transition_risk=%s",
+            intent.symbol, intent.direction.value,
+            regime.state_label, regime.transition_risk,
+        )
 
         transition_threshold = cfg.get_threshold(
             "transition_risk_threshold", DEFAULT_TRANSITION_RISK_THRESHOLD
@@ -98,6 +105,7 @@ class RegimeFitEvaluator(Evaluator):
         if item:
             items.append(item)
 
+        logger.debug("RegimeFit evaluate complete: %d items generated", len(items))
         return items
 
     def _check_direction_conflict(

@@ -85,6 +85,7 @@ async def connect_broker(
     Registers user with SnapTrade if needed and returns a connection link.
     Use force=true to reconnect even if already connected.
     """
+    logger.debug("connect_broker: user_id=%d, broker=%s, force=%s", user_id, request.broker, request.force)
     if not client.client:
          raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
 
@@ -98,7 +99,8 @@ async def connect_broker(
     if not snap_user:
         # Generate a unique ID for SnapTrade (e.g., "algomatic_user_{id}")
         snap_user_id = f"algomatic_user_{user_id}"
-        
+        logger.debug("Registering new SnapTrade user: %s", snap_user_id)
+
         registration = client.register_user(snap_user_id)
         if not registration:
              raise HTTPException(status_code=500, detail="Failed to register user with SnapTrade")
@@ -122,6 +124,7 @@ async def connect_broker(
     if not redirect_url:
         raise HTTPException(status_code=500, detail="Failed to generate connection link")
 
+    logger.debug("Generated connection link for user_id=%d", user_id)
     return ConnectResponse(redirect_url=redirect_url)
 
 
@@ -132,6 +135,7 @@ async def sync_data(
     client: SnapTradeClient = Depends(get_snaptrade_client),
 ):
     """Sync trades and accounts from connected brokers."""
+    logger.debug("sync_data: user_id=%d", user_id)
     if not client.client:
          raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
 
@@ -144,6 +148,7 @@ async def sync_data(
 
     # 1. Update Broker Connections (optional but good for metadata)
     accounts = client.get_accounts(snap_user.snaptrade_user_id, snap_user.snaptrade_user_secret)
+    logger.debug("Found %d connected accounts for user_id=%d", len(accounts) if accounts else 0, user_id)
     if accounts:
         for acc in accounts:
             # Extract broker info from account - brokerage_authorization is just an ID string
@@ -249,6 +254,7 @@ async def sync_data(
             db.add(trade)
             synced_count += 1
 
+    logger.debug("Sync complete for user_id=%d: %d trades synced", user_id, synced_count)
     return SyncResponse(status="success", trades_synced=synced_count)
 
 
@@ -262,6 +268,7 @@ async def get_trades(
     db: Session = Depends(get_db),
 ):
     """Get trade history, optionally filtered by symbol, with pagination."""
+    logger.debug("get_trades: user_id=%d, symbol=%s, page=%d, limit=%d", user_id, symbol, page, limit)
     snap_user = db.query(SnapTradeUser).filter(
         SnapTradeUser.user_account_id == user_id
     ).first()
@@ -321,6 +328,7 @@ async def get_connection_status(
     client: SnapTradeClient = Depends(get_snaptrade_client),
 ):
     """Check if user has any connected brokerages."""
+    logger.debug("get_connection_status: user_id=%d", user_id)
     snap_user = db.query(SnapTradeUser).filter(
         SnapTradeUser.user_account_id == user_id
     ).first()

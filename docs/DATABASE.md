@@ -1,12 +1,19 @@
 # Database Schema & Configuration
 
-PostgreSQL database schema and configuration for storing OHLCV market data.
+PostgreSQL database schema and configuration for the Trading Buddy platform.
 
-## Schema
+## Schema Overview
 
-### Tables
+The database consists of four main domains:
 
-#### `tickers`
+1. **Market Data** - OHLCV bars, features, sync tracking
+2. **User Management** - Accounts, profiles, custom rules
+3. **Trade Evaluation** - Intents, evaluations, strategies
+4. **Trade Lifecycle** - Campaigns, legs, lots, closures
+
+## Market Data Tables
+
+### `tickers`
 Stores symbol metadata.
 
 | Column | Type | Description |
@@ -20,7 +27,7 @@ Stores symbol metadata.
 | created_at | TIMESTAMPTZ | Record creation time |
 | updated_at | TIMESTAMPTZ | Last update time |
 
-#### `ohlcv_bars`
+### `ohlcv_bars`
 Stores price and volume data.
 
 | Column | Type | Description |
@@ -35,24 +42,28 @@ Stores price and volume data.
 | close | FLOAT | Closing price |
 | volume | BIGINT | Trading volume |
 | trade_count | INTEGER | Number of trades (optional) |
-| source | VARCHAR(20) | 'alpaca', 'csv_import' |
+| source | VARCHAR(20) | 'alpaca', 'finnhub', 'csv_import', 'aggregated' |
 | created_at | TIMESTAMPTZ | Record creation time |
 
-#### `computed_features`
-Stores derived technical indicators and features. Using JSONB for flexibility.
+### `computed_features`
+Stores derived technical indicators, features, and HMM state assignments.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | BIGSERIAL | Primary key |
-| bar_id | BIGINT | Foreign key to ohlcv_bars |
-| ticker_id | INTEGER | Foreign key to tickers (denormalized for query speed) |
+| bar_id | BIGINT | Foreign key to ohlcv_bars (unique) |
+| ticker_id | INTEGER | Foreign key to tickers (denormalized) |
 | timeframe | VARCHAR(10) | Timeframe |
 | timestamp | TIMESTAMPTZ | Timestamp |
 | features | JSONB | Dictionary of feature values |
 | feature_version | VARCHAR(20) | Version string for feature set |
+| model_id | VARCHAR(50) | HMM model identifier |
+| state_id | INTEGER | Assigned regime state (-1 for OOD) |
+| state_prob | FLOAT | State probability (0-1) |
+| log_likelihood | FLOAT | Log likelihood of observation |
 | created_at | TIMESTAMPTZ | Creation time |
 
-#### `data_sync_log`
+### `data_sync_log`
 Tracks data synchronization status.
 
 | Column | Type | Description |
@@ -67,6 +78,303 @@ Tracks data synchronization status.
 | total_bars | INTEGER | Total bars in database |
 | status | VARCHAR(20) | 'success', 'partial', 'failed' |
 | error_message | TEXT | Error details if failed |
+
+## User Management Tables
+
+### `user_accounts`
+User account with authentication and personal details.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| external_user_id | VARCHAR(100) | External identifier (unique) |
+| name | VARCHAR(255) | User's name |
+| email | VARCHAR(255) | Email address (unique) |
+| google_id | VARCHAR(255) | Google OAuth ID (unique) |
+| auth_provider | VARCHAR(50) | 'google' |
+| profile_picture_url | VARCHAR(1024) | Profile image URL |
+| is_active | BOOLEAN | Account status |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+### `user_profiles`
+Trading and risk preferences (one-to-one with user_accounts).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| user_account_id | INTEGER | Foreign key to user_accounts (unique) |
+| account_balance | FLOAT | Trading account balance |
+| max_position_size_pct | FLOAT | Max position size (% of account) |
+| max_risk_per_trade_pct | FLOAT | Max risk per trade (%) |
+| max_daily_loss_pct | FLOAT | Max daily loss limit (%) |
+| min_risk_reward_ratio | FLOAT | Minimum R:R ratio |
+| default_timeframes | JSONB | Preferred timeframes for analysis |
+| experience_level | VARCHAR(50) | 'beginner', 'intermediate', 'advanced' |
+| trading_style | VARCHAR(50) | 'scalp', 'day', 'swing', 'position' |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+### `user_rules`
+Custom evaluation rules per user.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| account_id | INTEGER | Foreign key to user_accounts |
+| rule_code | VARCHAR(50) | Rule identifier |
+| evaluator | VARCHAR(100) | Evaluator that uses this rule |
+| parameters | JSONB | Rule parameters (thresholds, severity) |
+| is_enabled | BOOLEAN | Whether rule is active |
+| description | TEXT | Rule description |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+### `strategies`
+User-defined trading strategies.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| account_id | INTEGER | Foreign key to user_accounts |
+| name | VARCHAR(100) | Strategy name (unique per account) |
+| description | TEXT | Strategy description |
+| is_active | BOOLEAN | Whether strategy is active |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+## Trade Evaluation Tables
+
+### `trade_intents`
+User's proposed trade for evaluation.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| account_id | INTEGER | Foreign key to user_accounts |
+| symbol | VARCHAR(20) | Stock symbol |
+| direction | VARCHAR(10) | 'long' or 'short' |
+| timeframe | VARCHAR(10) | Analysis timeframe |
+| entry_price | FLOAT | Planned entry price |
+| stop_loss | FLOAT | Stop loss price |
+| profit_target | FLOAT | Target price |
+| position_size | FLOAT | Number of shares |
+| position_value | FLOAT | Dollar value |
+| rationale | TEXT | Trade reasoning |
+| hypothesis | TEXT | Expected outcome |
+| strategy_id | INTEGER | Foreign key to strategies |
+| status | VARCHAR(30) | 'draft', 'evaluated', 'executed', 'cancelled' |
+| intent_metadata | JSONB | Additional context |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+### `trade_evaluations`
+Evaluation result for a trade intent.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| intent_id | BIGINT | Foreign key to trade_intents |
+| campaign_id | BIGINT | Foreign key to position_campaigns |
+| leg_id | BIGINT | Foreign key to campaign_legs |
+| eval_scope | VARCHAR(20) | 'intent', 'campaign', 'leg' |
+| overall_label | VARCHAR(20) | 'aligned', 'mixed', 'fragile', 'deviates' |
+| score | FLOAT | Overall score (0-100) |
+| summary | TEXT | Evaluation summary |
+| blocker_count | INTEGER | Number of blocking issues |
+| critical_count | INTEGER | Number of critical issues |
+| warning_count | INTEGER | Number of warnings |
+| info_count | INTEGER | Number of info items |
+| evaluators_run | JSONB | List of evaluators executed |
+| evaluated_at | TIMESTAMPTZ | Evaluation timestamp |
+
+### `trade_evaluation_items`
+Individual evaluation findings.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| evaluation_id | BIGINT | Foreign key to trade_evaluations |
+| evaluator | VARCHAR(100) | Evaluator name |
+| code | VARCHAR(50) | Finding code |
+| severity | VARCHAR(20) | 'info', 'warning', 'critical', 'blocker' |
+| severity_priority | INTEGER | For sorting |
+| title | VARCHAR(255) | Finding title |
+| message | TEXT | Detailed message |
+| dimension_key | VARCHAR(50) | UI grouping key |
+| evidence | JSONB | Supporting data |
+| visuals | JSONB | Chart render instructions |
+
+## Broker Integration Tables
+
+### `snaptrade_users`
+Mapping between internal user and SnapTrade user.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| user_account_id | INTEGER | Foreign key to user_accounts (unique) |
+| snaptrade_user_id | VARCHAR(255) | SnapTrade user ID (unique) |
+| snaptrade_user_secret | VARCHAR(255) | SnapTrade user secret |
+| created_at | TIMESTAMPTZ | Creation time |
+
+### `broker_connections`
+Connected brokerage accounts via SnapTrade.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| snaptrade_user_id | INTEGER | Foreign key to snaptrade_users |
+| brokerage_name | VARCHAR(100) | Broker name (e.g., 'Robinhood') |
+| brokerage_slug | VARCHAR(50) | Broker identifier |
+| authorization_id | VARCHAR(255) | SnapTrade authorization (unique) |
+| meta | JSONB | Connection metadata |
+| is_active | BOOLEAN | Connection status |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+### `trade_fills`
+Executed trade fills synced from brokers (immutable ledger).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| broker_connection_id | INTEGER | Foreign key to broker_connections |
+| account_id | INTEGER | Foreign key to user_accounts |
+| symbol | VARCHAR(20) | Stock symbol |
+| side | VARCHAR(10) | 'buy' or 'sell' |
+| quantity | FLOAT | Number of shares |
+| price | FLOAT | Execution price |
+| fees | FLOAT | Trading fees |
+| executed_at | TIMESTAMPTZ | Execution timestamp |
+| broker | VARCHAR(100) | Broker name |
+| asset_type | VARCHAR(20) | 'equity', 'option', 'crypto' |
+| currency | VARCHAR(10) | 'USD' |
+| order_id | VARCHAR(255) | Broker order ID |
+| venue | VARCHAR(100) | Execution venue |
+| external_trade_id | VARCHAR(255) | Broker trade ID (unique) |
+| source | VARCHAR(20) | 'broker_synced', 'manual' |
+| import_batch_id | BIGINT | Import batch identifier |
+| intent_id | BIGINT | Foreign key to trade_intents |
+| raw_data | JSONB | Raw broker data |
+| created_at | TIMESTAMPTZ | Creation time |
+
+## Trade Lifecycle Tables
+
+### `position_lots`
+Open position inventory and cost basis.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| account_id | INTEGER | Foreign key to user_accounts |
+| symbol | VARCHAR(20) | Stock symbol |
+| direction | VARCHAR(10) | 'long' or 'short' |
+| opened_at | TIMESTAMPTZ | Position open time |
+| open_fill_id | BIGINT | Foreign key to trade_fills |
+| open_qty | FLOAT | Original quantity |
+| remaining_qty | FLOAT | Current quantity |
+| avg_open_price | FLOAT | Average entry price |
+| strategy_id | INTEGER | Foreign key to strategies |
+| status | VARCHAR(10) | 'open' or 'closed' |
+| campaign_id | BIGINT | Foreign key to position_campaigns |
+| created_at | TIMESTAMPTZ | Creation time |
+
+### `lot_closures`
+Pairing of open lots with closing fills.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| lot_id | BIGINT | Foreign key to position_lots |
+| open_fill_id | BIGINT | Foreign key to trade_fills |
+| close_fill_id | BIGINT | Foreign key to trade_fills |
+| matched_qty | FLOAT | Quantity matched |
+| open_price | FLOAT | Entry price |
+| close_price | FLOAT | Exit price |
+| realized_pnl | FLOAT | Profit/loss |
+| fees_allocated | FLOAT | Allocated fees |
+| match_method | VARCHAR(10) | 'fifo', 'lifo', 'avg', 'manual' |
+| matched_at | TIMESTAMPTZ | Match timestamp |
+
+### `position_campaigns`
+User-visible trade journey (flat to flat).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| account_id | INTEGER | Foreign key to user_accounts |
+| symbol | VARCHAR(20) | Stock symbol |
+| direction | VARCHAR(10) | 'long' or 'short' |
+| opened_at | TIMESTAMPTZ | Campaign start |
+| closed_at | TIMESTAMPTZ | Campaign end |
+| qty_opened | FLOAT | Total quantity opened |
+| qty_closed | FLOAT | Total quantity closed |
+| avg_open_price | FLOAT | Average entry price |
+| avg_close_price | FLOAT | Average exit price |
+| realized_pnl | FLOAT | Total profit/loss |
+| return_pct | FLOAT | Return percentage |
+| holding_period_sec | INTEGER | Duration in seconds |
+| num_fills | INTEGER | Number of fills |
+| tags | JSONB | Strategy tags and labels |
+| derived_from | JSONB | Lot/closure IDs |
+| status | VARCHAR(10) | 'open' or 'closed' |
+| max_qty | FLOAT | Peak position size |
+| cost_basis_method | VARCHAR(10) | 'average', 'fifo', 'lifo' |
+| source | VARCHAR(20) | 'broker_synced', 'manual', 'proposed' |
+| link_group_id | BIGINT | Related campaigns group |
+| r_multiple | FLOAT | Risk-adjusted return |
+| intent_id | BIGINT | Foreign key to trade_intents |
+| strategy_id | INTEGER | Foreign key to strategies |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+### `campaign_legs`
+Semantic decision points within a campaign.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| campaign_id | BIGINT | Foreign key to position_campaigns |
+| leg_type | VARCHAR(20) | 'open', 'add', 'reduce', 'close', 'flip_close', 'flip_open' |
+| side | VARCHAR(10) | 'buy' or 'sell' |
+| quantity | FLOAT | Leg quantity |
+| avg_price | FLOAT | Average price |
+| started_at | TIMESTAMPTZ | Leg start time |
+| ended_at | TIMESTAMPTZ | Leg end time |
+| fill_count | INTEGER | Number of fills in leg |
+| intent_id | BIGINT | Foreign key to trade_intents |
+| notes | TEXT | Leg notes |
+| created_at | TIMESTAMPTZ | Creation time |
+
+### `leg_fill_map`
+Join table mapping legs to fills.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| leg_id | BIGINT | Foreign key to campaign_legs (PK) |
+| fill_id | BIGINT | Foreign key to trade_fills (PK) |
+| allocated_qty | FLOAT | Quantity allocated to this leg |
+
+### `decision_contexts`
+Trader's context and feelings at decision points.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| account_id | INTEGER | Foreign key to user_accounts |
+| campaign_id | BIGINT | Foreign key to position_campaigns |
+| leg_id | BIGINT | Foreign key to campaign_legs |
+| intent_id | BIGINT | Foreign key to trade_intents |
+| context_type | VARCHAR(30) | 'entry', 'add', 'reduce', 'exit', 'idea', 'post_trade_reflection' |
+| strategy_id | INTEGER | Foreign key to strategies |
+| hypothesis | TEXT | Trade hypothesis |
+| exit_intent | JSONB | Planned exit conditions |
+| feelings_then | JSONB | Emotions at decision time |
+| feelings_now | JSONB | Current reflection |
+| notes | TEXT | Additional notes |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
 
 ## Migrations
 

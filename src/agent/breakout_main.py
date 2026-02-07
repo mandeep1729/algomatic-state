@@ -12,15 +12,24 @@ from pathlib import Path
 
 import uvicorn
 
+from config.settings import get_settings
 from src.agent.api import app, set_config
 from src.agent.breakout_config import BreakoutAgentConfig, BreakoutStrategyConfig
 from src.agent.scheduler import run_agent_loop
 from src.utils.logging import setup_logging
 
+# Determine project root directory for consistent path resolution
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+
+# Use settings-based configuration with agent-specific log file
+settings = get_settings()
+LOGS_DIR = PROJECT_ROOT / "logs"
 setup_logging(
-    level=os.environ.get("BREAKOUT_LOG_LEVEL", "INFO"),
+    level=os.environ.get("BREAKOUT_LOG_LEVEL", settings.logging.level),
     format="text",
-    file=Path("logs/breakout.log"),
+    file=LOGS_DIR / "breakout.log",
+    rotate_size_mb=settings.logging.rotate_size_mb,
+    retain_count=settings.logging.retain_count,
 )
 logger = logging.getLogger(__name__)
 
