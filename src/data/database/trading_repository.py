@@ -25,7 +25,10 @@ from src.data.database.broker_models import TradeFill as TradeFillModel
 from src.data.database.trade_lifecycle_models import (
     PositionLot as PositionLotModel,
     LotClosure as LotClosureModel,
-    RoundTrip as RoundTripModel,
+    PositionCampaign as PositionCampaignModel,
+    CampaignLeg as CampaignLegModel,
+    LegFillMap as LegFillMapModel,
+    DecisionContext as DecisionContextModel,
 )
 from src.trade.intent import (
     TradeIntent,
@@ -743,46 +746,166 @@ class TradingBuddyRepository:
         ).order_by(LotClosureModel.matched_at.asc()).all()
 
     # -------------------------------------------------------------------------
-    # Round Trip Operations
+    # Position Campaign Operations
     # -------------------------------------------------------------------------
 
-    def create_round_trip(self, **kwargs) -> RoundTripModel:
-        """Create a round trip record.
+    def create_campaign(self, **kwargs) -> PositionCampaignModel:
+        """Create a position campaign record.
 
         Args:
-            **kwargs: RoundTrip column values
+            **kwargs: PositionCampaign column values
 
         Returns:
-            Created RoundTripModel
+            Created PositionCampaignModel
         """
-        rt = RoundTripModel(**kwargs)
-        self.session.add(rt)
+        campaign = PositionCampaignModel(**kwargs)
+        self.session.add(campaign)
         self.session.flush()
         logger.info(
-            "Created round trip id=%s symbol=%s direction=%s pnl=%s",
-            rt.id, rt.symbol, rt.direction, rt.realized_pnl,
+            "Created campaign id=%s symbol=%s direction=%s status=%s",
+            campaign.id, campaign.symbol, campaign.direction, campaign.status,
         )
-        return rt
+        return campaign
 
-    def get_round_trips(
+    def get_campaign(self, campaign_id: int) -> Optional[PositionCampaignModel]:
+        """Get a campaign by ID.
+
+        Args:
+            campaign_id: Campaign ID
+
+        Returns:
+            PositionCampaignModel or None
+        """
+        return self.session.query(PositionCampaignModel).filter(
+            PositionCampaignModel.id == campaign_id
+        ).first()
+
+    def get_campaigns(
         self,
         account_id: int,
         symbol: Optional[str] = None,
+        status: Optional[str] = None,
         limit: int = 50,
-    ) -> list[RoundTripModel]:
-        """Get round trips for an account, optionally filtered by symbol.
+    ) -> list[PositionCampaignModel]:
+        """Get campaigns for an account, optionally filtered.
 
         Args:
             account_id: Account ID
             symbol: Optional symbol filter
+            status: Optional status filter ('open' or 'closed')
             limit: Maximum number of results
 
         Returns:
-            List of RoundTripModel ordered by created_at desc
+            List of PositionCampaignModel ordered by created_at desc
         """
-        query = self.session.query(RoundTripModel).filter(
-            RoundTripModel.account_id == account_id
+        query = self.session.query(PositionCampaignModel).filter(
+            PositionCampaignModel.account_id == account_id
         )
         if symbol:
-            query = query.filter(RoundTripModel.symbol == symbol)
-        return query.order_by(RoundTripModel.created_at.desc()).limit(limit).all()
+            query = query.filter(PositionCampaignModel.symbol == symbol)
+        if status:
+            query = query.filter(PositionCampaignModel.status == status)
+        return query.order_by(PositionCampaignModel.created_at.desc()).limit(limit).all()
+
+    # -------------------------------------------------------------------------
+    # Campaign Leg Operations
+    # -------------------------------------------------------------------------
+
+    def create_leg(self, **kwargs) -> CampaignLegModel:
+        """Create a campaign leg record.
+
+        Args:
+            **kwargs: CampaignLeg column values
+
+        Returns:
+            Created CampaignLegModel
+        """
+        leg = CampaignLegModel(**kwargs)
+        self.session.add(leg)
+        self.session.flush()
+        logger.info(
+            "Created leg id=%s campaign_id=%s type=%s side=%s qty=%s",
+            leg.id, leg.campaign_id, leg.leg_type, leg.side, leg.quantity,
+        )
+        return leg
+
+    def get_legs_for_campaign(self, campaign_id: int) -> list[CampaignLegModel]:
+        """Get legs for a campaign ordered by started_at.
+
+        Args:
+            campaign_id: Campaign ID
+
+        Returns:
+            List of CampaignLegModel
+        """
+        return self.session.query(CampaignLegModel).filter(
+            CampaignLegModel.campaign_id == campaign_id
+        ).order_by(CampaignLegModel.started_at.asc()).all()
+
+    # -------------------------------------------------------------------------
+    # Leg Fill Map Operations
+    # -------------------------------------------------------------------------
+
+    def create_leg_fill_map(self, **kwargs) -> LegFillMapModel:
+        """Create a leg-fill mapping record.
+
+        Args:
+            **kwargs: LegFillMap column values (leg_id, fill_id, allocated_qty)
+
+        Returns:
+            Created LegFillMapModel
+        """
+        mapping = LegFillMapModel(**kwargs)
+        self.session.add(mapping)
+        self.session.flush()
+        return mapping
+
+    # -------------------------------------------------------------------------
+    # Decision Context Operations
+    # -------------------------------------------------------------------------
+
+    def create_decision_context(self, **kwargs) -> DecisionContextModel:
+        """Create a decision context record.
+
+        Args:
+            **kwargs: DecisionContext column values
+
+        Returns:
+            Created DecisionContextModel
+        """
+        context = DecisionContextModel(**kwargs)
+        self.session.add(context)
+        self.session.flush()
+        logger.info(
+            "Created decision context id=%s type=%s campaign_id=%s",
+            context.id, context.context_type, context.campaign_id,
+        )
+        return context
+
+    def get_contexts_for_campaign(
+        self, campaign_id: int
+    ) -> list[DecisionContextModel]:
+        """Get decision contexts for a campaign.
+
+        Args:
+            campaign_id: Campaign ID
+
+        Returns:
+            List of DecisionContextModel ordered by created_at
+        """
+        return self.session.query(DecisionContextModel).filter(
+            DecisionContextModel.campaign_id == campaign_id
+        ).order_by(DecisionContextModel.created_at.asc()).all()
+
+    def get_context(self, context_id: int) -> Optional[DecisionContextModel]:
+        """Get a decision context by ID.
+
+        Args:
+            context_id: Context ID
+
+        Returns:
+            DecisionContextModel or None
+        """
+        return self.session.query(DecisionContextModel).filter(
+            DecisionContextModel.id == context_id
+        ).first()

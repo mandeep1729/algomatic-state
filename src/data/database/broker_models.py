@@ -149,6 +149,9 @@ class TradeFill(Base):
     # External ID to prevent duplicates
     external_trade_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True)
 
+    # Fill source
+    source: Mapped[Optional[str]] = mapped_column(String(20), default="broker_synced", nullable=True)
+
     # Import tracking
     import_batch_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 

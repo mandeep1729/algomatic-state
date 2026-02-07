@@ -241,6 +241,8 @@ class TradeIntent(Base):
 
     # User input
     rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    hypothesis: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    strategy_tags: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
 
     # Workflow status
     status: Mapped[str] = mapped_column(
@@ -300,12 +302,25 @@ class TradeEvaluation(Base):
     __tablename__ = "trade_evaluations"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    intent_id: Mapped[int] = mapped_column(
+    intent_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
         ForeignKey("trade_intents.id", ondelete="CASCADE"),
-        nullable=False,
-        unique=True,
+        nullable=True,
     )
+
+    # Multi-scope evaluation support
+    campaign_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("position_campaigns.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    leg_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("campaign_legs.id", ondelete="CASCADE"),
+        nullable=True,
+    )
+    eval_scope: Mapped[str] = mapped_column(String(20), default="intent", nullable=False)
+    overall_label: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
 
     # Evaluation results
     score: Mapped[float] = mapped_column(Float, nullable=False)
@@ -328,7 +343,7 @@ class TradeEvaluation(Base):
     )
 
     # Relationships
-    intent: Mapped["TradeIntent"] = relationship("TradeIntent", back_populates="evaluation")
+    intent: Mapped[Optional["TradeIntent"]] = relationship("TradeIntent", back_populates="evaluation")
     items: Mapped[list["TradeEvaluationItem"]] = relationship(
         "TradeEvaluationItem",
         back_populates="evaluation",
@@ -343,7 +358,17 @@ class TradeEvaluation(Base):
         CheckConstraint("critical_count >= 0", name="ck_eval_critical_count"),
         CheckConstraint("warning_count >= 0", name="ck_eval_warning_count"),
         CheckConstraint("info_count >= 0", name="ck_eval_info_count"),
+        CheckConstraint(
+            "eval_scope IN ('intent', 'campaign', 'leg')",
+            name="ck_eval_scope",
+        ),
+        CheckConstraint(
+            "overall_label IS NULL OR overall_label IN ('aligned', 'mixed', 'fragile', 'deviates')",
+            name="ck_eval_overall_label",
+        ),
         Index("ix_trade_evaluations_score", "score"),
+        Index("ix_trade_evaluations_campaign", "campaign_id"),
+        Index("ix_trade_evaluations_leg", "leg_id"),
     )
 
     def __repr__(self) -> str:
@@ -379,8 +404,14 @@ class TradeEvaluationItem(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
 
+    # Dimension grouping for UI cards
+    dimension_key: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
     # Evidence (structured JSONB)
     evidence: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
+
+    # Chart render instructions
+    visuals: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Relationships
     evaluation: Mapped["TradeEvaluation"] = relationship("TradeEvaluation", back_populates="items")

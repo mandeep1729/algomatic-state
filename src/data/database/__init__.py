@@ -11,7 +11,14 @@ from src.data.database.trading_buddy_models import (
     TradeEvaluationItem,
 )
 from src.data.database.broker_models import TradeFill
-from src.data.database.trade_lifecycle_models import PositionLot, LotClosure, RoundTrip
+from src.data.database.trade_lifecycle_models import (
+    PositionLot,
+    LotClosure,
+    PositionCampaign,
+    CampaignLeg,
+    LegFillMap,
+    DecisionContext,
+)
 
 __all__ = [
     # Connection
@@ -35,5 +42,8 @@ __all__ = [
     "TradeFill",
     "PositionLot",
     "LotClosure",
-    "RoundTrip",
+    "PositionCampaign",
+    "CampaignLeg",
+    "LegFillMap",
+    "DecisionContext",
 ]
