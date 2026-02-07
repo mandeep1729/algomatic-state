@@ -339,9 +339,12 @@ async def get_ohlcv_data(
 
     All chart data always comes from the ohlcv_bars table.
     """
+    logger.info(f"OHLCV request received: symbol={symbol}, timeframe={timeframe}, start={start_date}, end={end_date}")
+
     cache_key = f"ohlcv_{symbol}_{timeframe}_{start_date}_{end_date}"
     cached = get_cached_data(cache_key)
     if cached is not None:
+        logger.info(f"OHLCV cache hit for {symbol}/{timeframe}")
         return cached
 
     try:

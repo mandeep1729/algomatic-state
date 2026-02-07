@@ -49,7 +49,7 @@ class MarketDataProvider(ABC):
         end: datetime,
     ) -> pd.DataFrame:
         """Convenience wrapper: fetch 1-minute bars."""
-        logger.debug("Fetching 1-minute bars: symbol=%s, start=%s, end=%s", symbol, start, end)
+        logger.info("Fetching 1-minute bars: symbol=%s, start=%s, end=%s", symbol, start, end)
         return self.fetch_bars(symbol, start, end, resolution="1Min")
 
     def fetch_daily_bars(
@@ -59,5 +59,5 @@ class MarketDataProvider(ABC):
         end: datetime,
     ) -> pd.DataFrame:
         """Convenience wrapper: fetch daily bars."""
-        logger.debug("Fetching daily bars: symbol=%s, start=%s, end=%s", symbol, start, end)
+        logger.info("Fetching daily bars: symbol=%s, start=%s, end=%s", symbol, start, end)
         return self.fetch_bars(symbol, start, end, resolution="1Day")

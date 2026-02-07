@@ -37,7 +37,7 @@ class MessageBus:
         """
         with self._lock:
             self._subscribers.setdefault(event_type, []).append(callback)
-        logger.debug("Subscribed %s to %s", callback, event_type.value)
+        logger.info("Subscribed %s to %s", callback, event_type.value)
 
     def unsubscribe(self, event_type: EventType, callback: Subscriber) -> None:
         """Remove a previously registered subscriber.

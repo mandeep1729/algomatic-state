@@ -124,7 +124,7 @@ class MarketDataService:
                 db_latest = db_latest.replace(tzinfo=None)
             buffer = timedelta(minutes=1)
             if end <= db_latest + buffer:
-                logger.debug("1Min data is up-to-date for %s", symbol)
+                logger.info("1Min data is up-to-date for %s", symbol)
                 return 0
             fetch_start = db_latest + buffer
             fetch_end = end
@@ -152,7 +152,7 @@ class MarketDataService:
                 db_latest = db_latest.replace(tzinfo=None)
             buffer = timedelta(days=1)
             if end <= db_latest + buffer:
-                logger.debug("1Day data is up-to-date for %s", symbol)
+                logger.info("1Day data is up-to-date for %s", symbol)
                 return 0
             fetch_start = db_latest + buffer
             fetch_end = end

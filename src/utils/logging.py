@@ -395,6 +395,12 @@ def setup_logging(
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
 
+    # Configure uvicorn loggers to propagate to root (so they go to file handler)
+    for uvicorn_logger_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        uvicorn_logger = logging.getLogger(uvicorn_logger_name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance.
