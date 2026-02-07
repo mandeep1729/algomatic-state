@@ -355,8 +355,7 @@ export default function Overview() {
                           )}
                         </td>
                       </tr>
-                    );
-                  })}
+                  ))}
                   {recentTrades.length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
