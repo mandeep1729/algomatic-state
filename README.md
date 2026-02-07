@@ -177,6 +177,9 @@ This starts both the backend (port 8000) and frontend (port 5173) together.
 ```bash
 # From the project root with venv activated
 python -m ui.run_backend
+
+# Alternative: run uvicorn directly
+python -m uvicorn ui.backend.api:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 The API server will be available at `http://localhost:8000` (docs at `http://localhost:8000/docs`).
