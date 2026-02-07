@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { X } from 'lucide-react';
 import api, { fetchSyncStatus, triggerSync, fetchOHLCVData, fetchFeatures, fetchMockOHLCVData, fetchMockFeatures } from '../../api';
 import type { TradeSummary, InsightsSummary, BrokerStatus, JournalEntry, BehavioralInsight, TickerPnlSummary, PnlTimeseries } from '../../types';
-import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
+import { DirectionBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
 import { useChartContext } from '../../context/ChartContext';
 import { format } from 'date-fns';
@@ -311,48 +311,54 @@ export default function Overview() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+                    <th className="px-6 py-4">Time</th>
                     <th className="px-6 py-4">Symbol</th>
                     <th className="px-6 py-4">Dir</th>
+                    <th className="px-6 py-4">Qty</th>
                     <th className="px-6 py-4">Entry</th>
-                    <th className="px-6 py-4">Source</th>
-                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Broker</th>
                     <th className="px-6 py-4">Flags</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-color)]">
                   {recentTrades.map((trade) => (
-                    <tr key={trade.id} className="transition-colors hover:bg-[var(--bg-tertiary)]/50">
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => handleTickerClick(trade.symbol)}
-                          className={`font-medium hover:underline ${selectedTicker === trade.symbol
-                              ? 'text-[var(--accent-green)]'
-                              : 'text-[var(--accent-blue)]'
-                            }`}
-                        >
-                          {trade.symbol}
-                        </button>
-                      </td>
-                      <td className="px-6 py-4">
-                        <DirectionBadge direction={trade.direction} />
-                      </td>
-                      <td className="px-6 py-4 font-mono text-xs text-[var(--text-secondary)]">${trade.entry_price.toFixed(2)}</td>
-                      <td className="px-6 py-4"><SourceBadge source={trade.source} /></td>
-                      <td className="px-6 py-4"><StatusBadge status={trade.status} /></td>
-                      <td className="px-6 py-4">
-                        {trade.is_flagged ? (
-                          <span className="rounded-full bg-[var(--accent-red)]/10 px-2.5 py-1 text-xs font-medium text-[var(--accent-red)]">
-                            {trade.flag_count} Flags
-                          </span>
-                        ) : (
-                          <span className="text-[var(--text-secondary)]">-</span>
-                        )}
-                      </td>
-                    </tr>
+                      <tr key={trade.id} className="transition-colors hover:bg-[var(--bg-tertiary)]/50">
+                        <td className="px-6 py-4 text-xs text-[var(--text-secondary)]">
+                          {format(new Date(trade.entry_time), 'MMM d, HH:mm')}
+                        </td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => handleTickerClick(trade.symbol)}
+                            className={`font-medium hover:underline ${selectedTicker === trade.symbol
+                                ? 'text-[var(--accent-green)]'
+                                : 'text-[var(--accent-blue)]'
+                              }`}
+                          >
+                            {trade.symbol}
+                          </button>
+                        </td>
+                        <td className="px-6 py-4">
+                          <DirectionBadge direction={trade.direction} />
+                        </td>
+                        <td className="px-6 py-4 text-[var(--text-secondary)]">{trade.quantity}</td>
+                        <td className="px-6 py-4 font-mono text-xs text-[var(--text-secondary)]">${trade.entry_price.toFixed(2)}</td>
+                        <td className="px-6 py-4 text-xs text-[var(--text-secondary)]">
+                          {trade.brokerage ?? '--'}
+                        </td>
+                        <td className="px-6 py-4">
+                          {trade.is_flagged ? (
+                            <span className="rounded-full bg-[var(--accent-red)]/10 px-2.5 py-1 text-xs font-medium text-[var(--accent-red)]">
+                              {trade.flag_count} Flags
+                            </span>
+                          ) : (
+                            <span className="text-[var(--text-secondary)]">-</span>
+                          )}
+                        </td>
+                      </tr>
                   ))}
                   {recentTrades.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
+                      <td colSpan={7} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
                         {selectedTicker
                           ? `No trades found for ${selectedTicker}.`
                           : <>No trades yet. <Link to="/app/evaluate" className="text-[var(--accent-blue)] hover:underline">Evaluate your first trade</Link></>

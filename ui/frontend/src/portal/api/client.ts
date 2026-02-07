@@ -10,8 +10,11 @@
  *   GET  /api/trading-buddy/evaluators → fetchEvaluators
  *   GET  /api/broker/status            → fetchBrokerStatus
  *   GET  /api/broker/trades            → fetchTrades
- *   GET  /api/campaigns/{campaignId}   → fetchTradeDetail
+ *   GET  /api/campaigns                → fetchCampaigns
+ *   GET  /api/campaigns/{campaignId}   → fetchCampaignDetail
+ *   PUT  /api/campaigns/{id}/context   → saveDecisionContext
  *   GET  /api/campaigns/pnl/{symbol}   → fetchTickerPnl
+ *   GET  /api/campaigns/pnl/by-ticker  → fetchTickerPnlByTicker
  *   GET  /api/campaigns/pnl/timeseries → fetchTickerPnlTimeseries
  *   GET  /api/sync-status/{symbol}     → fetchSyncStatus
  *   POST /api/sync/{symbol}            → triggerSync
@@ -27,10 +30,11 @@ import type {
   BrokerStatus,
   TradeListResponse,
   TradeSummary,
-  TradeDetail,
-  TradeDirection,
-  TradeSource,
-  TradeStatus,
+  CampaignSummary,
+  CampaignDetail,
+  DecisionContext,
+  TickerPnlSummary,
+  PnlTimeseries,
 } from '../types';
 
 const TOKEN_KEY = 'auth_token';
@@ -73,6 +77,10 @@ function get<T>(url: string): Promise<T> {
 
 function post<T>(url: string, body?: unknown): Promise<T> {
   return request<T>(url, { method: 'POST', body: body != null ? JSON.stringify(body) : undefined });
+}
+
+function put<T>(url: string, body?: unknown): Promise<T> {
+  return request<T>(url, { method: 'PUT', body: body != null ? JSON.stringify(body) : undefined });
 }
 
 // =============================================================================
@@ -270,100 +278,119 @@ export async function fetchTrades(params: {
 }
 
 // =============================================================================
-// Campaign Detail — GET /api/campaigns/{campaignId}
-// Maps backend CampaignDetailResponse → portal TradeDetail
+// Campaigns — GET /api/campaigns
 // =============================================================================
 
-interface CampaignLegResponse {
-  id: number;
-  leg_type: string;
-  side: string;
-  quantity: number;
-  avg_price: number | null;
-  started_at: string;
-  ended_at: string | null;
-  fill_count: number;
-  notes: string | null;
-  fills: { fill_id: number; allocated_qty: number | null }[];
+/**
+ * Backend returns campaign detail without evaluation bundles (those are
+ * not yet implemented server-side). The frontend provides empty defaults
+ * for evaluationCampaign, evaluationByLeg so the UI renders gracefully.
+ */
+
+interface BackendCampaignDetail {
+  campaign: CampaignDetail['campaign'];
+  legs: CampaignDetail['legs'];
+  contextsByLeg: Record<string, DecisionContext | undefined>;
 }
 
-interface CampaignDetailResponse {
-  id: number;
-  symbol: string;
-  direction: string;
-  status: string;
-  opened_at: string | null;
-  closed_at: string | null;
-  holding_period_sec: number | null;
-  qty_opened: number | null;
-  qty_closed: number | null;
-  avg_open_price: number | null;
-  avg_close_price: number | null;
-  realized_pnl: number | null;
-  return_pct: number | null;
-  r_multiple: number | null;
-  legs: CampaignLegResponse[];
-  tags: Record<string, unknown>;
-  notes: string | null;
+export async function fetchCampaigns(
+  params: { symbol?: string; status?: string } = {},
+): Promise<CampaignSummary[]> {
+  const qs = new URLSearchParams();
+  if (params.symbol) qs.set('symbol', params.symbol);
+  if (params.status) qs.set('status', params.status);
+  const qsStr = qs.toString();
+  return get<CampaignSummary[]>(`/api/campaigns${qsStr ? `?${qsStr}` : ''}`);
 }
 
-export async function fetchTradeDetail(campaignId: string): Promise<TradeDetail> {
-  const res = await get<CampaignDetailResponse>(
-    `/api/campaigns/${encodeURIComponent(campaignId)}`
-  );
+export async function fetchCampaignDetail(campaignId: string): Promise<CampaignDetail> {
+  const raw = await get<BackendCampaignDetail>(`/api/campaigns/${encodeURIComponent(campaignId)}`);
 
-  // Map campaign direction to TradeDirection
-  const direction: TradeDirection = res.direction === 'long' ? 'long' : 'short';
-
-  // Map campaign status to TradeStatus
-  const status: TradeStatus = res.status === 'open' ? 'open' : 'closed';
-
-  // Extract tags as string array from the tags object
-  const tags: string[] = res.tags && typeof res.tags === 'object'
-    ? Object.keys(res.tags)
-    : [];
-
-  // Get entry and exit times from legs or campaign timestamps
-  const entryTime = res.opened_at ?? (res.legs.length > 0 ? res.legs[0].started_at : '');
-  const exitTime = res.closed_at ?? (res.status === 'closed' && res.legs.length > 0
-    ? res.legs[res.legs.length - 1].ended_at
-    : null);
-
-  // Sum quantities from legs
-  const quantity = res.qty_opened ?? res.legs.reduce((sum, leg) => sum + leg.quantity, 0);
+  // Backend does not yet return evaluation bundles. Provide empty defaults
+  // so the UI can render the campaign detail page without errors.
+  const emptyBundle = {
+    bundleId: `backend-${campaignId}`,
+    evalScope: 'campaign' as const,
+    overallLabel: 'mixed' as const,
+    dimensions: [],
+  };
 
   return {
-    id: String(res.id),
-    symbol: res.symbol,
-    direction,
-    entry_price: res.avg_open_price ?? 0,
-    exit_price: res.avg_close_price,
-    quantity,
-    entry_time: entryTime,
-    exit_time: exitTime,
-    source: 'synced' as TradeSource,
-    brokerage: null,
-    is_flagged: false,
-    flag_count: 0,
-    status,
-    timeframe: '',
-    stop_loss: null,
-    profit_target: null,
-    risk_reward_ratio: res.r_multiple,
-    pnl: res.realized_pnl,
-    pnl_pct: res.return_pct,
-    evaluation: null,
-    notes: res.notes,
-    tags,
+    campaign: raw.campaign,
+    legs: raw.legs,
+    evaluationCampaign: emptyBundle,
+    evaluationByLeg: {},
+    contextsByLeg: raw.contextsByLeg ?? {},
   };
+}
+
+export async function saveDecisionContext(context: DecisionContext): Promise<DecisionContext> {
+  const campaignId = context.campaignId;
+  if (!campaignId) throw new Error('campaignId is required to save context');
+
+  const body = {
+    scope: context.scope,
+    campaignId: context.campaignId,
+    legId: context.legId,
+    contextType: context.contextType,
+    strategyTags: context.strategyTags,
+    hypothesis: context.hypothesis,
+    exitIntent: context.exitIntent,
+    feelingsThen: context.feelingsThen,
+    feelingsNow: context.feelingsNow,
+    notes: context.notes,
+  };
+
+  const res = await put<{
+    contextId: string;
+    scope: string;
+    campaignId?: string;
+    legId?: string;
+    contextType: string;
+    strategyTags: string[];
+    hypothesis?: string;
+    exitIntent?: string;
+    feelingsThen?: { chips: string[]; intensity?: number; note?: string };
+    feelingsNow?: { chips: string[]; intensity?: number; note?: string };
+    notes?: string;
+    updatedAt: string;
+  }>(`/api/campaigns/${encodeURIComponent(campaignId)}/context`, body);
+
+  return {
+    contextId: res.contextId,
+    scope: res.scope as DecisionContext['scope'],
+    campaignId: res.campaignId,
+    legId: res.legId,
+    contextType: res.contextType as DecisionContext['contextType'],
+    strategyTags: res.strategyTags,
+    hypothesis: res.hypothesis,
+    exitIntent: res.exitIntent as DecisionContext['exitIntent'],
+    feelingsThen: res.feelingsThen,
+    feelingsNow: res.feelingsNow,
+    notes: res.notes,
+    updatedAt: res.updatedAt,
+  };
+}
+
+// =============================================================================
+// Campaign OHLCV — GET /api/ohlcv/{symbol} with date range
+// Convenience wrapper that accepts ms timestamps for campaign chart data.
+// =============================================================================
+
+export async function fetchCampaignOHLCVData(
+  symbol: string,
+  rangeStartMs: number,
+  rangeEndMs: number,
+): Promise<OHLCVData> {
+  const startDate = new Date(rangeStartMs).toISOString().split('T')[0];
+  const endDate = new Date(rangeEndMs).toISOString().split('T')[0];
+  return fetchOHLCVData(symbol, undefined, startDate, endDate);
 }
 
 // =============================================================================
 // Ticker P&L — GET /api/campaigns/pnl/{symbol}
 // Returns P&L summary for a single ticker symbol
 // =============================================================================
-
-import type { TickerPnlSummary, PnlTimeseries } from '../types';
 
 interface TickerPnlBackendResponse {
   symbol: string;
