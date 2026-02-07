@@ -1647,6 +1647,46 @@ class TradingBuddyRepository:
 
         return legs_data
 
+    def populate_campaigns_and_legs(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+    ) -> dict:
+        """Orchestrator method to build complete trading journal from fills.
+
+        Calls populate_campaigns_from_fills to create campaigns and lots,
+        then calculates total P&L across all created campaigns.
+
+        Args:
+            account_id: Account ID to process fills for
+            symbol: Optional symbol filter (process single symbol)
+
+        Returns:
+            Dict with stats: campaigns_created, lots_created, closures_created,
+            legs_created, fills_processed, total_pnl
+        """
+        # Run the main population logic
+        stats = self.populate_campaigns_from_fills(account_id=account_id, symbol=symbol)
+
+        # Calculate total P&L from newly created campaigns
+        # Get all campaigns for this account to calculate total realized P&L
+        campaigns = self.get_campaigns(account_id, symbol=symbol, limit=1000)
+        total_pnl = sum(c.realized_pnl or 0.0 for c in campaigns if c.status == "closed")
+
+        stats["total_pnl"] = total_pnl
+
+        logger.info(
+            "Populated campaigns and legs for account_id=%s: "
+            "campaigns=%d, lots=%d, legs=%d, pnl=%.2f",
+            account_id,
+            stats["campaigns_created"],
+            stats["lots_created"],
+            stats["legs_created"],
+            total_pnl,
+        )
+
+        return stats
+
     def _determine_leg_type(
         self,
         prev_position: float,

@@ -80,6 +80,11 @@ class SyncResponse(BaseModel):
     fills_synced: int
     fills_skipped: int
     message: str
+    # Campaign population summary (populated if fills were synced)
+    campaigns_created: Optional[int] = None
+    lots_created: Optional[int] = None
+    legs_created: Optional[int] = None
+    pnl_summary: Optional[float] = None
 
 
 class TradeResponse(BaseModel):
@@ -213,11 +218,16 @@ def sync_fills_to_db(
 # -----------------------------------------------------------------------------
 
 def sync_alpaca_fills_background(user_id: int) -> None:
-    """Background task to sync Alpaca trade fills.
+    """Background task to sync Alpaca trade fills and populate trading journal.
 
     Called automatically on user login/session validation.
     Only syncs if last sync was more than AUTO_SYNC_INTERVAL ago.
+
+    After syncing fills, automatically populates position_campaigns,
+    position_lots, and campaign_legs to build the trading journal.
     """
+    from src.data.database.trading_repository import TradingBuddyRepository
+
     try:
         # Check if Alpaca client is available
         client = AlpacaClient(paper=True)
@@ -250,11 +260,28 @@ def sync_alpaca_fills_background(user_id: int) -> None:
             connection = get_or_create_alpaca_connection(db, user_id, paper=client.paper)
             fills = client.get_trade_fills()
 
+            synced = 0
             if fills:
                 synced, skipped = sync_fills_to_db(db, connection, user_id, fills)
                 logger.info(f"Auto-sync complete: {synced} new fills, {skipped} skipped")
             else:
                 logger.debug("No fills to sync from Alpaca")
+
+            # Populate campaigns and legs if we synced any new fills
+            if synced > 0:
+                try:
+                    repo = TradingBuddyRepository(db)
+                    pop_stats = repo.populate_campaigns_and_legs(account_id=user_id)
+                    if pop_stats.get("campaigns_created", 0) > 0:
+                        logger.info(
+                            "Auto-sync created %d campaigns with %d legs, total P&L: %.2f",
+                            pop_stats.get("campaigns_created", 0),
+                            pop_stats.get("legs_created", 0),
+                            pop_stats.get("total_pnl", 0.0),
+                        )
+                except Exception as pop_err:
+                    # Log but don't fail the sync for population errors
+                    logger.error(f"Background campaign population failed: {pop_err}")
 
     except Exception as e:
         logger.error(f"Background Alpaca sync failed for user {user_id}: {e}")
@@ -324,12 +351,17 @@ async def sync_trades(
     db: Session = Depends(get_db),
     client: AlpacaClient = Depends(get_alpaca_client),
 ):
-    """Sync trade fills from Alpaca to database.
+    """Sync trade fills from Alpaca to database and populate trading journal.
 
     Fetches all trade activities (FILL events) from Alpaca and stores
     them in the trade_fills table. Duplicates are skipped based on
     external_trade_id.
+
+    After syncing fills, automatically populates position_campaigns,
+    position_lots, and campaign_legs to build the trading journal.
     """
+    from src.data.database.trading_repository import TradingBuddyRepository
+
     if not client:
         raise HTTPException(status_code=503, detail="Alpaca client not configured")
 
@@ -352,11 +384,47 @@ async def sync_trades(
         # Sync to database
         synced, skipped = sync_fills_to_db(db, connection, user_id, fills)
 
+        # Populate campaigns and legs if we synced any new fills
+        campaigns_created = 0
+        lots_created = 0
+        legs_created = 0
+        pnl_summary = None
+
+        if synced > 0:
+            try:
+                repo = TradingBuddyRepository(db)
+                pop_stats = repo.populate_campaigns_and_legs(account_id=user_id)
+                campaigns_created = pop_stats.get("campaigns_created", 0)
+                lots_created = pop_stats.get("lots_created", 0)
+                legs_created = pop_stats.get("legs_created", 0)
+                pnl_summary = pop_stats.get("total_pnl", 0.0)
+
+                if campaigns_created > 0:
+                    logger.info(
+                        "Created %d campaigns with %d legs, total P&L: %.2f",
+                        campaigns_created,
+                        legs_created,
+                        pnl_summary or 0.0,
+                    )
+            except Exception as pop_err:
+                # Log but don't fail the sync for population errors
+                logger.error(f"Failed to populate campaigns: {pop_err}")
+
+        # Build response message
+        msg_parts = [f"Synced {synced} new fills, skipped {skipped} existing"]
+        if campaigns_created > 0:
+            msg_parts.append(f"created {campaigns_created} campaigns with {legs_created} legs")
+        message = "; ".join(msg_parts)
+
         return SyncResponse(
             status="success",
             fills_synced=synced,
             fills_skipped=skipped,
-            message=f"Synced {synced} new fills, skipped {skipped} existing"
+            message=message,
+            campaigns_created=campaigns_created if synced > 0 else None,
+            lots_created=lots_created if synced > 0 else None,
+            legs_created=legs_created if synced > 0 else None,
+            pnl_summary=pnl_summary,
         )
 
     except Exception as e:
@@ -427,6 +495,7 @@ class PopulateCampaignsResponse(BaseModel):
     campaigns_created: int
     legs_created: int
     fills_processed: int
+    total_pnl: Optional[float] = None
     message: str
 
 
@@ -446,6 +515,9 @@ async def populate_campaigns(
 
     Call /sync first to ensure fills are up to date.
 
+    This endpoint is idempotent: re-running it will skip already processed
+    fills and only create new campaigns for unprocessed fills.
+
     Args:
         symbol: Optional filter to process only one symbol
     """
@@ -453,7 +525,7 @@ async def populate_campaigns(
 
     try:
         repo = TradingBuddyRepository(db)
-        stats = repo.populate_campaigns_from_fills(
+        stats = repo.populate_campaigns_and_legs(
             account_id=user_id,
             symbol=symbol.upper() if symbol else None,
         )
@@ -465,9 +537,13 @@ async def populate_campaigns(
             message_parts.append(f"{stats['lots_created']} lots")
         if stats["closures_created"]:
             message_parts.append(f"{stats['closures_created']} closures")
+        if stats["legs_created"]:
+            message_parts.append(f"{stats['legs_created']} legs")
 
         if message_parts:
             message = f"Created {', '.join(message_parts)}"
+            if stats.get("total_pnl"):
+                message += f", total P&L: ${stats['total_pnl']:.2f}"
         else:
             message = "No new campaigns to create (fills may already be processed)"
 
@@ -478,6 +554,7 @@ async def populate_campaigns(
             campaigns_created=stats["campaigns_created"],
             legs_created=stats["legs_created"],
             fills_processed=stats["fills_processed"],
+            total_pnl=stats.get("total_pnl"),
             message=message,
         )
 

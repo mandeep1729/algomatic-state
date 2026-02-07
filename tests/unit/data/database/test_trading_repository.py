@@ -750,6 +750,92 @@ class TestDetermineLegType:
         assert leg_type == "flip_open"
 
 
+class TestPopulateCampaignsAndLegs:
+    """Tests for populate_campaigns_and_legs orchestrator method."""
+
+    def test_returns_stats_with_total_pnl(self, repository, mock_session):
+        """Test that populate_campaigns_and_legs returns stats with total_pnl."""
+        # Mock populate_campaigns_from_fills to return some stats
+        with patch.object(repository, "populate_campaigns_from_fills") as mock_populate:
+            mock_populate.return_value = {
+                "lots_created": 2,
+                "closures_created": 2,
+                "campaigns_created": 1,
+                "legs_created": 2,
+                "fills_processed": 4,
+            }
+
+            # Mock get_campaigns to return a closed campaign with realized_pnl
+            mock_campaign = MagicMock()
+            mock_campaign.status = "closed"
+            mock_campaign.realized_pnl = 150.0
+
+            with patch.object(repository, "get_campaigns") as mock_get_campaigns:
+                mock_get_campaigns.return_value = [mock_campaign]
+
+                result = repository.populate_campaigns_and_legs(account_id=1)
+
+        assert result["campaigns_created"] == 1
+        assert result["lots_created"] == 2
+        assert result["legs_created"] == 2
+        assert result["total_pnl"] == 150.0
+
+    def test_total_pnl_sums_multiple_campaigns(self, repository, mock_session):
+        """Test that total_pnl sums P&L from multiple closed campaigns."""
+        with patch.object(repository, "populate_campaigns_from_fills") as mock_populate:
+            mock_populate.return_value = {
+                "lots_created": 4,
+                "closures_created": 4,
+                "campaigns_created": 2,
+                "legs_created": 4,
+                "fills_processed": 8,
+            }
+
+            # Mock two closed campaigns
+            mock_campaign1 = MagicMock()
+            mock_campaign1.status = "closed"
+            mock_campaign1.realized_pnl = 100.0
+
+            mock_campaign2 = MagicMock()
+            mock_campaign2.status = "closed"
+            mock_campaign2.realized_pnl = 50.0
+
+            with patch.object(repository, "get_campaigns") as mock_get_campaigns:
+                mock_get_campaigns.return_value = [mock_campaign1, mock_campaign2]
+
+                result = repository.populate_campaigns_and_legs(account_id=1)
+
+        assert result["total_pnl"] == 150.0
+
+    def test_excludes_open_campaigns_from_total_pnl(self, repository, mock_session):
+        """Test that open campaigns are excluded from total_pnl calculation."""
+        with patch.object(repository, "populate_campaigns_from_fills") as mock_populate:
+            mock_populate.return_value = {
+                "lots_created": 2,
+                "closures_created": 1,
+                "campaigns_created": 2,
+                "legs_created": 2,
+                "fills_processed": 4,
+            }
+
+            # Mock one closed and one open campaign
+            mock_closed = MagicMock()
+            mock_closed.status = "closed"
+            mock_closed.realized_pnl = 100.0
+
+            mock_open = MagicMock()
+            mock_open.status = "open"
+            mock_open.realized_pnl = None  # Open campaigns don't have realized_pnl
+
+            with patch.object(repository, "get_campaigns") as mock_get_campaigns:
+                mock_get_campaigns.return_value = [mock_closed, mock_open]
+
+                result = repository.populate_campaigns_and_legs(account_id=1)
+
+        # Only the closed campaign's P&L should be counted
+        assert result["total_pnl"] == 100.0
+
+
 class TestComputeLegTypes:
     """Tests for _compute_leg_types method."""
 
