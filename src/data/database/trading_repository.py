@@ -1810,9 +1810,22 @@ class TradingBuddyRepository:
         # Run the main population logic
         stats = self.populate_campaigns_from_fills(account_id=account_id, symbol=symbol)
 
-        # Calculate total P&L from newly created campaigns
-        # Get all campaigns for this account to calculate total realized P&L
+        # Backfill legs for any campaigns that have zero legs
         campaigns = self.get_campaigns(account_id, symbol=symbol, limit=1000)
+        for campaign in campaigns:
+            existing_legs = self.get_legs_for_campaign(campaign.id)
+            if not existing_legs:
+                backfill_stats = self.populate_legs_from_campaigns(campaign.id)
+                stats["legs_created"] += backfill_stats.get("legs_created", 0)
+                if backfill_stats.get("legs_created", 0) > 0:
+                    logger.info(
+                        "Backfilled %d legs for campaign id=%s (%s)",
+                        backfill_stats["legs_created"],
+                        campaign.id,
+                        campaign.symbol,
+                    )
+
+        # Calculate total P&L from all campaigns
         total_pnl = sum(c.realized_pnl or 0.0 for c in campaigns if c.status == "closed")
 
         stats["total_pnl"] = total_pnl
