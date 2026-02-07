@@ -96,11 +96,29 @@ class UserAccount(Base):
 class UserProfile(Base):
     """Trading and risk preferences for a user.
 
-    One-to-one relationship with UserAccount. Stores risk parameters,
-    trading style, and experience level.
+    One-to-one relationship with UserAccount. Uses two JSONB columns:
+    - profile: account_balance, default_timeframes, experience_level, trading_style
+    - risk_profile: max_position_size_pct, max_risk_per_trade_pct,
+                    max_daily_loss_pct, min_risk_reward_ratio
     """
 
     __tablename__ = "user_profiles"
+
+    # Default values for profile fields
+    PROFILE_DEFAULTS: dict = {
+        "account_balance": 0.0,
+        "default_timeframes": ["1Min", "5Min", "15Min", "1Hour"],
+        "experience_level": None,
+        "trading_style": None,
+    }
+
+    # Default values for risk_profile fields
+    RISK_PROFILE_DEFAULTS: dict = {
+        "max_position_size_pct": 5.0,
+        "max_risk_per_trade_pct": 1.0,
+        "max_daily_loss_pct": 3.0,
+        "min_risk_reward_ratio": 2.0,
+    }
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_account_id: Mapped[int] = mapped_column(
@@ -110,21 +128,13 @@ class UserProfile(Base):
         nullable=False,
     )
 
-    # Account balance and risk parameters
-    account_balance: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
-    max_position_size_pct: Mapped[float] = mapped_column(Float, default=5.0, nullable=False)
-    max_risk_per_trade_pct: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
-    max_daily_loss_pct: Mapped[float] = mapped_column(Float, default=3.0, nullable=False)
-    min_risk_reward_ratio: Mapped[float] = mapped_column(Float, default=2.0, nullable=False)
-
-    # Default timeframes for analysis
-    default_timeframes: Mapped[dict] = mapped_column(
-        JSONB, default=lambda: ["1Min", "5Min", "15Min", "1Hour"], nullable=False
+    # JSONB columns for flexible profile and risk data
+    profile: Mapped[dict] = mapped_column(
+        JSONB, default=lambda: dict(UserProfile.PROFILE_DEFAULTS), nullable=False
     )
-
-    # Trading profile
-    experience_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    trading_style: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    risk_profile: Mapped[dict] = mapped_column(
+        JSONB, default=lambda: dict(UserProfile.RISK_PROFILE_DEFAULTS), nullable=False
+    )
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -142,14 +152,107 @@ class UserProfile(Base):
     # Relationships
     account: Mapped["UserAccount"] = relationship("UserAccount", back_populates="profile")
 
-    # Constraints
-    __table_args__ = (
-        CheckConstraint("account_balance >= 0", name="ck_profile_balance_positive"),
-        CheckConstraint("max_position_size_pct > 0 AND max_position_size_pct <= 100", name="ck_profile_max_position_pct_range"),
-        CheckConstraint("max_risk_per_trade_pct > 0 AND max_risk_per_trade_pct <= 100", name="ck_profile_max_risk_pct_range"),
-        CheckConstraint("max_daily_loss_pct > 0 AND max_daily_loss_pct <= 100", name="ck_profile_max_daily_loss_range"),
-        CheckConstraint("min_risk_reward_ratio > 0", name="ck_profile_min_rr_positive"),
-    )
+    # ---- Convenience properties for profile fields ----
+
+    @property
+    def account_balance(self) -> float:
+        """Account balance from profile JSONB."""
+        return (self.profile or {}).get("account_balance", self.PROFILE_DEFAULTS["account_balance"])
+
+    @account_balance.setter
+    def account_balance(self, value: float) -> None:
+        if self.profile is None:
+            self.profile = dict(self.PROFILE_DEFAULTS)
+        self.profile = {**self.profile, "account_balance": value}
+
+    @property
+    def default_timeframes(self) -> list[str]:
+        """Default timeframes from profile JSONB."""
+        return (self.profile or {}).get(
+            "default_timeframes", self.PROFILE_DEFAULTS["default_timeframes"]
+        )
+
+    @default_timeframes.setter
+    def default_timeframes(self, value: list[str]) -> None:
+        if self.profile is None:
+            self.profile = dict(self.PROFILE_DEFAULTS)
+        self.profile = {**self.profile, "default_timeframes": value}
+
+    @property
+    def experience_level(self) -> Optional[str]:
+        """Experience level from profile JSONB."""
+        return (self.profile or {}).get("experience_level")
+
+    @experience_level.setter
+    def experience_level(self, value: Optional[str]) -> None:
+        if self.profile is None:
+            self.profile = dict(self.PROFILE_DEFAULTS)
+        self.profile = {**self.profile, "experience_level": value}
+
+    @property
+    def trading_style(self) -> Optional[str]:
+        """Trading style from profile JSONB."""
+        return (self.profile or {}).get("trading_style")
+
+    @trading_style.setter
+    def trading_style(self, value: Optional[str]) -> None:
+        if self.profile is None:
+            self.profile = dict(self.PROFILE_DEFAULTS)
+        self.profile = {**self.profile, "trading_style": value}
+
+    # ---- Convenience properties for risk_profile fields ----
+
+    @property
+    def max_position_size_pct(self) -> float:
+        """Max position size % from risk_profile JSONB."""
+        return (self.risk_profile or {}).get(
+            "max_position_size_pct", self.RISK_PROFILE_DEFAULTS["max_position_size_pct"]
+        )
+
+    @max_position_size_pct.setter
+    def max_position_size_pct(self, value: float) -> None:
+        if self.risk_profile is None:
+            self.risk_profile = dict(self.RISK_PROFILE_DEFAULTS)
+        self.risk_profile = {**self.risk_profile, "max_position_size_pct": value}
+
+    @property
+    def max_risk_per_trade_pct(self) -> float:
+        """Max risk per trade % from risk_profile JSONB."""
+        return (self.risk_profile or {}).get(
+            "max_risk_per_trade_pct", self.RISK_PROFILE_DEFAULTS["max_risk_per_trade_pct"]
+        )
+
+    @max_risk_per_trade_pct.setter
+    def max_risk_per_trade_pct(self, value: float) -> None:
+        if self.risk_profile is None:
+            self.risk_profile = dict(self.RISK_PROFILE_DEFAULTS)
+        self.risk_profile = {**self.risk_profile, "max_risk_per_trade_pct": value}
+
+    @property
+    def max_daily_loss_pct(self) -> float:
+        """Max daily loss % from risk_profile JSONB."""
+        return (self.risk_profile or {}).get(
+            "max_daily_loss_pct", self.RISK_PROFILE_DEFAULTS["max_daily_loss_pct"]
+        )
+
+    @max_daily_loss_pct.setter
+    def max_daily_loss_pct(self, value: float) -> None:
+        if self.risk_profile is None:
+            self.risk_profile = dict(self.RISK_PROFILE_DEFAULTS)
+        self.risk_profile = {**self.risk_profile, "max_daily_loss_pct": value}
+
+    @property
+    def min_risk_reward_ratio(self) -> float:
+        """Min risk/reward ratio from risk_profile JSONB."""
+        return (self.risk_profile or {}).get(
+            "min_risk_reward_ratio", self.RISK_PROFILE_DEFAULTS["min_risk_reward_ratio"]
+        )
+
+    @min_risk_reward_ratio.setter
+    def min_risk_reward_ratio(self, value: float) -> None:
+        if self.risk_profile is None:
+            self.risk_profile = dict(self.RISK_PROFILE_DEFAULTS)
+        self.risk_profile = {**self.risk_profile, "min_risk_reward_ratio": value}
 
     def __repr__(self) -> str:
         return f"<UserProfile(id={self.id}, account_id={self.user_account_id})>"

@@ -196,6 +196,9 @@ class TradingBuddyRepository:
     def create_profile(self, account_id: int, **kwargs) -> UserProfileModel:
         """Create a user profile with default risk params.
 
+        Accepts either flat kwargs (account_balance, max_position_size_pct, etc.)
+        or structured dicts (profile={...}, risk_profile={...}).
+
         Args:
             account_id: Account ID
             **kwargs: Optional overrides for default values
@@ -203,13 +206,28 @@ class TradingBuddyRepository:
         Returns:
             Created UserProfile
         """
+        profile_data = dict(UserProfileModel.PROFILE_DEFAULTS)
+        risk_data = dict(UserProfileModel.RISK_PROFILE_DEFAULTS)
+
+        # Allow passing structured dicts directly
+        if "profile" in kwargs:
+            profile_data.update(kwargs.pop("profile"))
+        if "risk_profile" in kwargs:
+            risk_data.update(kwargs.pop("risk_profile"))
+
+        # Also support flat kwargs for backward compatibility
+        profile_keys = set(UserProfileModel.PROFILE_DEFAULTS.keys())
+        risk_keys = set(UserProfileModel.RISK_PROFILE_DEFAULTS.keys())
+        for key, value in kwargs.items():
+            if key in profile_keys:
+                profile_data[key] = value
+            elif key in risk_keys:
+                risk_data[key] = value
+
         profile = UserProfileModel(
             user_account_id=account_id,
-            account_balance=kwargs.get("account_balance", 0.0),
-            max_position_size_pct=kwargs.get("max_position_size_pct", 5.0),
-            max_risk_per_trade_pct=kwargs.get("max_risk_per_trade_pct", 1.0),
-            max_daily_loss_pct=kwargs.get("max_daily_loss_pct", 3.0),
-            min_risk_reward_ratio=kwargs.get("min_risk_reward_ratio", 2.0),
+            profile=profile_data,
+            risk_profile=risk_data,
         )
         self.session.add(profile)
         self.session.flush()
@@ -232,6 +250,9 @@ class TradingBuddyRepository:
     def update_profile(self, account_id: int, **kwargs) -> Optional[UserProfileModel]:
         """Update user profile fields.
 
+        Accepts either flat kwargs (account_balance, max_position_size_pct, etc.)
+        or structured dicts (profile={...}, risk_profile={...}).
+
         Args:
             account_id: Account ID
             **kwargs: Fields to update
@@ -239,16 +260,44 @@ class TradingBuddyRepository:
         Returns:
             Updated UserProfile or None
         """
-        profile = self.get_profile(account_id)
-        if profile is None:
+        existing = self.get_profile(account_id)
+        if existing is None:
             return None
 
+        profile_keys = set(UserProfileModel.PROFILE_DEFAULTS.keys())
+        risk_keys = set(UserProfileModel.RISK_PROFILE_DEFAULTS.keys())
+
+        # Handle structured dict updates
+        if "profile" in kwargs:
+            updated = dict(existing.profile or UserProfileModel.PROFILE_DEFAULTS)
+            updated.update(kwargs.pop("profile"))
+            existing.profile = updated
+        if "risk_profile" in kwargs:
+            updated = dict(existing.risk_profile or UserProfileModel.RISK_PROFILE_DEFAULTS)
+            updated.update(kwargs.pop("risk_profile"))
+            existing.risk_profile = updated
+
+        # Handle flat kwargs for backward compatibility
+        profile_updates = {}
+        risk_updates = {}
         for key, value in kwargs.items():
-            if hasattr(profile, key):
-                setattr(profile, key, value)
+            if key in profile_keys:
+                profile_updates[key] = value
+            elif key in risk_keys:
+                risk_updates[key] = value
+
+        if profile_updates:
+            updated = dict(existing.profile or UserProfileModel.PROFILE_DEFAULTS)
+            updated.update(profile_updates)
+            existing.profile = updated
+
+        if risk_updates:
+            updated = dict(existing.risk_profile or UserProfileModel.RISK_PROFILE_DEFAULTS)
+            updated.update(risk_updates)
+            existing.risk_profile = updated
 
         self.session.flush()
-        return profile
+        return existing
 
     # -------------------------------------------------------------------------
     # User Rules Operations
