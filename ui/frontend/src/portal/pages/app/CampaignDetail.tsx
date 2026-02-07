@@ -333,8 +333,8 @@ export default function CampaignDetail() {
             )}
           </div>
 
-          {/* Right: Price + PnL chart */}
-          <div className="flex-1 min-w-0">
+          {/* Right: Price + PnL chart (60% of panel) */}
+          <div className="w-[60%] shrink-0">
             {chartLoading ? (
               <div className="flex h-[180px] items-center justify-center text-xs text-[var(--text-secondary)]">
                 Loading chart...
