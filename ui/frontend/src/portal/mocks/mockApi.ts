@@ -12,6 +12,7 @@ import { MOCK_JOURNAL_ENTRIES } from './fixtures/journal';
 import { MOCK_STRATEGIES, MOCK_EVALUATION_CONTROLS } from './fixtures/strategies';
 import { MOCK_BEHAVIORAL_TAGS } from './fixtures/tags';
 import { MOCK_ONBOARDING_STATUS } from './fixtures/onboarding';
+import { MOCK_CAMPAIGN_SUMMARIES, MOCK_CAMPAIGN_DETAILS } from './fixtures/campaigns';
 import { MOCK_USER, MOCK_PROFILE, MOCK_RISK_PREFERENCES } from './mockUser';
 import type {
   User,
@@ -37,6 +38,9 @@ import type {
   BrokerStatus,
   TickerPnlSummary,
   PnlTimeseries,
+  CampaignSummary,
+  CampaignDetail,
+  DecisionContext,
 } from '../types';
 
 // Simulate network delay
@@ -931,4 +935,31 @@ export async function fetchMockFeatures(symbol: string): Promise<MockFeatureData
     ohlcvCache.set(symbol, generateMockOHLCV(symbol));
   }
   return generateMockFeatures(ohlcvCache.get(symbol)!);
+}
+
+// --- Campaigns ---
+
+export async function fetchCampaigns(params: { symbol?: string; status?: string } = {}): Promise<CampaignSummary[]> {
+  await delay();
+  let filtered = [...MOCK_CAMPAIGN_SUMMARIES];
+  if (params.symbol) {
+    const sym = params.symbol.toUpperCase();
+    filtered = filtered.filter(c => c.symbol.includes(sym));
+  }
+  if (params.status) {
+    filtered = filtered.filter(c => c.status === params.status);
+  }
+  return filtered;
+}
+
+export async function fetchCampaignDetail(campaignId: string): Promise<CampaignDetail> {
+  await delay();
+  const detail = MOCK_CAMPAIGN_DETAILS[campaignId];
+  if (!detail) throw new Error(`Campaign ${campaignId} not found`);
+  return detail;
+}
+
+export async function saveDecisionContext(context: DecisionContext): Promise<DecisionContext> {
+  await delay();
+  return { ...context, updatedAt: new Date().toISOString() };
 }

@@ -232,7 +232,8 @@ export async function fetchTrades(params: {
   }
 
   const qs = new URLSearchParams();
-  qs.set('user_id', String(USER_ID));
+  // TODO: wire up real user_id from auth context
+  qs.set('user_id', '1');
   if (params.symbol) qs.set('symbol', params.symbol);
   const sortVal = mapSort(params.sort);
   if (sortVal) qs.set('sort', sortVal);

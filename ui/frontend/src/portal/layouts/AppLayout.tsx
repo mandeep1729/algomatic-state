@@ -27,6 +27,8 @@ import { FeatureFilter } from '../../components/FeatureFilter';
 // Map route paths to breadcrumb labels
 const BREADCRUMB_LABELS: Record<string, string> = {
   '/app': 'Overview',
+  '/app/campaigns': 'Campaigns',
+  '/app/evaluate': 'Evaluate',
   '/app/trades': 'Trades',
   '/app/insights': 'Insights',
   '/app/journal': 'Journal',
@@ -50,6 +52,9 @@ function Breadcrumbs() {
     if (label && label !== 'Settings') {
       segments.push({ label, path });
     }
+  } else if (path.startsWith('/app/campaigns/')) {
+    segments.push({ label: 'Campaigns', path: '/app/campaigns' });
+    segments.push({ label: 'Campaign Detail', path });
   } else if (path.startsWith('/app/trades/')) {
     segments.push({ label: 'Trades', path: '/app/trades' });
     segments.push({ label: 'Trade Detail', path });

@@ -21,14 +21,14 @@ export const appNavSections: NavItem[] = [
     icon: 'TrendingUp',
   },
   {
-    path: '/app/trades',
-    label: 'Trades',
+    path: '/app/campaigns',
+    label: 'Campaigns',
     icon: 'ArrowRightLeft',
   },
   {
-    path: '/app/journal',
-    label: 'Journal',
-    icon: 'BookOpen',
+    path: '/app/evaluate',
+    label: 'Evaluate',
+    icon: 'Search',
   },
   {
     path: '/app/settings',
