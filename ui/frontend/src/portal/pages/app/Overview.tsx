@@ -318,6 +318,7 @@ export default function Overview() {
                     <th className="px-6 py-4">Entry</th>
                     <th className="px-6 py-4">Exit</th>
                     <th className="px-6 py-4">PnL%</th>
+                    <th className="px-6 py-4">Broker</th>
                     <th className="px-6 py-4">Flags</th>
                   </tr>
                 </thead>
@@ -361,6 +362,9 @@ export default function Overview() {
                             <span className="text-[var(--text-secondary)]">--</span>
                           )}
                         </td>
+                        <td className="px-6 py-4 text-xs text-[var(--text-secondary)]">
+                          {trade.brokerage ?? '--'}
+                        </td>
                         <td className="px-6 py-4">
                           {trade.is_flagged ? (
                             <span className="rounded-full bg-[var(--accent-red)]/10 px-2.5 py-1 text-xs font-medium text-[var(--accent-red)]">
@@ -375,7 +379,7 @@ export default function Overview() {
                   })}
                   {recentTrades.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
+                      <td colSpan={9} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
                         {selectedTicker
                           ? `No trades found for ${selectedTicker}.`
                           : <>No trades yet. <Link to="/app/evaluate" className="text-[var(--accent-blue)] hover:underline">Evaluate your first trade</Link></>
