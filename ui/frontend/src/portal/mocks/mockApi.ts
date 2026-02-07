@@ -474,7 +474,17 @@ const SEED_PRICES: Record<string, number> = {
   AAPL: 185, TSLA: 245, NVDA: 480, MSFT: 410, SPY: 520, AMZN: 180, META: 490, GOOG: 155,
 };
 
-function generateMockOHLCV(symbol: string, bars = 200): MockOHLCVData {
+interface GenerateOHLCVOptions {
+  /** Number of bars to generate (default 200) */
+  bars?: number;
+  /** Start time in ms. When provided with endMs, bar interval is derived from the range. */
+  startMs?: number;
+  /** End time in ms. */
+  endMs?: number;
+}
+
+function generateMockOHLCV(symbol: string, opts: GenerateOHLCVOptions = {}): MockOHLCVData {
+  const bars = opts.bars ?? 200;
   const basePrice = SEED_PRICES[symbol] ?? 100;
   const timestamps: string[] = [];
   const open: number[] = [];
@@ -484,11 +494,22 @@ function generateMockOHLCV(symbol: string, bars = 200): MockOHLCVData {
   const volume: number[] = [];
 
   let price = basePrice;
-  // Start 200 bars ago in 5-min increments
-  const startMs = Date.now() - bars * 5 * 60 * 1000;
+
+  // Determine start time and bar interval
+  let startMs: number;
+  let intervalMs: number;
+  if (opts.startMs != null && opts.endMs != null) {
+    // Spread bars evenly across the provided date range
+    startMs = opts.startMs;
+    intervalMs = Math.max(60_000, Math.floor((opts.endMs - opts.startMs) / bars));
+  } else {
+    // Default: 200 bars of 5-min increments ending at now
+    intervalMs = 5 * 60 * 1000;
+    startMs = Date.now() - bars * intervalMs;
+  }
 
   for (let i = 0; i < bars; i++) {
-    const ts = new Date(startMs + i * 5 * 60 * 1000).toISOString();
+    const ts = new Date(startMs + i * intervalMs).toISOString();
     timestamps.push(ts);
 
     const change = (Math.random() - 0.48) * basePrice * 0.005;
@@ -926,6 +947,29 @@ export async function fetchMockOHLCVData(symbol: string): Promise<MockOHLCVData>
     ohlcvCache.set(symbol, generateMockOHLCV(symbol));
   }
   return ohlcvCache.get(symbol)!;
+}
+
+/**
+ * Generate OHLCV data covering a specific date range for campaign charts.
+ * Uses a separate cache keyed by symbol + range so it does not interfere
+ * with the default (recent) OHLCV cache used elsewhere.
+ */
+const campaignOhlcvCache = new Map<string, MockOHLCVData>();
+
+export async function fetchMockCampaignOHLCVData(
+  symbol: string,
+  rangeStartMs: number,
+  rangeEndMs: number,
+): Promise<MockOHLCVData> {
+  await delay(300);
+  const key = `${symbol}:${rangeStartMs}:${rangeEndMs}`;
+  if (!campaignOhlcvCache.has(key)) {
+    campaignOhlcvCache.set(
+      key,
+      generateMockOHLCV(symbol, { startMs: rangeStartMs, endMs: rangeEndMs }),
+    );
+  }
+  return campaignOhlcvCache.get(key)!;
 }
 
 export async function fetchMockFeatures(symbol: string): Promise<MockFeatureData> {

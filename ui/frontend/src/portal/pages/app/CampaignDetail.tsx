@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { fetchCampaignDetail, saveDecisionContext, fetchMockOHLCVData } from '../../mocks/mockApi';
+import { fetchCampaignDetail, saveDecisionContext, fetchMockCampaignOHLCVData } from '../../mocks/mockApi';
 import { Timeline } from '../../components/campaigns/Timeline';
 import { EvaluationGrid } from '../../components/campaigns/EvaluationGrid';
 import { ContextPanel } from '../../components/campaigns/ContextPanel';
@@ -124,29 +124,23 @@ export default function CampaignDetail() {
     async function loadChartData() {
       setChartLoading(true);
       try {
-        const ohlcv = await fetchMockOHLCVData(symbol);
+        // Fetch OHLCV covering the full campaign date range so all leg
+        // markers (OPEN, ADD, CLOSE, etc.) map to distinct chart positions.
+        const rangeStartMs = new Date(campaign.openedAt).getTime();
+        const rangeEndMs = campaign.closedAt
+          ? new Date(campaign.closedAt).getTime()
+          : Date.now();
+
+        const ohlcv = await fetchMockCampaignOHLCVData(symbol, rangeStartMs, rangeEndMs);
         if (cancelled) return;
 
-        // Crop OHLCV data to campaign date range
-        const startMs = new Date(campaign.openedAt).getTime();
-        const endMs = campaign.closedAt
-          ? new Date(campaign.closedAt).getTime()
-          : Infinity;
-
-        const filteredTs: string[] = [];
-        const filteredClose: number[] = [];
-        for (let i = 0; i < ohlcv.timestamps.length; i++) {
-          const tsMs = new Date(ohlcv.timestamps[i]).getTime();
-          if (tsMs >= startMs && tsMs <= endMs) {
-            filteredTs.push(ohlcv.timestamps[i]);
-            filteredClose.push(ohlcv.close[i]);
-          }
-        }
+        const filteredTs = ohlcv.timestamps;
+        const filteredClose = ohlcv.close;
 
         setPriceTimestamps(filteredTs);
         setClosePrices(filteredClose);
 
-        // Compute campaign-specific running PNL from legs (on cropped data)
+        // Compute campaign-specific running PNL from legs
         const pnl = computeCampaignRunningPnl(
           legs,
           campaign.direction,
