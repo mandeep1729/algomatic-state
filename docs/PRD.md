@@ -127,6 +127,66 @@ As specified in FEATURE.md:
 
 ---
 
+## 3. State Representation Requirements
+
+### 3.1 HMM Regime Tracking
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| ST-3.1 | Train Gaussian HMM on scaled feature vectors | P0 | Done |
+| ST-3.2 | Support multiple scalers (Robust, Standard, Yeo-Johnson) | P0 | Done |
+| ST-3.3 | Support PCA and Temporal PCA encoders | P0 | Done |
+| ST-3.4 | Auto-select number of states via AIC/BIC | P0 | Done |
+| ST-3.5 | Anti-chatter logic for state transitions | P1 | Done |
+| ST-3.6 | Out-of-distribution (OOD) detection | P1 | Done |
+| ST-3.7 | Semantic state labeling (up_trending, down_volatile, etc.) | P1 | Done |
+| ST-3.8 | Store state assignments in computed_features table | P0 | Done |
+
+### 3.2 PCA State Computation (Alternative)
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| PC-3.1 | PCA + K-means clustering for simpler state computation | P1 | Done |
+| PC-3.2 | Auto-select components via explained variance | P1 | Done |
+| PC-3.3 | Auto-select clusters via elbow method | P1 | Done |
+
+---
+
+## 4. Trading Buddy Requirements
+
+### 4.1 Trade Evaluation
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| TB-4.1 | Modular evaluator architecture with registry | P0 | Done |
+| TB-4.2 | Risk/Reward evaluator (R:R ratio, sizing, stop sanity) | P0 | Done |
+| TB-4.3 | Exit Plan evaluator (stop/target presence, proximity) | P0 | Done |
+| TB-4.4 | Regime Fit evaluator (direction conflict, transition risk) | P0 | Done |
+| TB-4.5 | Multi-timeframe Alignment evaluator | P1 | Done |
+| TB-4.6 | Severity levels: BLOCKER, CRITICAL, WARNING, INFO | P0 | Done |
+| TB-4.7 | Score calculation (100 base minus penalties) | P0 | Done |
+| TB-4.8 | Guardrails for no-prediction policy | P0 | Done |
+
+### 4.2 Trade Lifecycle
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| TL-4.1 | Position campaigns (flat-to-flat journeys) | P0 | Done |
+| TL-4.2 | Campaign legs for semantic decision points | P0 | Done |
+| TL-4.3 | Lot-based inventory tracking with FIFO/LIFO | P1 | Done |
+| TL-4.4 | Realized P&L calculation | P0 | Done |
+| TL-4.5 | Decision context capture (hypothesis, feelings) | P2 | Done |
+
+### 4.3 Broker Integration
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| BI-4.1 | SnapTrade integration for broker connections | P1 | Done |
+| BI-4.2 | Trade fill sync from brokers | P0 | Done |
+| BI-4.3 | Direct Alpaca trade sync | P1 | Done |
+
+---
+
 ## 5. Backtesting Requirements
 
 | ID | Requirement | Priority | Status |

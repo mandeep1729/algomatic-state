@@ -110,6 +110,9 @@ class UserProfile(Base):
         "default_timeframes": ["1Min", "5Min", "15Min", "1Hour"],
         "experience_level": None,
         "trading_style": None,
+        "primary_markets": ["US_EQUITIES"],
+        "account_size_range": None,
+        "evaluation_controls": None,
     }
 
     # Default values for risk_profile fields
@@ -118,6 +121,8 @@ class UserProfile(Base):
         "max_risk_per_trade_pct": 1.0,
         "max_daily_loss_pct": 3.0,
         "min_risk_reward_ratio": 2.0,
+        "max_open_positions": 5,
+        "stop_loss_required": True,
     }
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -253,6 +258,69 @@ class UserProfile(Base):
         if self.risk_profile is None:
             self.risk_profile = dict(self.RISK_PROFILE_DEFAULTS)
         self.risk_profile = {**self.risk_profile, "min_risk_reward_ratio": value}
+
+    @property
+    def max_open_positions(self) -> int:
+        """Max open positions from risk_profile JSONB."""
+        return (self.risk_profile or {}).get(
+            "max_open_positions", self.RISK_PROFILE_DEFAULTS["max_open_positions"]
+        )
+
+    @max_open_positions.setter
+    def max_open_positions(self, value: int) -> None:
+        if self.risk_profile is None:
+            self.risk_profile = dict(self.RISK_PROFILE_DEFAULTS)
+        self.risk_profile = {**self.risk_profile, "max_open_positions": value}
+
+    @property
+    def stop_loss_required(self) -> bool:
+        """Whether stop loss is required from risk_profile JSONB."""
+        return (self.risk_profile or {}).get(
+            "stop_loss_required", self.RISK_PROFILE_DEFAULTS["stop_loss_required"]
+        )
+
+    @stop_loss_required.setter
+    def stop_loss_required(self, value: bool) -> None:
+        if self.risk_profile is None:
+            self.risk_profile = dict(self.RISK_PROFILE_DEFAULTS)
+        self.risk_profile = {**self.risk_profile, "stop_loss_required": value}
+
+    # ---- Convenience properties for new profile fields ----
+
+    @property
+    def primary_markets(self) -> Optional[list]:
+        """Primary markets from profile JSONB."""
+        return (self.profile or {}).get(
+            "primary_markets", self.PROFILE_DEFAULTS["primary_markets"]
+        )
+
+    @primary_markets.setter
+    def primary_markets(self, value: Optional[list]) -> None:
+        if self.profile is None:
+            self.profile = dict(self.PROFILE_DEFAULTS)
+        self.profile = {**self.profile, "primary_markets": value}
+
+    @property
+    def account_size_range(self) -> Optional[str]:
+        """Account size range from profile JSONB."""
+        return (self.profile or {}).get("account_size_range")
+
+    @account_size_range.setter
+    def account_size_range(self, value: Optional[str]) -> None:
+        if self.profile is None:
+            self.profile = dict(self.PROFILE_DEFAULTS)
+        self.profile = {**self.profile, "account_size_range": value}
+
+    @property
+    def evaluation_controls(self) -> Optional[dict]:
+        """Evaluation controls from profile JSONB."""
+        return (self.profile or {}).get("evaluation_controls")
+
+    @evaluation_controls.setter
+    def evaluation_controls(self, value: Optional[dict]) -> None:
+        if self.profile is None:
+            self.profile = dict(self.PROFILE_DEFAULTS)
+        self.profile = {**self.profile, "evaluation_controls": value}
 
     def __repr__(self) -> str:
         return f"<UserProfile(id={self.id}, account_id={self.user_account_id})>"

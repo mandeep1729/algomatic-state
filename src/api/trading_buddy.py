@@ -157,6 +157,10 @@ def _create_domain_intent(
     Returns:
         Domain TradeIntent
     """
+    logger.debug(
+        "Creating domain intent: symbol=%s, direction=%s, timeframe=%s, account_id=%d",
+        data.symbol, data.direction, data.timeframe, account_id,
+    )
     return DomainTradeIntent(
         user_id=account_id,
         account_id=account_id,
@@ -175,6 +179,10 @@ def _create_domain_intent(
 
 def _intent_to_response(intent: DomainTradeIntent) -> TradeIntentResponse:
     """Convert domain intent to API response."""
+    logger.debug(
+        "Converting intent to response: intent_id=%s, symbol=%s, status=%s",
+        intent.intent_id, intent.symbol, intent.status.value,
+    )
     return TradeIntentResponse(
         intent_id=intent.intent_id,
         symbol=intent.symbol,
@@ -195,6 +203,10 @@ def _intent_to_response(intent: DomainTradeIntent) -> TradeIntentResponse:
 
 def _build_evaluation_response(result) -> EvaluationResponse:
     """Convert domain EvaluationResult to API response."""
+    logger.debug(
+        "Building evaluation response: score=%.2f, has_blockers=%s, items=%d",
+        result.score, result.has_blockers, len(result.items),
+    )
 
     def _items_to_response(items):
         return [
@@ -251,6 +263,7 @@ async def create_trade_intent(
     The intent is validated for basic coherence (stop/target vs entry)
     and persisted to the database.
     """
+    logger.debug("create_trade_intent: user_id=%d, symbol=%s", user_id, data.symbol)
     try:
         intent = _create_domain_intent(data, account_id=user_id)
 
@@ -287,6 +300,10 @@ async def evaluate_trade_intent(
     - Top 3 issues
     - All evaluation items grouped by severity
     """
+    logger.debug(
+        "evaluate_trade_intent: user_id=%d, symbol=%s, evaluators=%s",
+        user_id, request.intent.symbol, request.evaluators,
+    )
     try:
         account_id = user_id
 
@@ -310,6 +327,7 @@ async def evaluate_trade_intent(
 
             # Load user-specific evaluator configs
             evaluator_configs = repo.build_evaluator_configs(account_id)
+            logger.debug("Loaded evaluator configs for account %d: %d configs", account_id, len(evaluator_configs))
 
         # Build context (ensure_fresh_data triggers a messaging request
         # so that the orchestrator fetches any missing bars before we read)
@@ -332,6 +350,10 @@ async def evaluate_trade_intent(
 
         # Run evaluation
         result = orchestrator.evaluate(intent, context)
+        logger.debug(
+            "Evaluation complete: score=%.2f, items=%d, evaluators=%s",
+            result.score, len(result.items), result.evaluators_run,
+        )
 
         # Apply guardrails — sanitize any predictive language
         guardrail_warnings = validate_evaluation_result(result)
@@ -389,6 +411,7 @@ async def get_trade_intent(intent_id: int):
     Args:
         intent_id: ID of the persisted trade intent
     """
+    logger.debug("get_trade_intent: intent_id=%d", intent_id)
     try:
         db_manager = get_db_manager()
         with db_manager.get_session() as session:
@@ -449,9 +472,12 @@ async def list_evaluators():
     Returns metadata about registered evaluators including
     name, description, and default configuration.
     """
+    logger.debug("list_evaluators called")
     from src.evaluators.registry import list_evaluators as _list
 
-    return {"evaluators": _list()}
+    evaluators = _list()
+    logger.debug("Returning %d evaluators", len(evaluators))
+    return {"evaluators": evaluators}
 
 
 @router.get("/regime")
@@ -464,6 +490,7 @@ async def get_regime_snapshot(
     Returns regime state, probability, transition risk, entropy,
     and semantic label.
     """
+    logger.debug("get_regime_snapshot: symbol=%s, timeframe=%s", symbol, timeframe)
     try:
         context_builder = ContextPackBuilder(
             include_features=False,
@@ -504,6 +531,7 @@ async def get_key_levels(
 
     Returns pivot points, prior day HLC, rolling range, and VWAP.
     """
+    logger.debug("get_key_levels: symbol=%s, timeframe=%s", symbol, timeframe)
     try:
         context_builder = ContextPackBuilder(
             include_regimes=False,

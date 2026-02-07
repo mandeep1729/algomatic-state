@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { evaluateTrade } from '../../mocks/mockApi';
+import api from '../../api';
 import EvaluationDisplay from '../../components/EvaluationDisplay';
 import type { EvaluateResponse, TradeDirection } from '../../types';
 
@@ -67,7 +67,7 @@ export default function EvaluateIdea() {
     setResult(null);
 
     try {
-      const res = await evaluateTrade({
+      const res = await api.evaluateTrade({
         intent: {
           symbol: symbol.toUpperCase().trim(),
           direction,

@@ -231,13 +231,19 @@ def _context_to_response(ctx) -> DecisionContextResponse:
     if isinstance(exit_intent, dict):
         exit_intent = exit_intent.get("type", "unknown")
 
+    # The DB model uses strategy_id (FK) not strategy_tags (array).
+    # Return the strategy name as a single-element list if set.
+    strategy_tags: List[str] = []
+    if hasattr(ctx, 'strategy') and ctx.strategy:
+        strategy_tags = [ctx.strategy.name]
+
     return DecisionContextResponse(
         contextId=str(ctx.id),
         scope="leg" if ctx.leg_id else "campaign",
         campaignId=str(ctx.campaign_id) if ctx.campaign_id else None,
         legId=str(ctx.leg_id) if ctx.leg_id else None,
         contextType=ctx.context_type,
-        strategyTags=ctx.strategy_tags or [],
+        strategyTags=strategy_tags,
         hypothesis=ctx.hypothesis,
         exitIntent=exit_intent if isinstance(exit_intent, str) else None,
         feelingsThen=ctx.feelings_then,
@@ -626,7 +632,6 @@ async def save_context(
     if existing:
         # Update existing context
         existing.context_type = request.contextType
-        existing.strategy_tags = request.strategyTags
         existing.hypothesis = request.hypothesis
         existing.exit_intent = exit_intent_value
         existing.feelings_then = request.feelingsThen
@@ -638,12 +643,13 @@ async def save_context(
         return _context_to_response(existing)
     else:
         # Create new context
+        # Note: strategy_tags from frontend are not persisted yet — the DB uses
+        # strategy_id (FK to strategies table) instead of a tags array.
         ctx = repo.create_decision_context(
             account_id=user_id,
             campaign_id=campaign_id,
             leg_id=leg_id,
             context_type=request.contextType,
-            strategy_tags=request.strategyTags,
             hypothesis=request.hypothesis,
             exit_intent=exit_intent_value,
             feelings_then=request.feelingsThen,

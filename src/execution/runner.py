@@ -293,6 +293,7 @@ class TradingRunner:
 
     def _trading_cycle(self) -> None:
         """Execute one trading cycle."""
+        logger.debug("Starting trading cycle for %d symbols", len(self._config.symbols))
         # Fetch latest bars
         self._fetch_latest_bars()
 
@@ -372,8 +373,10 @@ class TradingRunner:
         Returns:
             Signal or None if no signal
         """
+        logger.debug("Generating signal for %s", symbol)
         features = self._features_cache.get(symbol)
         if features is None or features.empty:
+            logger.debug("No features available for %s", symbol)
             return None
 
         # Use the latest feature row
@@ -385,8 +388,13 @@ class TradingRunner:
         # Find signal for this symbol
         for signal in signals:
             if signal.symbol == symbol:
+                logger.debug(
+                    "Signal generated for %s: direction=%s, strength=%.2f",
+                    symbol, signal.direction.value, signal.strength,
+                )
                 return signal
 
+        logger.debug("No signal generated for %s", symbol)
         return None
 
     def _process_signal(
@@ -402,6 +410,10 @@ class TradingRunner:
             account: Current account info
             positions: Current positions
         """
+        logger.debug(
+            "Processing signal: symbol=%s, is_exit=%s, account_equity=%.2f",
+            signal.symbol, signal.is_exit, account.equity,
+        )
         if signal.is_exit:
             # Close position
             self._handle_exit_signal(signal)

@@ -191,6 +191,7 @@ class DataQualityValidator:
         Returns:
             DataQualityReport with validation results
         """
+        logger.debug("Validating data quality: symbol=%s, rows=%d", symbol, len(df))
         report = DataQualityReport(
             symbol=symbol,
             total_rows=len(df),
@@ -246,6 +247,7 @@ class DataQualityValidator:
 
     def _check_columns(self, df: pd.DataFrame, report: DataQualityReport) -> None:
         """Check for required columns."""
+        logger.debug("Checking required columns: %s", self.REQUIRED_COLUMNS)
         missing = []
         for col in self.REQUIRED_COLUMNS:
             if col not in df.columns:
@@ -306,8 +308,10 @@ class DataQualityValidator:
     def _detect_gaps(self, df: pd.DataFrame, report: DataQualityReport) -> None:
         """Detect gaps in timestamps."""
         if len(df) < 2:
+            logger.debug("Gap detection skipped: fewer than 2 rows")
             return
 
+        logger.debug("Detecting gaps with expected frequency: %s", self.expected_frequency)
         # Calculate expected interval
         expected_delta = pd.Timedelta(self.expected_frequency)
 
@@ -355,7 +359,10 @@ class DataQualityValidator:
         available_cols = [c for c in price_cols if c in df.columns]
 
         if not available_cols or len(df) < 2:
+            logger.debug("Outlier detection skipped: insufficient data")
             return
+
+        logger.debug("Detecting outliers with threshold: %.2f%%", self.outlier_threshold * 100)
 
         for col in available_cols:
             # Calculate percentage changes

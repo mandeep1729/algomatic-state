@@ -35,6 +35,13 @@ import type {
   DecisionContext,
   TickerPnlSummary,
   PnlTimeseries,
+  TradingProfile,
+  RiskPreferences,
+  StrategyDefinition,
+  EvaluationControls,
+  JournalEntry,
+  JournalEntryCreate,
+  BehavioralTag,
 } from '../types';
 
 const TOKEN_KEY = 'auth_token';
@@ -505,4 +512,76 @@ export async function fetchTickerPnlTimeseries(
     timestamps: ohlcvTimestamps,
     cumulative_pnl,
   };
+}
+
+// =============================================================================
+// Trading Profile — GET/PUT /api/user/profile
+// =============================================================================
+
+export async function fetchTradingProfile(): Promise<TradingProfile> {
+  return get<TradingProfile>('/api/user/profile');
+}
+
+export async function updateTradingProfile(profile: TradingProfile): Promise<TradingProfile> {
+  return put<TradingProfile>('/api/user/profile', profile);
+}
+
+// =============================================================================
+// Risk Preferences — GET/PUT /api/user/risk-preferences
+// =============================================================================
+
+export async function fetchRiskPreferences(): Promise<RiskPreferences> {
+  return get<RiskPreferences>('/api/user/risk-preferences');
+}
+
+export async function updateRiskPreferences(prefs: RiskPreferences): Promise<RiskPreferences> {
+  return put<RiskPreferences>('/api/user/risk-preferences', prefs);
+}
+
+// =============================================================================
+// Strategies — GET/POST/PUT /api/user/strategies
+// =============================================================================
+
+export async function fetchStrategies(): Promise<StrategyDefinition[]> {
+  return get<StrategyDefinition[]>('/api/user/strategies');
+}
+
+export async function createStrategy(strategy: Omit<StrategyDefinition, 'id'>): Promise<StrategyDefinition> {
+  return post<StrategyDefinition>('/api/user/strategies', strategy);
+}
+
+export async function updateStrategy(id: string, updates: Partial<StrategyDefinition>): Promise<StrategyDefinition> {
+  return put<StrategyDefinition>(`/api/user/strategies/${encodeURIComponent(id)}`, updates);
+}
+
+// =============================================================================
+// Evaluation Controls — GET/PUT /api/user/evaluation-controls
+// =============================================================================
+
+export async function fetchEvaluationControls(): Promise<EvaluationControls> {
+  return get<EvaluationControls>('/api/user/evaluation-controls');
+}
+
+export async function updateEvaluationControls(controls: EvaluationControls): Promise<EvaluationControls> {
+  return put<EvaluationControls>('/api/user/evaluation-controls', controls);
+}
+
+// =============================================================================
+// Journal — GET/POST/PUT /api/journal/entries, GET /api/journal/tags
+// =============================================================================
+
+export async function fetchJournalEntries(): Promise<JournalEntry[]> {
+  return get<JournalEntry[]>('/api/journal/entries');
+}
+
+export async function createJournalEntry(entry: JournalEntryCreate): Promise<JournalEntry> {
+  return post<JournalEntry>('/api/journal/entries', entry);
+}
+
+export async function updateJournalEntry(entryId: string, updates: Partial<JournalEntryCreate>): Promise<JournalEntry> {
+  return put<JournalEntry>(`/api/journal/entries/${encodeURIComponent(entryId)}`, updates);
+}
+
+export async function fetchBehavioralTags(): Promise<BehavioralTag[]> {
+  return get<BehavioralTag[]>('/api/journal/tags');
 }

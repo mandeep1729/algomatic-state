@@ -10,6 +10,7 @@ from typing import Optional
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -46,6 +47,12 @@ class Strategy(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    direction: Mapped[Optional[str]] = mapped_column(String(10), default="both", nullable=True)
+    timeframes: Mapped[Optional[dict]] = mapped_column(JSONB, default=list, nullable=True)
+    entry_criteria: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    exit_criteria: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    max_risk_pct: Mapped[Optional[float]] = mapped_column(Float, default=2.0, nullable=True)
+    min_risk_reward: Mapped[Optional[float]] = mapped_column(Float, default=1.5, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     # Strategy-specific risk overrides (subset of user_profiles.risk_profile keys).

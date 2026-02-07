@@ -95,6 +95,10 @@ class OrderManager:
             default_order_type: Default order type for signal conversion
             default_time_in_force: Default time in force
         """
+        logger.debug(
+            "Initializing OrderManager: order_type=%s, time_in_force=%s",
+            default_order_type, default_time_in_force,
+        )
         self._client = client
         self._default_order_type = default_order_type
         self._default_time_in_force = default_time_in_force
@@ -139,7 +143,12 @@ class OrderManager:
         Returns:
             Order ready for submission, or None if signal is FLAT
         """
+        logger.debug(
+            "Converting signal to order: symbol=%s, direction=%s, size=%.2f, price=%.2f",
+            signal.symbol, signal.direction.value, signal.size, current_price,
+        )
         if signal.direction == SignalDirection.FLAT:
+            logger.debug("Signal is FLAT, returning None")
             return None
 
         # Determine side
@@ -220,6 +229,10 @@ class OrderManager:
         Returns:
             Updated order with broker ID and status
         """
+        logger.debug(
+            "Submitting order: symbol=%s, side=%s, qty=%.2f, type=%s",
+            order.symbol, order.side, order.quantity, order.order_type,
+        )
         try:
             if order.order_type == OrderType.MARKET:
                 submitted = self._client.submit_market_order(
@@ -252,6 +265,10 @@ class OrderManager:
                 self._pending_orders[order.client_order_id] = order
 
             self._order_history.append(order)
+            logger.debug(
+                "Order submitted successfully: broker_id=%s, status=%s",
+                order.broker_order_id, order.status,
+            )
 
             return order
 
@@ -388,6 +405,7 @@ class OrderManager:
         Returns:
             True if cancelled successfully
         """
+        logger.debug("Cancelling order: client_order_id=%s", client_order_id)
         order = self._pending_orders.get(client_order_id)
         if order is None:
             logger.warning(f"Order not found for cancellation", extra={"client_order_id": client_order_id})
@@ -402,6 +420,7 @@ class OrderManager:
             order.status = OrderStatus.CANCELLED
             order.updated_at = datetime.now()
             del self._pending_orders[client_order_id]
+            logger.debug("Order cancelled: broker_id=%s", order.broker_order_id)
 
         return success
 
@@ -411,6 +430,7 @@ class OrderManager:
         Returns:
             Number of orders cancelled
         """
+        logger.debug("Cancelling all orders: %d pending", len(self._pending_orders))
         count = self._client.cancel_all_orders()
 
         # Update local tracking
@@ -419,6 +439,7 @@ class OrderManager:
             order.updated_at = datetime.now()
 
         self._pending_orders.clear()
+        logger.debug("Cancelled %d orders", count)
         return count
 
     def close_position(self, symbol: str) -> Order | None:
