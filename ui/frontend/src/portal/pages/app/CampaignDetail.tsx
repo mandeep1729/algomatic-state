@@ -1,12 +1,73 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { fetchCampaignDetail, saveDecisionContext, fetchMockOHLCVData, fetchTickerPnlTimeseries } from '../../mocks/mockApi';
+import { fetchCampaignDetail, saveDecisionContext, fetchMockOHLCVData } from '../../mocks/mockApi';
 import { Timeline } from '../../components/campaigns/Timeline';
 import { EvaluationGrid } from '../../components/campaigns/EvaluationGrid';
 import { ContextPanel } from '../../components/campaigns/ContextPanel';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
 import { CampaignPricePnlChart } from '../../components/campaigns/CampaignPricePnlChart';
-import type { CampaignDetail as CampaignDetailType, DecisionContext, EvaluationBundle, PnlTimeseries } from '../../types';
+import type { CampaignDetail as CampaignDetailType, CampaignLeg, DecisionContext, EvaluationBundle } from '../../types';
+
+/**
+ * Compute running (unrealized + realized) PNL for a campaign at each OHLCV timestamp.
+ * Tracks net position from legs and marks-to-market against close prices.
+ */
+function computeCampaignRunningPnl(
+  legs: CampaignLeg[],
+  direction: 'long' | 'short',
+  ohlcvTimestamps: string[],
+  closePrices: number[],
+): number[] {
+  const dirSign = direction === 'long' ? 1 : -1;
+
+  // Build position events from legs sorted by time
+  const events = legs
+    .map((leg) => ({
+      timeMs: new Date(leg.startedAt).getTime(),
+      // buy adds to position, sell removes
+      deltaQty: leg.side === 'buy' ? leg.quantity : -leg.quantity,
+      price: leg.avgPrice,
+    }))
+    .sort((a, b) => a.timeMs - b.timeMs);
+
+  const pnl: number[] = [];
+  let netQty = 0;
+  let totalCost = 0; // running cost basis (signed by direction)
+  let realizedPnl = 0;
+  let eventIdx = 0;
+
+  for (let i = 0; i < ohlcvTimestamps.length; i++) {
+    const tsMs = new Date(ohlcvTimestamps[i]).getTime();
+
+    // Process any legs that occurred at or before this timestamp
+    while (eventIdx < events.length && events[eventIdx].timeMs <= tsMs) {
+      const ev = events[eventIdx];
+      if (ev.deltaQty > 0) {
+        // Adding to position
+        totalCost += ev.price * ev.deltaQty;
+        netQty += ev.deltaQty;
+      } else {
+        // Reducing position — realize PnL on closed portion
+        const closingQty = Math.abs(ev.deltaQty);
+        const avgCost = netQty > 0 ? totalCost / netQty : ev.price;
+        realizedPnl += (ev.price - avgCost) * closingQty * dirSign;
+        totalCost -= avgCost * closingQty;
+        netQty -= closingQty;
+      }
+      eventIdx++;
+    }
+
+    // Mark-to-market unrealized PnL on remaining position
+    const avgCost = netQty > 0 ? totalCost / netQty : 0;
+    const unrealizedPnl = netQty > 0
+      ? (closePrices[i] - avgCost) * netQty * dirSign
+      : 0;
+
+    pnl.push(+(realizedPnl + unrealizedPnl).toFixed(2));
+  }
+
+  return pnl;
+}
 
 type TabKey = 'campaign' | string;
 
@@ -21,7 +82,7 @@ export default function CampaignDetail() {
   // Chart data state
   const [priceTimestamps, setPriceTimestamps] = useState<string[]>([]);
   const [closePrices, setClosePrices] = useState<number[]>([]);
-  const [pnlTimeseries, setPnlTimeseries] = useState<PnlTimeseries | null>(null);
+  const [runningPnl, setRunningPnl] = useState<number[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const symbolRef = useRef<string | null>(null);
 
@@ -66,14 +127,18 @@ export default function CampaignDetail() {
         setPriceTimestamps(ohlcv.timestamps);
         setClosePrices(ohlcv.close);
 
-        const pnl = await fetchTickerPnlTimeseries(symbol, ohlcv.timestamps, ohlcv.close);
-        if (cancelled) return;
-        setPnlTimeseries(pnl);
+        // Compute campaign-specific running PNL from legs
+        const pnl = computeCampaignRunningPnl(
+          detail.legs,
+          detail.campaign.direction,
+          ohlcv.timestamps,
+          ohlcv.close,
+        );
+        setRunningPnl(pnl);
       } catch {
-        // Chart data is non-critical; leave empty state
         setPriceTimestamps([]);
         setClosePrices([]);
-        setPnlTimeseries(null);
+        setRunningPnl([]);
       } finally {
         if (!cancelled) setChartLoading(false);
       }
@@ -207,11 +272,7 @@ export default function CampaignDetail() {
 
         {/* Meta row */}
         <div className="mt-2 text-xs text-[var(--text-secondary)]">
-          Opened {new Date(detail.campaign.openedAt).toLocaleString()}
-          {detail.campaign.closedAt
-            ? ` \u00B7 Closed ${new Date(detail.campaign.closedAt).toLocaleString()}`
-            : ' \u00B7 Open'}
-          {' \u00B7 '}Source: {detail.campaign.source.replace(/_/g, ' ')}
+          Source: {detail.campaign.source.replace(/_/g, ' ')}
           {' \u00B7 '}Cost basis: {detail.campaign.costBasisMethod}
           {detail.campaign.pnlRealized != null && (
             <>
@@ -239,18 +300,18 @@ export default function CampaignDetail() {
           />
         </div>
 
-        {/* Price + PnL overlay chart */}
+        {/* Price + PnL overlay chart (60% width) */}
         {chartLoading ? (
-          <div className="mt-4 flex h-[220px] items-center justify-center text-xs text-[var(--text-secondary)]">
+          <div className="mt-4 flex h-[220px] w-[60%] items-center justify-center text-xs text-[var(--text-secondary)]">
             Loading chart...
           </div>
         ) : closePrices.length > 0 ? (
-          <div className="mt-4">
+          <div className="mt-4 w-[60%]">
             <CampaignPricePnlChart
               priceTimestamps={priceTimestamps}
               closePrices={closePrices}
-              pnlTimestamps={pnlTimeseries?.timestamps ?? []}
-              cumulativePnl={pnlTimeseries?.cumulative_pnl ?? []}
+              pnlTimestamps={priceTimestamps}
+              cumulativePnl={runningPnl}
               height={220}
             />
           </div>
