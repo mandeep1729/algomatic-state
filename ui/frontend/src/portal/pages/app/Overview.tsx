@@ -316,20 +316,12 @@ export default function Overview() {
                     <th className="px-6 py-4">Dir</th>
                     <th className="px-6 py-4">Qty</th>
                     <th className="px-6 py-4">Entry</th>
-                    <th className="px-6 py-4">Exit</th>
-                    <th className="px-6 py-4">PnL%</th>
                     <th className="px-6 py-4">Broker</th>
                     <th className="px-6 py-4">Flags</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--border-color)]">
-                  {recentTrades.map((trade) => {
-                    const pnlPct = trade.exit_price != null
-                      ? trade.direction === 'long'
-                        ? ((trade.exit_price - trade.entry_price) / trade.entry_price) * 100
-                        : ((trade.entry_price - trade.exit_price) / trade.entry_price) * 100
-                      : null;
-                    return (
+                  {recentTrades.map((trade) => (
                       <tr key={trade.id} className="transition-colors hover:bg-[var(--bg-tertiary)]/50">
                         <td className="px-6 py-4 text-xs text-[var(--text-secondary)]">
                           {format(new Date(trade.entry_time), 'MMM d, HH:mm')}
@@ -350,18 +342,6 @@ export default function Overview() {
                         </td>
                         <td className="px-6 py-4 text-[var(--text-secondary)]">{trade.quantity}</td>
                         <td className="px-6 py-4 font-mono text-xs text-[var(--text-secondary)]">${trade.entry_price.toFixed(2)}</td>
-                        <td className="px-6 py-4 font-mono text-xs text-[var(--text-secondary)]">
-                          {trade.exit_price != null ? `$${trade.exit_price.toFixed(2)}` : '--'}
-                        </td>
-                        <td className="px-6 py-4 font-mono text-xs">
-                          {pnlPct != null ? (
-                            <span className={pnlPct >= 0 ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}>
-                              {pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(2)}%
-                            </span>
-                          ) : (
-                            <span className="text-[var(--text-secondary)]">--</span>
-                          )}
-                        </td>
                         <td className="px-6 py-4 text-xs text-[var(--text-secondary)]">
                           {trade.brokerage ?? '--'}
                         </td>
@@ -379,7 +359,7 @@ export default function Overview() {
                   })}
                   {recentTrades.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
+                      <td colSpan={7} className="px-6 py-12 text-center text-sm text-[var(--text-secondary)]">
                         {selectedTicker
                           ? `No trades found for ${selectedTicker}.`
                           : <>No trades yet. <Link to="/app/evaluate" className="text-[var(--accent-blue)] hover:underline">Evaluate your first trade</Link></>
