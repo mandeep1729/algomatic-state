@@ -2,6 +2,7 @@
 
 import logging
 import threading
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -16,6 +17,15 @@ from src.data.loaders.database_loader import (
 from src.marketdata.base import MarketDataProvider
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _PendingRequest:
+    """Tracks an in-flight ensure_data request for request coalescing."""
+    event: threading.Event = field(default_factory=threading.Event)
+    result: Optional[dict[str, int]] = None
+    error: Optional[Exception] = None
+    waiter_count: int = 0
 
 
 class MarketDataService:
@@ -39,6 +49,9 @@ class MarketDataService:
     ) -> None:
         self.provider = provider
         self.db_manager = db_manager or get_db_manager()
+        # Request coalescing: track in-flight requests to avoid duplicate API calls
+        self._pending_requests: dict[str, _PendingRequest] = {}
+        self._pending_lock = threading.Lock()
 
     def ensure_data(
         self,
@@ -55,6 +68,12 @@ class MarketDataService:
         3. Aggregates intraday timeframes from 1Min when appropriate.
         4. Fetches 1Day data directly from the provider.
 
+        Request Coalescing:
+            If multiple concurrent requests arrive for the same symbol,
+            only the first one fetches from the provider. Subsequent
+            requests wait for the first to complete and share its result.
+            This prevents duplicate API calls to the data provider.
+
         Args:
             symbol: Ticker symbol (e.g. ``"AAPL"``).
             timeframes: Timeframes to ensure (e.g. ``["1Min", "5Min", "1Day"]``).
@@ -67,6 +86,68 @@ class MarketDataService:
         """
         symbol = symbol.upper()
         end = end or datetime.now(timezone.utc).replace(tzinfo=None)
+
+        # Request coalescing key: symbol is sufficient since we always fetch
+        # all requested timeframes together
+        request_key = symbol
+
+        # Check for existing in-flight request
+        with self._pending_lock:
+            pending = self._pending_requests.get(request_key)
+            if pending is not None:
+                # Another request is in progress - wait for it
+                pending.waiter_count += 1
+                logger.info(
+                    "Request coalescing: waiting for in-flight request for %s (waiters=%d)",
+                    symbol, pending.waiter_count,
+                )
+
+        if pending is not None:
+            # Wait outside the lock to avoid blocking other symbols
+            pending.event.wait()
+            with self._pending_lock:
+                pending.waiter_count -= 1
+                # Clean up if we're the last waiter
+                if pending.waiter_count == 0 and request_key in self._pending_requests:
+                    del self._pending_requests[request_key]
+
+            if pending.error is not None:
+                raise pending.error
+            logger.info(
+                "Request coalescing: reusing result for %s, result=%s",
+                symbol, pending.result,
+            )
+            return pending.result or {}
+
+        # We are the first request - create pending entry
+        pending = _PendingRequest()
+        with self._pending_lock:
+            self._pending_requests[request_key] = pending
+
+        # Do the actual work
+        try:
+            result = self._do_ensure_data(symbol, timeframes, start, end)
+            pending.result = result
+            return result
+        except Exception as e:
+            pending.error = e
+            raise
+        finally:
+            # Signal all waiters
+            pending.event.set()
+            # Clean up if no waiters
+            with self._pending_lock:
+                if pending.waiter_count == 0 and request_key in self._pending_requests:
+                    del self._pending_requests[request_key]
+
+    def _do_ensure_data(
+        self,
+        symbol: str,
+        timeframes: list[str],
+        start: Optional[datetime],
+        end: datetime,
+    ) -> dict[str, int]:
+        """Internal implementation of ensure_data (called by first request only)."""
         result: dict[str, int] = {}
 
         logger.info(
