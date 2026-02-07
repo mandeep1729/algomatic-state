@@ -89,6 +89,7 @@ export default function CampaignDetail() {
   const [runningPnl, setRunningPnl] = useState<number[]>([]);
   const [chartLegMarkers, setChartLegMarkers] = useState<LegMarker[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState<string | null>(null);
   const symbolRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -126,6 +127,7 @@ export default function CampaignDetail() {
 
     async function loadChartData() {
       setChartLoading(true);
+      setChartError(null);
       try {
         // Fetch OHLCV covering the full campaign date range so all leg
         // markers (OPEN, ADD, CLOSE, etc.) map to distinct chart positions.
@@ -174,7 +176,9 @@ export default function CampaignDetail() {
           } as LegMarker;
         });
         setChartLegMarkers(markers);
-      } catch {
+      } catch (err) {
+        console.error('[CampaignDetail] Chart data load failed:', err);
+        setChartError(err instanceof Error ? err.message : 'Failed to load chart data');
         setPriceTimestamps([]);
         setClosePrices([]);
         setRunningPnl([]);
@@ -349,6 +353,10 @@ export default function CampaignDetail() {
               <div className="flex h-[180px] items-center justify-center text-xs text-[var(--text-secondary)]">
                 Loading chart...
               </div>
+            ) : chartError ? (
+              <div className="flex h-[180px] items-center justify-center text-xs text-[var(--accent-red)]">
+                {chartError}
+              </div>
             ) : closePrices.length > 0 ? (
               <CampaignPricePnlChart
                 priceTimestamps={priceTimestamps}
@@ -358,7 +366,11 @@ export default function CampaignDetail() {
                 legMarkers={chartLegMarkers}
                 height={180}
               />
-            ) : null}
+            ) : (
+              <div className="flex h-[180px] items-center justify-center text-xs text-[var(--text-secondary)]">
+                No price data available
+              </div>
+            )}
           </div>
         </div>
 
