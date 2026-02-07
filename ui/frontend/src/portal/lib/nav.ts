@@ -16,19 +16,14 @@ export const appNavSections: NavItem[] = [
     icon: 'LayoutDashboard',
   },
   {
-    path: '/app/trades',
-    label: 'Trades',
-    icon: 'ArrowRightLeft',
-  },
-  {
-    path: '/app/evaluate',
-    label: 'Evaluate',
-    icon: 'ClipboardCheck',
-  },
-  {
     path: '/app/insights',
     label: 'Insights',
     icon: 'TrendingUp',
+  },
+  {
+    path: '/app/trades',
+    label: 'Trades',
+    icon: 'ArrowRightLeft',
   },
   {
     path: '/app/journal',

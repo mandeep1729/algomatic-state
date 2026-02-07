@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import api, { fetchMockOHLCVData, fetchMockFeatures } from '../../api';
-import type { TradeSummary } from '../../types';
+import type { TradeSummary, TickerPnlSummary, PnlTimeseries } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
 import { useChartContext } from '../../context/ChartContext';
@@ -54,6 +54,8 @@ export default function Trades() {
   const [ohlcvData, setOhlcvData] = useState<{ timestamps: string[]; open: number[]; high: number[]; low: number[]; close: number[]; volume: number[] } | null>(null);
   const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
+  const [tickerPnl, setTickerPnl] = useState<TickerPnlSummary | null>(null);
+  const [pnlTimeseries, setPnlTimeseries] = useState<PnlTimeseries | null>(null);
 
   const { setChartActive, setFeatureNames, selectedFeatures } = useChartContext();
 
@@ -120,12 +122,24 @@ export default function Trades() {
       setOhlcvData(ohlcv);
       setFeatureData(features);
       setFeatureNames(features.feature_names);
+      // Fetch PnL timeseries in background using OHLCV data
+      api.fetchTickerPnlTimeseries(symbol, ohlcv.timestamps, ohlcv.close)
+        .then((pnl) => setPnlTimeseries(pnl))
+        .catch(() => setPnlTimeseries(null));
     } catch {
       setOhlcvData(null);
       setFeatureData(null);
       setFeatureNames([]);
+      setPnlTimeseries(null);
     } finally {
       setChartLoading(false);
+    }
+    // Fetch running PnL for this ticker
+    try {
+      const pnl = await api.fetchTickerPnl(symbol);
+      setTickerPnl(pnl);
+    } catch {
+      setTickerPnl(null);
     }
   }, [selectedTicker, setChartActive, setFeatureNames]);
 
@@ -135,6 +149,8 @@ export default function Trades() {
     setFeatureData(null);
     setChartActive(false);
     setFeatureNames([]);
+    setTickerPnl(null);
+    setPnlTimeseries(null);
   }, [setChartActive, setFeatureNames]);
 
   const handleTimeframeChange = useCallback(async (newTimeframe: string) => {
@@ -149,10 +165,15 @@ export default function Trades() {
       setOhlcvData(ohlcv);
       setFeatureData(features);
       setFeatureNames(features.feature_names);
+      // Re-fetch PnL timeseries for new timeframe data
+      api.fetchTickerPnlTimeseries(selectedTicker, ohlcv.timestamps, ohlcv.close)
+        .then((pnl) => setPnlTimeseries(pnl))
+        .catch(() => setPnlTimeseries(null));
     } catch {
       setOhlcvData(null);
       setFeatureData(null);
       setFeatureNames([]);
+      setPnlTimeseries(null);
     } finally {
       setChartLoading(false);
     }
@@ -260,6 +281,18 @@ export default function Trades() {
                   <option value="1Hour">1h</option>
                   <option value="1Day">1d</option>
                 </select>
+                {tickerPnl && tickerPnl.closed_count > 0 && (
+                  <span className="ml-1 flex items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0.5 text-xs">
+                    <span className="text-[var(--text-secondary)]">PnL:</span>
+                    <span className={`font-mono font-medium ${tickerPnl.total_pnl >= 0 ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
+                      {tickerPnl.total_pnl >= 0 ? '+' : ''}${tickerPnl.total_pnl.toFixed(2)}
+                    </span>
+                    <span className={`font-mono ${tickerPnl.total_pnl_pct >= 0 ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
+                      ({tickerPnl.total_pnl_pct >= 0 ? '+' : ''}{tickerPnl.total_pnl_pct.toFixed(2)}%)
+                    </span>
+                    <span className="text-[var(--text-secondary)]">{tickerPnl.closed_count} trade{tickerPnl.closed_count !== 1 ? 's' : ''}</span>
+                  </span>
+                )}
               </div>
               <button
                 onClick={handleCloseChart}
@@ -278,6 +311,7 @@ export default function Trades() {
                 <OHLCVChart
                   data={ohlcvData}
                   featureData={featureData}
+                  pnlData={pnlTimeseries}
                   selectedFeatures={selectedFeatures}
                   showVolume={true}
                   showStates={false}

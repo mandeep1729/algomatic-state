@@ -260,6 +260,23 @@ export interface OnboardingStatus {
   all_complete: boolean;
 }
 
+// --- Ticker PnL ---
+
+export interface TickerPnlSummary {
+  symbol: string;
+  total_pnl: number;
+  total_pnl_pct: number;
+  trade_count: number;
+  closed_count: number;
+  first_entry_time: string;
+}
+
+/** Cumulative PnL timeseries aligned to OHLCV chart timestamps. */
+export interface PnlTimeseries {
+  timestamps: string[];
+  cumulative_pnl: number[];
+}
+
 // --- Broker (re-export from existing types for convenience) ---
 
 export interface BrokerConnectResponse {
