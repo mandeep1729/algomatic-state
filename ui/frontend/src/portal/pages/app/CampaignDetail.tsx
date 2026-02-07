@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { fetchCampaignDetail, saveDecisionContext } from '../../mocks/mockApi';
+import { fetchCampaignDetail, saveDecisionContext, fetchMockOHLCVData, fetchTickerPnlTimeseries } from '../../mocks/mockApi';
 import { Timeline } from '../../components/campaigns/Timeline';
 import { EvaluationGrid } from '../../components/campaigns/EvaluationGrid';
 import { ContextPanel } from '../../components/campaigns/ContextPanel';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
-import type { CampaignDetail as CampaignDetailType, DecisionContext, EvaluationBundle } from '../../types';
+import { CampaignPricePnlChart } from '../../components/campaigns/CampaignPricePnlChart';
+import type { CampaignDetail as CampaignDetailType, DecisionContext, EvaluationBundle, PnlTimeseries } from '../../types';
 
 type TabKey = 'campaign' | string;
 
@@ -16,6 +17,13 @@ export default function CampaignDetail() {
   const [tab, setTab] = useState<TabKey>('campaign');
   const [activeLegIndex, setActiveLegIndex] = useState(0);
   const [contextsByLeg, setContextsByLeg] = useState<Record<string, DecisionContext | undefined>>({});
+
+  // Chart data state
+  const [priceTimestamps, setPriceTimestamps] = useState<string[]>([]);
+  const [closePrices, setClosePrices] = useState<number[]>([]);
+  const [pnlTimeseries, setPnlTimeseries] = useState<PnlTimeseries | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
+  const symbolRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!campaignId) return;
@@ -41,6 +49,39 @@ export default function CampaignDetail() {
     load();
     return () => { cancelled = true; };
   }, [campaignId]);
+
+  // Fetch chart data (price + PnL) when campaign detail is loaded
+  useEffect(() => {
+    if (!detail) return;
+    const symbol = detail.campaign.symbol;
+    symbolRef.current = symbol;
+    let cancelled = false;
+
+    async function loadChartData() {
+      setChartLoading(true);
+      try {
+        const ohlcv = await fetchMockOHLCVData(symbol);
+        if (cancelled) return;
+
+        setPriceTimestamps(ohlcv.timestamps);
+        setClosePrices(ohlcv.close);
+
+        const pnl = await fetchTickerPnlTimeseries(symbol, ohlcv.timestamps, ohlcv.close);
+        if (cancelled) return;
+        setPnlTimeseries(pnl);
+      } catch {
+        // Chart data is non-critical; leave empty state
+        setPriceTimestamps([]);
+        setClosePrices([]);
+        setPnlTimeseries(null);
+      } finally {
+        if (!cancelled) setChartLoading(false);
+      }
+    }
+
+    loadChartData();
+    return () => { cancelled = true; };
+  }, [detail]);
 
   // Build tab list from campaign data
   const tabs = useMemo(() => {
@@ -197,6 +238,23 @@ export default function CampaignDetail() {
             onSelect={handleTimelineSelect}
           />
         </div>
+
+        {/* Price + PnL overlay chart */}
+        {chartLoading ? (
+          <div className="mt-4 flex h-[220px] items-center justify-center text-xs text-[var(--text-secondary)]">
+            Loading chart...
+          </div>
+        ) : closePrices.length > 0 ? (
+          <div className="mt-4">
+            <CampaignPricePnlChart
+              priceTimestamps={priceTimestamps}
+              closePrices={closePrices}
+              pnlTimestamps={pnlTimeseries?.timestamps ?? []}
+              cumulativePnl={pnlTimeseries?.cumulative_pnl ?? []}
+              height={220}
+            />
+          </div>
+        ) : null}
 
         {/* Tabs */}
         <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border-color)] pt-4">
