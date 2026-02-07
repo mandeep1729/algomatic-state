@@ -1,6 +1,7 @@
 import { useEffect, useRef, useMemo } from 'react';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
+import { ScatterChart } from 'echarts/charts';
 import {
   GridComponent,
   TooltipComponent,
@@ -15,6 +16,7 @@ type EChartsInstance = ReturnType<typeof echarts.init>;
 // Register only what we need for tree-shaking
 echarts.use([
   LineChart,
+  ScatterChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
@@ -22,11 +24,23 @@ echarts.use([
   CanvasRenderer,
 ]);
 
+export interface LegMarker {
+  /** ISO timestamp of the leg event */
+  timestamp: string;
+  /** Price at which the leg occurred */
+  price: number;
+  /** Label shown on hover */
+  label: string;
+  /** 'entry' for ENTRY/ADD (green), 'close' for CLOSE/REDUCE (blue) */
+  type: 'entry' | 'close';
+}
+
 interface CampaignPricePnlChartProps {
   priceTimestamps: string[];
   closePrices: number[];
   pnlTimestamps: string[];
   cumulativePnl: number[];
+  legMarkers?: LegMarker[];
   height?: number;
 }
 
@@ -87,6 +101,7 @@ export function CampaignPricePnlChart({
   closePrices,
   pnlTimestamps,
   cumulativePnl,
+  legMarkers = [],
   height = 220,
 }: CampaignPricePnlChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -104,6 +119,34 @@ export function CampaignPricePnlChart({
     [priceTimestamps, pnlTimestamps, cumulativePnl],
   );
 
+  // Map leg markers to category indices for scatter plot
+  const markerDataByType = useMemo(() => {
+    if (legMarkers.length === 0) return { entry: [], close: [] };
+    const tsToIdx = new Map<string, number>();
+    for (let i = 0; i < priceTimestamps.length; i++) {
+      tsToIdx.set(priceTimestamps[i], i);
+    }
+
+    const entry: { value: [string, number]; label: string }[] = [];
+    const close: { value: [string, number]; label: string }[] = [];
+
+    for (const m of legMarkers) {
+      // Find the closest category timestamp
+      const mMs = new Date(m.timestamp).getTime();
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let i = 0; i < priceTimestamps.length; i++) {
+        const dist = Math.abs(new Date(priceTimestamps[i]).getTime() - mMs);
+        if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+      }
+      const catLabel = categoryLabels[bestIdx];
+      const point = { value: [catLabel, m.price] as [string, number], label: m.label };
+      if (m.type === 'entry') entry.push(point);
+      else close.push(point);
+    }
+    return { entry, close };
+  }, [legMarkers, priceTimestamps, categoryLabels]);
+
   // Build ECharts option
   const chartOption = useMemo((): EChartsOption | null => {
     if (closePrices.length === 0) return null;
@@ -116,6 +159,47 @@ export function CampaignPricePnlChart({
     const pnlAreaColor = lastPnl >= 0
       ? 'rgba(63, 185, 80, 0.12)'
       : 'rgba(248, 81, 73, 0.12)';
+
+    // Build scatter series for leg markers
+    const markerSeries: any[] = [];
+    if (markerDataByType.entry.length > 0) {
+      markerSeries.push({
+        name: 'Entry/Add',
+        type: 'scatter',
+        yAxisIndex: 0,
+        symbol: 'circle',
+        symbolSize: 10,
+        itemStyle: { color: '#3fb950', borderColor: '#fff', borderWidth: 1.5 },
+        data: markerDataByType.entry.map((d) => d.value),
+        z: 10,
+        tooltip: {
+          formatter: (p: any) => {
+            const idx = p.dataIndex;
+            const m = markerDataByType.entry[idx];
+            return `<div style="font-weight:600;color:#3fb950">${m?.label ?? 'Entry'}</div><div>$${p.value[1].toFixed(2)}</div>`;
+          },
+        },
+      });
+    }
+    if (markerDataByType.close.length > 0) {
+      markerSeries.push({
+        name: 'Close',
+        type: 'scatter',
+        yAxisIndex: 0,
+        symbol: 'circle',
+        symbolSize: 10,
+        itemStyle: { color: '#58a6ff', borderColor: '#fff', borderWidth: 1.5 },
+        data: markerDataByType.close.map((d) => d.value),
+        z: 10,
+        tooltip: {
+          formatter: (p: any) => {
+            const idx = p.dataIndex;
+            const m = markerDataByType.close[idx];
+            return `<div style="font-weight:600;color:#58a6ff">${m?.label ?? 'Close'}</div><div>$${p.value[1].toFixed(2)}</div>`;
+          },
+        },
+      });
+    }
 
     return {
       backgroundColor: 'transparent',
@@ -245,9 +329,10 @@ export function CampaignPricePnlChart({
             label: { show: false },
           },
         },
+        ...markerSeries,
       ],
     };
-  }, [closePrices, alignedPnl, categoryLabels, priceTimestamps, cumulativePnl]);
+  }, [closePrices, alignedPnl, categoryLabels, priceTimestamps, cumulativePnl, markerDataByType]);
 
   // Init ECharts instance + ResizeObserver
   useEffect(() => {

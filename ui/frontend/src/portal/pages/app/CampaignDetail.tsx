@@ -6,6 +6,7 @@ import { EvaluationGrid } from '../../components/campaigns/EvaluationGrid';
 import { ContextPanel } from '../../components/campaigns/ContextPanel';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
 import { CampaignPricePnlChart } from '../../components/campaigns/CampaignPricePnlChart';
+import type { LegMarker } from '../../components/campaigns/CampaignPricePnlChart';
 import type { CampaignDetail as CampaignDetailType, CampaignLeg, DecisionContext, EvaluationBundle } from '../../types';
 
 /**
@@ -83,6 +84,7 @@ export default function CampaignDetail() {
   const [priceTimestamps, setPriceTimestamps] = useState<string[]>([]);
   const [closePrices, setClosePrices] = useState<number[]>([]);
   const [runningPnl, setRunningPnl] = useState<number[]>([]);
+  const [chartLegMarkers, setChartLegMarkers] = useState<LegMarker[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const symbolRef = useRef<string | null>(null);
 
@@ -114,7 +116,8 @@ export default function CampaignDetail() {
   // Fetch chart data (price + PnL) when campaign detail is loaded
   useEffect(() => {
     if (!detail) return;
-    const symbol = detail.campaign.symbol;
+    const { campaign, legs } = detail;
+    const symbol = campaign.symbol;
     symbolRef.current = symbol;
     let cancelled = false;
 
@@ -124,21 +127,59 @@ export default function CampaignDetail() {
         const ohlcv = await fetchMockOHLCVData(symbol);
         if (cancelled) return;
 
-        setPriceTimestamps(ohlcv.timestamps);
-        setClosePrices(ohlcv.close);
+        // Crop OHLCV data to campaign date range
+        const startMs = new Date(campaign.openedAt).getTime();
+        const endMs = campaign.closedAt
+          ? new Date(campaign.closedAt).getTime()
+          : Infinity;
 
-        // Compute campaign-specific running PNL from legs
+        const filteredTs: string[] = [];
+        const filteredClose: number[] = [];
+        for (let i = 0; i < ohlcv.timestamps.length; i++) {
+          const tsMs = new Date(ohlcv.timestamps[i]).getTime();
+          if (tsMs >= startMs && tsMs <= endMs) {
+            filteredTs.push(ohlcv.timestamps[i]);
+            filteredClose.push(ohlcv.close[i]);
+          }
+        }
+
+        setPriceTimestamps(filteredTs);
+        setClosePrices(filteredClose);
+
+        // Compute campaign-specific running PNL from legs (on cropped data)
         const pnl = computeCampaignRunningPnl(
-          detail.legs,
-          detail.campaign.direction,
-          ohlcv.timestamps,
-          ohlcv.close,
+          legs,
+          campaign.direction,
+          filteredTs,
+          filteredClose,
         );
         setRunningPnl(pnl);
+
+        // Build leg markers for the chart
+        const markers: LegMarker[] = legs.map((leg) => {
+          // Find closest price for this leg's timestamp
+          const legMs = new Date(leg.startedAt).getTime();
+          let closestPrice = leg.avgPrice;
+          let bestDist = Infinity;
+          for (let i = 0; i < filteredTs.length; i++) {
+            const dist = Math.abs(new Date(filteredTs[i]).getTime() - legMs);
+            if (dist < bestDist) { bestDist = dist; closestPrice = filteredClose[i]; }
+          }
+
+          const isEntry = leg.legType === 'open' || leg.legType === 'add';
+          return {
+            timestamp: leg.startedAt,
+            price: closestPrice,
+            label: `${leg.legType.toUpperCase()} @ $${leg.avgPrice.toFixed(2)}`,
+            type: isEntry ? 'entry' : 'close',
+          } as LegMarker;
+        });
+        setChartLegMarkers(markers);
       } catch {
         setPriceTimestamps([]);
         setClosePrices([]);
         setRunningPnl([]);
+        setChartLegMarkers([]);
       } finally {
         if (!cancelled) setChartLoading(false);
       }
@@ -270,25 +311,45 @@ export default function CampaignDetail() {
           <OverallLabelBadge label={detail.evaluationCampaign.overallLabel} />
         </div>
 
-        {/* Meta row */}
-        <div className="mt-2 text-xs text-[var(--text-secondary)]">
-          Source: {detail.campaign.source.replace(/_/g, ' ')}
-          {' \u00B7 '}Cost basis: {detail.campaign.costBasisMethod}
-          {detail.campaign.pnlRealized != null && (
-            <>
-              {' \u00B7 '}
-              <span
-                className={`font-mono font-medium ${
-                  detail.campaign.pnlRealized >= 0
-                    ? 'text-[var(--accent-green)]'
-                    : 'text-[var(--accent-red)]'
-                }`}
-              >
-                PnL: {detail.campaign.pnlRealized >= 0 ? '+' : ''}
-                ${detail.campaign.pnlRealized.toFixed(2)}
-              </span>
-            </>
-          )}
+        {/* Meta row + Chart side-by-side */}
+        <div className="mt-3 flex items-start gap-4">
+          {/* Left: meta info */}
+          <div className="flex-shrink-0 text-xs text-[var(--text-secondary)] pt-1">
+            <div>Source: {detail.campaign.source.replace(/_/g, ' ')}</div>
+            <div className="mt-1">Cost basis: {detail.campaign.costBasisMethod}</div>
+            {detail.campaign.pnlRealized != null && (
+              <div className="mt-1">
+                <span
+                  className={`font-mono font-medium ${
+                    detail.campaign.pnlRealized >= 0
+                      ? 'text-[var(--accent-green)]'
+                      : 'text-[var(--accent-red)]'
+                  }`}
+                >
+                  PnL: {detail.campaign.pnlRealized >= 0 ? '+' : ''}
+                  ${detail.campaign.pnlRealized.toFixed(2)}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Right: Price + PnL chart */}
+          <div className="flex-1 min-w-0">
+            {chartLoading ? (
+              <div className="flex h-[180px] items-center justify-center text-xs text-[var(--text-secondary)]">
+                Loading chart...
+              </div>
+            ) : closePrices.length > 0 ? (
+              <CampaignPricePnlChart
+                priceTimestamps={priceTimestamps}
+                closePrices={closePrices}
+                pnlTimestamps={priceTimestamps}
+                cumulativePnl={runningPnl}
+                legMarkers={chartLegMarkers}
+                height={180}
+              />
+            ) : null}
+          </div>
         </div>
 
         {/* Timeline */}
@@ -299,23 +360,6 @@ export default function CampaignDetail() {
             onSelect={handleTimelineSelect}
           />
         </div>
-
-        {/* Price + PnL overlay chart (60% width) */}
-        {chartLoading ? (
-          <div className="mt-4 flex h-[220px] w-[60%] items-center justify-center text-xs text-[var(--text-secondary)]">
-            Loading chart...
-          </div>
-        ) : closePrices.length > 0 ? (
-          <div className="mt-4 w-[60%]">
-            <CampaignPricePnlChart
-              priceTimestamps={priceTimestamps}
-              closePrices={closePrices}
-              pnlTimestamps={priceTimestamps}
-              cumulativePnl={runningPnl}
-              height={220}
-            />
-          </div>
-        ) : null}
 
         {/* Tabs */}
         <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border-color)] pt-4">
