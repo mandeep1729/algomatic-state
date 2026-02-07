@@ -239,8 +239,9 @@ python -m src.agent.main
 | `AGENT_INTERVAL_MINUTES` | `15` | Minutes between each loop iteration |
 | `AGENT_DATA_PROVIDER` | `alpaca` | Market data source (`alpaca` or `finnhub`) |
 | `AGENT_LOOKBACK_DAYS` | `5` | Days of historical data to fetch each cycle |
-| `AGENT_POSITION_SIZE_DOLLARS` | `1` | Dollar amount per position (docker-compose uses `100`) |
+| `AGENT_POSITION_SIZE_DOLLARS` | `1` | Dollar amount per position (docker-compose uses `1000`) |
 | `AGENT_PAPER` | `true` | Use Alpaca paper trading (`true`/`false`) |
+| `AGENT_API_PORT` | `8000` | Port for internal FastAPI health/data endpoint |
 | `AGENT_LOG_LEVEL` | `INFO` | Agent logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `STRATEGY_MOMENTUM_FEATURE` | `r5` | Feature used for momentum signal |
 | `STRATEGY_LONG_THRESHOLD` | `0.001` | Momentum value above which to go long |
