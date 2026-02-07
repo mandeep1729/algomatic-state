@@ -4,11 +4,13 @@ Trading copilot platform combining HMM-based market regime tracking with a modul
 
 ## Overview
 
-Algomatic State has two major subsystems:
+Algomatic State has three major subsystems:
 
 1. **Regime Tracking Engine** -- Multi-timeframe Hidden Markov Model (HMM) approach to market state inference. The system learns continuous latent state vectors from engineered features and uses Gaussian HMMs to infer discrete market regimes.
 
 2. **Trading Buddy (Trade Evaluation)** -- A modular evaluator orchestrator that reviews proposed trades against risk/reward checks, exit plan quality, regime fit, multi-timeframe alignment, and guardrails. Acts as a mentor and risk guardian, not a signal generator.
+
+3. **Messaging & Market Data Service** -- An in-memory pub/sub message bus (`src/messaging/`) decouples market data fetching from consumers. A centralized `MarketDataService` handles gap detection, provider fetching, and DB persistence. The `MarketDataOrchestrator` wires the two together so that any component can request fresh data by publishing a `MARKET_DATA_REQUEST` event.
 
 ### Key Features
 
@@ -281,6 +283,93 @@ Each agent has its own environment variable prefix:
 | VWAP | `VWAP_` | `dist_vwap_60` (distance from VWAP) | long: 0.005, short: -0.005 |
 
 
+## Messaging & Market Data Service
+
+The pub/sub messaging system decouples market data fetching from all consumers (UI, agent, evaluators). Instead of each component creating its own `DatabaseLoader` with provider credentials, a single `MarketDataOrchestrator` listens for requests on the message bus and delegates to a centralized `MarketDataService`.
+
+### How It Works
+
+```
+Producer                    MessageBus                 MarketDataOrchestrator
+   │                            │                              │
+   │  publish(MARKET_DATA_      │                              │
+   │  REQUEST)                  │──────────────────────────────►│
+   │                            │                              │
+   │                            │          MarketDataService    │
+   │                            │          .ensure_data()       │
+   │                            │              │                │
+   │                            │              ▼                │
+   │                            │          Provider.fetch()     │
+   │                            │          DB.insert()          │
+   │                            │              │                │
+   │                            │◄─────────────────────────────│
+   │                            │  publish(MARKET_DATA_UPDATED) │
+   │                            │                              │
+```
+
+1. **Any component** publishes a `MARKET_DATA_REQUEST` event with `symbol`, `timeframes`, `start`, and `end`.
+2. The **orchestrator** calls `MarketDataService.ensure_data()` which checks what data exists in the DB, fetches missing ranges from the configured provider (Alpaca or Finnhub), aggregates intraday timeframes from 1Min, and inserts new bars.
+3. On success, the orchestrator publishes `MARKET_DATA_UPDATED` for each timeframe that received new data. On failure it publishes `MARKET_DATA_FAILED`.
+
+Publish is **synchronous** -- when `bus.publish()` returns, the data is already in the database. This is required for the evaluate flow where `ContextPackBuilder` must read fresh data immediately after requesting it.
+
+### Automatic Startup
+
+The orchestrator starts automatically in both entry points:
+
+- **Web UI backend** (`ui/backend/api.py`): Started via `@app.on_event("startup")`, stopped on shutdown.
+- **Momentum agent** (`src/agent/main.py`): Started before the scheduler loop begins.
+
+No extra configuration is needed beyond the existing provider credentials (`ALPACA_API_KEY`/`ALPACA_SECRET_KEY` or `FINNHUB_API_KEY`).
+
+### Using Fresh Data in Evaluations
+
+`ContextPackBuilder` accepts an `ensure_fresh_data` flag (default `False`):
+
+```python
+# Existing behaviour — reads whatever is in the DB
+builder = ContextPackBuilder()
+
+# New — publishes a MARKET_DATA_REQUEST before reading from DB
+builder = ContextPackBuilder(ensure_fresh_data=True)
+```
+
+The `/api/trading-buddy/evaluate` endpoint uses `ensure_fresh_data=True` so that stale data is automatically refreshed before building market context.
+
+### Publishing Requests Manually
+
+Any component can request data without importing the service directly:
+
+```python
+from src.messaging import Event, EventType, get_message_bus
+
+bus = get_message_bus()
+bus.publish(Event(
+    event_type=EventType.MARKET_DATA_REQUEST,
+    payload={
+        "symbol": "AAPL",
+        "timeframes": ["1Min", "5Min", "1Day"],
+        "start": None,  # provider decides
+        "end": None,     # defaults to now
+    },
+    source="my_component",
+))
+# When this returns, data is in the DB and ready to query.
+```
+
+### Testing
+
+The messaging bus provides `reset_message_bus()` for test isolation:
+
+```python
+from src.messaging import reset_message_bus
+
+def setup_function():
+    reset_message_bus()  # fresh bus for each test
+```
+
+Subscriber errors are isolated — one failing callback does not prevent other subscribers from being notified.
+
 ## Project Structure
 
 ```
@@ -324,10 +413,16 @@ algomatic-state/
 │   │   ├── schemas.py             # Pandera OHLCV schema
 │   │   └── quality.py             # Data quality checks
 │   │
+│   ├── messaging/                  # In-memory pub/sub message bus
+│   │   ├── events.py              # Event, EventType (REQUEST/UPDATED/FAILED)
+│   │   └── bus.py                 # MessageBus, get_message_bus singleton
+│   │
 │   ├── marketdata/                 # Market data provider abstraction
 │   │   ├── base.py                # MarketDataProvider ABC
 │   │   ├── alpaca_provider.py     # Alpaca data provider
 │   │   ├── finnhub_provider.py    # Finnhub data provider
+│   │   ├── service.py             # MarketDataService (ensure_data, gap detection)
+│   │   ├── orchestrator.py        # MarketDataOrchestrator (bus ↔ service)
 │   │   └── utils.py               # Rate limiter, retry, normalisation
 │   │
 │   ├── features/                   # Feature engineering
