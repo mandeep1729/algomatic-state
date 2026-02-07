@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import api, { fetchMockOHLCVData, fetchMockFeatures } from '../../api';
+import api, { fetchOHLCVData, fetchFeatures } from '../../api';
 import type { TradeSummary, TickerPnlSummary, PnlTimeseries } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
@@ -50,7 +50,7 @@ export default function Trades() {
 
   // Chart state
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-  const [chartTimeframe, setChartTimeframe] = useState('5Min');
+  const [chartTimeframe, setChartTimeframe] = useState('15Min');
   const [ohlcvData, setOhlcvData] = useState<{ timestamps: string[]; open: number[]; high: number[]; low: number[]; close: number[]; volume: number[] } | null>(null);
   const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
@@ -116,8 +116,8 @@ export default function Trades() {
     setChartActive(true);
     try {
       const [ohlcv, features] = await Promise.all([
-        fetchMockOHLCVData(symbol),
-        fetchMockFeatures(symbol),
+        fetchOHLCVData(symbol, chartTimeframe),
+        fetchFeatures(symbol, chartTimeframe),
       ]);
       setOhlcvData(ohlcv);
       setFeatureData(features);
@@ -141,7 +141,7 @@ export default function Trades() {
     } catch {
       setTickerPnl(null);
     }
-  }, [selectedTicker, setChartActive, setFeatureNames]);
+  }, [selectedTicker, chartTimeframe, setChartActive, setFeatureNames]);
 
   const handleCloseChart = useCallback(() => {
     setSelectedTicker(null);
@@ -159,8 +159,8 @@ export default function Trades() {
     setChartLoading(true);
     try {
       const [ohlcv, features] = await Promise.all([
-        fetchMockOHLCVData(selectedTicker),
-        fetchMockFeatures(selectedTicker),
+        fetchOHLCVData(selectedTicker, newTimeframe),
+        fetchFeatures(selectedTicker, newTimeframe),
       ]);
       setOhlcvData(ohlcv);
       setFeatureData(features);
