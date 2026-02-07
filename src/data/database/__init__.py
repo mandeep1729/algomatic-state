@@ -11,6 +11,7 @@ from src.data.database.trading_buddy_models import (
     TradeEvaluationItem,
 )
 from src.data.database.broker_models import TradeFill
+from src.data.database.strategy_models import Strategy
 from src.data.database.trade_lifecycle_models import (
     PositionLot,
     LotClosure,
@@ -38,6 +39,8 @@ __all__ = [
     "TradeIntent",
     "TradeEvaluation",
     "TradeEvaluationItem",
+    # Strategy model
+    "Strategy",
     # Trade lifecycle models
     "TradeFill",
     "PositionLot",

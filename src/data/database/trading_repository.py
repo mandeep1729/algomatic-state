@@ -22,6 +22,7 @@ from src.data.database.trading_buddy_models import (
     TradeEvaluationItem as TradeEvaluationItemModel,
 )
 from src.data.database.broker_models import TradeFill as TradeFillModel
+from src.data.database.strategy_models import Strategy as StrategyModel
 from src.data.database.trade_lifecycle_models import (
     PositionLot as PositionLotModel,
     LotClosure as LotClosureModel,
@@ -395,6 +396,130 @@ class TradingBuddyRepository:
                 )
 
         return configs
+
+    # -------------------------------------------------------------------------
+    # Strategy Operations
+    # -------------------------------------------------------------------------
+
+    def create_strategy(
+        self,
+        account_id: int,
+        name: str,
+        description: Optional[str] = None,
+    ) -> StrategyModel:
+        """Create a new strategy for an account.
+
+        Args:
+            account_id: Account ID
+            name: Strategy name (unique per account)
+            description: Optional description
+
+        Returns:
+            Created StrategyModel
+        """
+        strategy = StrategyModel(
+            account_id=account_id,
+            name=name,
+            description=description,
+        )
+        self.session.add(strategy)
+        self.session.flush()
+        logger.info(
+            "Created strategy id=%s name='%s' account_id=%s",
+            strategy.id, strategy.name, strategy.account_id,
+        )
+        return strategy
+
+    def get_strategy(self, strategy_id: int) -> Optional[StrategyModel]:
+        """Get a strategy by ID.
+
+        Args:
+            strategy_id: Strategy ID
+
+        Returns:
+            StrategyModel or None
+        """
+        return self.session.query(StrategyModel).filter(
+            StrategyModel.id == strategy_id
+        ).first()
+
+    def get_strategy_by_name(
+        self,
+        account_id: int,
+        name: str,
+    ) -> Optional[StrategyModel]:
+        """Get a strategy by account and name.
+
+        Args:
+            account_id: Account ID
+            name: Strategy name
+
+        Returns:
+            StrategyModel or None
+        """
+        return self.session.query(StrategyModel).filter(
+            StrategyModel.account_id == account_id,
+            StrategyModel.name == name,
+        ).first()
+
+    def get_strategies_for_account(
+        self,
+        account_id: int,
+        active_only: bool = True,
+    ) -> list[StrategyModel]:
+        """Get all strategies for an account.
+
+        Args:
+            account_id: Account ID
+            active_only: Only return active strategies
+
+        Returns:
+            List of StrategyModel ordered by name
+        """
+        query = self.session.query(StrategyModel).filter(
+            StrategyModel.account_id == account_id
+        )
+        if active_only:
+            query = query.filter(StrategyModel.is_active == True)  # noqa: E712
+        return query.order_by(StrategyModel.name.asc()).all()
+
+    def update_strategy(
+        self,
+        strategy_id: int,
+        **kwargs,
+    ) -> Optional[StrategyModel]:
+        """Update strategy fields.
+
+        Args:
+            strategy_id: Strategy ID
+            **kwargs: Fields to update (name, description, is_active)
+
+        Returns:
+            Updated StrategyModel or None
+        """
+        strategy = self.get_strategy(strategy_id)
+        if strategy is None:
+            logger.warning("Strategy id=%s not found for update", strategy_id)
+            return None
+
+        for key, value in kwargs.items():
+            if hasattr(strategy, key):
+                setattr(strategy, key, value)
+
+        self.session.flush()
+        logger.info("Updated strategy id=%s fields=%s", strategy_id, list(kwargs.keys()))
+        return strategy
+
+    def deactivate_strategy(self, strategy_id: int) -> Optional[StrategyModel]:
+        """Soft-delete a strategy by setting is_active=False.
+
+        Args:
+            strategy_id: Strategy ID
+
+        Returns:
+            Deactivated StrategyModel or None
+        """
+        return self.update_strategy(strategy_id, is_active=False)
 
     # -------------------------------------------------------------------------
     # Trade Intent Operations

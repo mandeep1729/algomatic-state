@@ -96,7 +96,9 @@ User trade proposals for evaluation.
 | New Column | Type | Notes |
 |---|---|---|
 | `hypothesis` | Text, nullable | What must be true for this trade |
-| `strategy_tags` | JSONB, default [] | Strategy label chips |
+| `strategy_id` | Integer FK → strategies.id, nullable | Normalized strategy reference (migration 010) |
+
+*Note: `strategy_tags` (JSONB) was added in migration 009 and replaced by `strategy_id` FK in migration 010.*
 
 #### 2.4 `trade_evaluations` (multi-scope support)
 Evaluation results. Evolves from 1:1 intent binding to multi-scope.
@@ -154,6 +156,7 @@ Table renamed from `round_trips` in migration 009; all existing columns kept.
 | `link_group_id` | BigInteger, nullable | Cross-account grouping |
 | `r_multiple` | Float, nullable | PnL / initial risk |
 | `intent_id` | BigInteger, FK → trade_intents.id, nullable | Originating intent |
+| `strategy_id` | Integer, FK → strategies.id, nullable | Normalized strategy reference (migration 010) |
 | `updated_at` | DateTime(tz) | Campaigns are mutable |
 
 **Indexes**
@@ -204,7 +207,7 @@ Stores trader-provided context at a decision moment (entry/add/exit).
 | `leg_id` | BigInteger, FK → campaign_legs.id, nullable | |
 | `intent_id` | BigInteger, FK → trade_intents.id, nullable | |
 | `context_type` | String(30) | CHECK ('entry', 'add', 'reduce', 'exit', 'idea', 'post_trade_reflection') |
-| `strategy_tags` | JSONB, default [] | Strategy label chips |
+| `strategy_id` | Integer FK → strategies.id, nullable | Normalized strategy reference (migration 010) |
 | `hypothesis` | Text, nullable | What must be true |
 | `exit_intent` | JSONB, nullable | Exit plan details |
 | `feelings_then` | JSONB, nullable | Emotion chips at decision time |
@@ -216,6 +219,24 @@ Stores trader-provided context at a decision moment (entry/add/exit).
 **Indexes**
 - (account_id, campaign_id)
 - (account_id, created_at)
+
+#### 2.10 `strategies` (NEW — migration 010)
+Normalized, user-scoped strategy entity. Replaces free-text strategy tags with an FK-enforced reference.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | Integer | PK, autoincrement |
+| `account_id` | Integer, FK → user_accounts.id | NOT NULL, CASCADE |
+| `name` | String(100) | NOT NULL |
+| `description` | Text, nullable | Free-text description |
+| `is_active` | Boolean, default true | Soft-delete support |
+| `created_at` | DateTime(tz) | NOT NULL |
+| `updated_at` | DateTime(tz) | NOT NULL |
+
+**Constraints**: UNIQUE(account_id, name)
+**Indexes**: (account_id)
+
+Referenced by: `position_lots.strategy_id`, `trade_intents.strategy_id`, `decision_contexts.strategy_id`, `position_campaigns.strategy_id` — all with `ondelete="SET NULL"`.
 
 ---
 
@@ -231,6 +252,7 @@ Stores trader-provided context at a decision moment (entry/add/exit).
 | Journey | `leg_fill_map` | Join table: which fills compose which legs |
 | Pre-execution | `trade_intents` | Structured trade proposals for evaluation |
 | Behavioral | `decision_contexts` | Trader's context/feelings at decisions |
+| Taxonomy | `strategies` | Normalized user-defined strategies (FK-enforced) |
 | Evaluation | `trade_evaluations` | Evaluation results (multi-scope: intent/campaign/leg) |
 | Evaluation | `trade_evaluation_items` | Individual findings with dimensions/visuals |
 
@@ -424,7 +446,7 @@ Rules:
 Migration `009_position_campaigns.py` evolves the existing schema:
 
 1. Add `source` column to `trade_fills`
-2. Add `hypothesis`, `strategy_tags` to `trade_intents`
+2. Add `hypothesis`, `strategy_tags` to `trade_intents` *(strategy_tags later replaced by strategy_id FK in migration 010)*
 3. Rename `round_trips` → `position_campaigns`, add new columns, rename indexes/constraints
 4. Create `campaign_legs` table
 5. Create `leg_fill_map` table
@@ -434,6 +456,14 @@ Migration `009_position_campaigns.py` evolves the existing schema:
 9. Add `dimension_key`, `visuals` to `trade_evaluation_items`
 
 Full downgrade reversal in reverse order.
+
+Migration `010_strategies_first_class.py` normalizes strategy:
+
+1. Create `strategies` table (unique name per account)
+2. Add `strategy_id` FK to `position_lots`, drop `strategy_tag`
+3. Add `strategy_id` FK to `trade_intents`, drop `strategy_tags`
+4. Add `strategy_id` FK to `decision_contexts`, drop `strategy_tags`
+5. Add `strategy_id` FK to `position_campaigns`
 
 ---
 
