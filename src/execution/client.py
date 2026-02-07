@@ -91,6 +91,37 @@ class PositionInfo:
     side: str
 
 
+@dataclass
+class TradeFillInfo:
+    """Trade fill information from broker.
+
+    Attributes:
+        id: Activity ID from broker (unique identifier)
+        order_id: Order ID this fill belongs to
+        symbol: Asset symbol
+        side: 'buy' or 'sell'
+        quantity: Number of shares filled
+        price: Fill price
+        transaction_time: When the fill occurred
+        order_status: Status of the order (filled, partially_filled)
+        leaves_qty: Remaining quantity on the order
+        cumulative_qty: Total quantity filled so far
+        raw_data: Raw response from broker
+    """
+
+    id: str
+    order_id: str
+    symbol: str
+    side: str
+    quantity: float
+    price: float
+    transaction_time: datetime
+    order_status: str
+    leaves_qty: float
+    cumulative_qty: float
+    raw_data: dict = field(default_factory=dict)
+
+
 class AlpacaClient:
     """Client for connecting to Alpaca trading API.
 
@@ -514,6 +545,72 @@ class AlpacaClient:
         )
 
         return [self._convert_alpaca_order(o) for o in response]
+
+    def get_trade_fills(
+        self,
+        status: str = "closed",
+        limit: int = 500,
+        symbols: list[str] | None = None,
+    ) -> list[TradeFillInfo]:
+        """Get trade fills from Alpaca by fetching filled orders.
+
+        Fetches closed orders and extracts fill information.
+
+        Args:
+            status: Order status filter ('closed' for fills)
+            limit: Maximum number of orders to return
+            symbols: Filter by symbols
+
+        Returns:
+            List of TradeFillInfo for all fills
+        """
+        try:
+            # Get closed (filled) orders
+            orders = self.get_orders(status=status, limit=limit, symbols=symbols)
+
+            fills = []
+            for order in orders:
+                # Only include filled or partially filled orders
+                if order.filled_quantity <= 0:
+                    continue
+
+                try:
+                    fill = TradeFillInfo(
+                        id=order.broker_order_id or "",
+                        order_id=order.broker_order_id or "",
+                        symbol=order.symbol,
+                        side=str(order.side.value) if hasattr(order.side, 'value') else str(order.side),
+                        quantity=order.filled_quantity,
+                        price=order.filled_avg_price,
+                        transaction_time=order.filled_at or order.submitted_at or datetime.now(),
+                        order_status=str(order.status.value) if hasattr(order.status, 'value') else str(order.status),
+                        leaves_qty=order.remaining_quantity,
+                        cumulative_qty=order.filled_quantity,
+                        raw_data={
+                            "broker_order_id": order.broker_order_id,
+                            "client_order_id": order.client_order_id,
+                            "symbol": order.symbol,
+                            "side": str(order.side),
+                            "order_type": str(order.order_type),
+                            "qty": str(order.quantity),
+                            "filled_qty": str(order.filled_quantity),
+                            "filled_avg_price": str(order.filled_avg_price),
+                            "status": str(order.status),
+                            "submitted_at": str(order.submitted_at) if order.submitted_at else None,
+                            "filled_at": str(order.filled_at) if order.filled_at else None,
+                        }
+                    )
+                    fills.append(fill)
+                except Exception as e:
+                    logger.warning(f"Failed to parse order as fill: {e}, order={order}")
+                    continue
+
+            logger.info(f"Fetched {len(fills)} trade fills from Alpaca (from {len(orders)} closed orders)")
+            return fills
+
+        except Exception as e:
+            logger.error(f"Failed to get trade fills: {e}")
+            return []
 
     def cancel_order(self, order_id: str) -> bool:
         """Cancel an order by broker order ID.
