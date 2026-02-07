@@ -374,9 +374,87 @@ All endpoints return standard HTTP error codes:
 }
 ```
 
+## Feature Computation
+
+### `POST /api/compute-features/{symbol}`
+Compute technical features for all timeframes of a ticker.
+
+Computes the full feature set including returns, volatility, volume, intrabar, anchor, time-of-day, and TA-Lib indicators.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| force | boolean | false | Recompute features for all bars |
+
+**Example:**
+```bash
+curl -X POST "http://localhost:8000/api/compute-features/AAPL"
+```
+
+**Response:**
+```json
+{
+  "symbol": "AAPL",
+  "timeframes_processed": 3,
+  "timeframes_skipped": 2,
+  "features_stored": 1500,
+  "message": "Computed features for AAPL: 1500 rows stored"
+}
+```
+
+## Trading Buddy
+
+### `POST /api/trading-buddy/evaluate`
+Evaluate a proposed trade intent.
+
+**Request Body:**
+```json
+{
+  "symbol": "AAPL",
+  "direction": "long",
+  "timeframe": "15Min",
+  "entry_price": 150.00,
+  "stop_loss": 148.00,
+  "profit_target": 155.00,
+  "position_size": 100,
+  "rationale": "Breakout above resistance"
+}
+```
+
+**Response:**
+```json
+{
+  "score": 75,
+  "summary": "Trade has moderate risk. Watch for regime conflict.",
+  "items": [
+    {
+      "evaluator": "risk_reward",
+      "code": "RR_RATIO",
+      "severity": "info",
+      "title": "Risk/Reward Ratio",
+      "message": "R:R of 2.5:1 meets minimum threshold",
+      "evidence": [{"label": "R:R", "value": "2.5:1"}]
+    },
+    {
+      "evaluator": "regime_fit",
+      "code": "REGIME_CONFLICT",
+      "severity": "warning",
+      "title": "Regime Conflict",
+      "message": "Current regime is bearish, trade is long",
+      "evidence": [{"label": "Regime", "value": "down_trending"}]
+    }
+  ],
+  "blocker_count": 0,
+  "critical_count": 0,
+  "warning_count": 1,
+  "info_count": 1
+}
+```
+
 ## Broker Integration
 
-### `POST /api/trading-buddy/connect`
+### `POST /api/broker/connect`
 Initiate a broker connection using SnapTrade.
 
 **Response:**
@@ -386,7 +464,7 @@ Initiate a broker connection using SnapTrade.
 }
 ```
 
-### `POST /api/trading-buddy/sync`
+### `POST /api/broker/sync`
 Sync trade history from connected brokers.
 
 **Response:**
@@ -397,7 +475,7 @@ Sync trade history from connected brokers.
 }
 ```
 
-### `GET /api/trading-buddy/trades`
+### `GET /api/broker/trades`
 Get trade history.
 
 **Response:**
@@ -412,6 +490,96 @@ Get trade history.
     "brokerage": "Robinhood"
   }
 ]
+```
+
+## Position Campaigns
+
+### `GET /api/campaigns`
+Get all position campaigns for the authenticated user.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| status | string | null | Filter by 'open' or 'closed' |
+| symbol | string | null | Filter by symbol |
+| limit | int | 50 | Max campaigns to return |
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "symbol": "AAPL",
+    "direction": "long",
+    "status": "closed",
+    "opened_at": "2024-01-01T10:00:00",
+    "closed_at": "2024-01-02T14:30:00",
+    "qty_opened": 100,
+    "qty_closed": 100,
+    "avg_open_price": 150.00,
+    "avg_close_price": 155.00,
+    "realized_pnl": 500.00,
+    "return_pct": 3.33,
+    "num_fills": 2
+  }
+]
+```
+
+### `GET /api/campaigns/{id}`
+Get a specific campaign with its legs.
+
+**Response:**
+```json
+{
+  "id": 1,
+  "symbol": "AAPL",
+  "direction": "long",
+  "status": "closed",
+  "realized_pnl": 500.00,
+  "legs": [
+    {
+      "id": 1,
+      "leg_type": "open",
+      "side": "buy",
+      "quantity": 100,
+      "avg_price": 150.00,
+      "started_at": "2024-01-01T10:00:00"
+    },
+    {
+      "id": 2,
+      "leg_type": "close",
+      "side": "sell",
+      "quantity": 100,
+      "avg_price": 155.00,
+      "started_at": "2024-01-02T14:30:00"
+    }
+  ]
+}
+```
+
+### `GET /api/campaigns/stats`
+Get aggregate statistics for campaigns.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| period | string | 'all' | 'day', 'week', 'month', 'year', 'all' |
+
+**Response:**
+```json
+{
+  "total_campaigns": 50,
+  "winning_campaigns": 30,
+  "losing_campaigns": 20,
+  "win_rate": 0.60,
+  "total_pnl": 5000.00,
+  "avg_pnl": 100.00,
+  "avg_win": 250.00,
+  "avg_loss": -125.00,
+  "profit_factor": 2.0
+}
 ```
 
 ## Authentication
