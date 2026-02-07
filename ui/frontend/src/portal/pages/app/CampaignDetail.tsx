@@ -311,26 +311,60 @@ export default function CampaignDetail() {
           <OverallLabelBadge label={detail.evaluationCampaign.overallLabel} />
         </div>
 
-        {/* Meta row + Chart side-by-side */}
+        {/* Meta row */}
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-[var(--text-secondary)]">
+          <span>Source: {detail.campaign.source.replace(/_/g, ' ')}</span>
+          <span className="text-[var(--border-color)]">|</span>
+          <span>Cost basis: {detail.campaign.costBasisMethod}</span>
+          {detail.campaign.pnlRealized != null && (
+            <>
+              <span className="text-[var(--border-color)]">|</span>
+              <span
+                className={`font-mono font-medium ${
+                  detail.campaign.pnlRealized >= 0
+                    ? 'text-[var(--accent-green)]'
+                    : 'text-[var(--accent-red)]'
+                }`}
+              >
+                PnL: {detail.campaign.pnlRealized >= 0 ? '+' : ''}
+                ${detail.campaign.pnlRealized.toFixed(2)}
+              </span>
+            </>
+          )}
+        </div>
+
+        {/* Leg steps + Chart side-by-side */}
         <div className="mt-3 flex items-start gap-4">
-          {/* Left: meta info */}
-          <div className="flex-shrink-0 text-xs text-[var(--text-secondary)] pt-1">
-            <div>Source: {detail.campaign.source.replace(/_/g, ' ')}</div>
-            <div className="mt-1">Cost basis: {detail.campaign.costBasisMethod}</div>
-            {detail.campaign.pnlRealized != null && (
-              <div className="mt-1">
-                <span
-                  className={`font-mono font-medium ${
-                    detail.campaign.pnlRealized >= 0
-                      ? 'text-[var(--accent-green)]'
-                      : 'text-[var(--accent-red)]'
-                  }`}
+          {/* Left: Leg steps list */}
+          <div className="min-w-0 flex-1 space-y-2 pt-1">
+            {detail.legs.map((leg, idx) => {
+              const isEntry = leg.legType === 'open' || leg.legType === 'add';
+              return (
+                <div
+                  key={leg.legId}
+                  className="flex items-center gap-2 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-xs"
                 >
-                  PnL: {detail.campaign.pnlRealized >= 0 ? '+' : ''}
-                  ${detail.campaign.pnlRealized.toFixed(2)}
-                </span>
-              </div>
-            )}
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--border-color)] text-[10px] font-semibold text-[var(--text-primary)]">
+                    {idx + 1}
+                  </span>
+                  <span
+                    className={`font-semibold uppercase ${
+                      isEntry
+                        ? 'text-[var(--accent-blue)]'
+                        : 'text-[var(--accent-orange)]'
+                    }`}
+                  >
+                    {leg.legType}
+                  </span>
+                  <span className="font-mono text-[var(--text-primary)]">
+                    ${leg.avgPrice.toFixed(2)}
+                  </span>
+                  <span className="text-[var(--text-secondary)]">
+                    x{leg.quantity}
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           {/* Right: Price + PnL chart (60% of panel) */}
