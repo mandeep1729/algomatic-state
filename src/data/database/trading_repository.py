@@ -1429,3 +1429,302 @@ class TradingBuddyRepository:
                     )
 
         return legs_created
+
+    # -------------------------------------------------------------------------
+    # Campaign Leg Population with Semantic Leg Types
+    # -------------------------------------------------------------------------
+
+    def populate_legs_from_campaigns(self, campaign_id: int) -> dict:
+        """Populate CampaignLeg records from a campaign's fills.
+
+        Creates legs with semantic leg_type based on position direction transitions:
+        - open: First entry into a position (from flat)
+        - add: Adding to an existing position (scale-in)
+        - reduce: Partially reducing a position (scale-out)
+        - close: Fully closing a position (back to flat)
+        - flip_close: Closing a position as part of a direction flip
+        - flip_open: Opening a new position after a flip
+
+        Args:
+            campaign_id: The campaign to populate legs for
+
+        Returns:
+            Dict with stats: legs_created, fill_maps_created
+        """
+        stats = {
+            "legs_created": 0,
+            "fill_maps_created": 0,
+        }
+
+        campaign = self.get_campaign(campaign_id)
+        if not campaign:
+            logger.warning("Campaign id=%s not found for leg population", campaign_id)
+            return stats
+
+        # Get lots and closures for this campaign
+        lots = self.session.query(PositionLotModel).filter(
+            PositionLotModel.campaign_id == campaign_id
+        ).all()
+
+        closures = []
+        for lot in lots:
+            lot_closures = self.get_closures_for_lot(lot.id)
+            closures.extend(lot_closures)
+
+        if not lots and not closures:
+            logger.info("No lots or closures for campaign id=%s", campaign_id)
+            return stats
+
+        # Gather all relevant fill IDs
+        fill_ids = set()
+        for lot in lots:
+            fill_ids.add(lot.open_fill_id)
+        for closure in closures:
+            fill_ids.add(closure.close_fill_id)
+
+        if not fill_ids:
+            return stats
+
+        # Get fills and sort chronologically
+        fills = self.session.query(TradeFillModel).filter(
+            TradeFillModel.id.in_(fill_ids)
+        ).order_by(TradeFillModel.executed_at.asc()).all()
+
+        if not fills:
+            return stats
+
+        # Build lookup maps for efficient access
+        lot_by_open_fill: dict[int, PositionLotModel] = {
+            lot.open_fill_id: lot for lot in lots
+        }
+        closures_by_close_fill: dict[int, list[LotClosureModel]] = {}
+        for closure in closures:
+            if closure.close_fill_id not in closures_by_close_fill:
+                closures_by_close_fill[closure.close_fill_id] = []
+            closures_by_close_fill[closure.close_fill_id].append(closure)
+
+        # Delete existing legs for this campaign (for idempotency)
+        existing_legs = self.get_legs_for_campaign(campaign_id)
+        for leg in existing_legs:
+            self.session.delete(leg)
+        self.session.flush()
+
+        # Process fills and create legs with semantic types
+        legs_data = self._compute_leg_types(
+            fills=fills,
+            lot_by_open_fill=lot_by_open_fill,
+            closures_by_close_fill=closures_by_close_fill,
+            campaign_direction=campaign.direction,
+        )
+
+        # Create leg records and fill maps
+        for leg_data in legs_data:
+            leg = self.create_leg(
+                campaign_id=campaign_id,
+                leg_type=leg_data["leg_type"],
+                side=leg_data["side"],
+                quantity=leg_data["quantity"],
+                avg_price=leg_data["avg_price"],
+                started_at=leg_data["started_at"],
+                ended_at=leg_data["ended_at"],
+                fill_count=leg_data["fill_count"],
+            )
+            stats["legs_created"] += 1
+
+            # Create fill mappings
+            for fill_id, allocated_qty in leg_data["fill_allocations"]:
+                self.create_leg_fill_map(
+                    leg_id=leg.id,
+                    fill_id=fill_id,
+                    allocated_qty=allocated_qty,
+                )
+                stats["fill_maps_created"] += 1
+
+        logger.info(
+            "Populated legs for campaign id=%s: %s",
+            campaign_id,
+            stats,
+        )
+        return stats
+
+    def _compute_leg_types(
+        self,
+        fills: list[TradeFillModel],
+        lot_by_open_fill: dict[int, PositionLotModel],
+        closures_by_close_fill: dict[int, list[LotClosureModel]],
+        campaign_direction: str,
+    ) -> list[dict]:
+        """Compute semantic leg types based on position state transitions.
+
+        Processes fills chronologically and tracks position state to determine
+        the appropriate leg_type for each fill or group of fills.
+
+        Args:
+            fills: Fills sorted by executed_at ascending
+            lot_by_open_fill: Map of open_fill_id to PositionLot
+            closures_by_close_fill: Map of close_fill_id to list of LotClosure
+            campaign_direction: Campaign direction ('long' or 'short')
+
+        Returns:
+            List of leg data dicts with keys:
+            - leg_type, side, quantity, avg_price, started_at, ended_at,
+              fill_count, fill_allocations (list of (fill_id, qty) tuples)
+        """
+        legs_data = []
+
+        # Track current position state
+        # position > 0 means long, position < 0 means short, position == 0 means flat
+        position = 0.0
+
+        for fill in fills:
+            is_buy = fill.side.lower() == "buy"
+            fill_side = "buy" if is_buy else "sell"
+
+            # Determine if this fill opens or closes position
+            is_opening_fill = fill.id in lot_by_open_fill
+            is_closing_fill = fill.id in closures_by_close_fill
+
+            # Calculate position change from this fill
+            if is_opening_fill:
+                lot = lot_by_open_fill[fill.id]
+                open_qty = lot.open_qty
+                # Open fills increase position in the campaign direction
+                if campaign_direction == "long":
+                    qty_change = open_qty
+                else:
+                    qty_change = -open_qty
+            elif is_closing_fill:
+                close_closures = closures_by_close_fill[fill.id]
+                close_qty = sum(c.matched_qty for c in close_closures)
+                # Close fills decrease position toward flat
+                if campaign_direction == "long":
+                    qty_change = -close_qty
+                else:
+                    qty_change = close_qty
+            else:
+                # Fill not associated with lots or closures, skip
+                continue
+
+            # Determine leg_type based on position state transition
+            prev_position = position
+            new_position = position + qty_change
+
+            leg_type = self._determine_leg_type(
+                prev_position=prev_position,
+                new_position=new_position,
+                is_buy=is_buy,
+                campaign_direction=campaign_direction,
+            )
+
+            # Calculate fill quantity and price for this leg
+            if is_opening_fill:
+                lot = lot_by_open_fill[fill.id]
+                quantity = lot.open_qty
+                avg_price = lot.avg_open_price
+                fill_allocations = [(fill.id, quantity)]
+            else:
+                close_closures = closures_by_close_fill[fill.id]
+                quantity = sum(c.matched_qty for c in close_closures)
+                total_value = sum(c.matched_qty * c.close_price for c in close_closures)
+                avg_price = total_value / quantity if quantity > 0 else 0
+                fill_allocations = [(fill.id, quantity)]
+
+            # Create leg data
+            leg_data = {
+                "leg_type": leg_type,
+                "side": fill_side,
+                "quantity": quantity,
+                "avg_price": avg_price,
+                "started_at": fill.executed_at,
+                "ended_at": fill.executed_at,
+                "fill_count": 1,
+                "fill_allocations": fill_allocations,
+            }
+            legs_data.append(leg_data)
+
+            # Update position state
+            position = new_position
+
+        return legs_data
+
+    def _determine_leg_type(
+        self,
+        prev_position: float,
+        new_position: float,
+        is_buy: bool,
+        campaign_direction: str,
+    ) -> str:
+        """Determine the semantic leg type based on position state transition.
+
+        Args:
+            prev_position: Position before the fill (positive=long, negative=short)
+            new_position: Position after the fill
+            is_buy: True if the fill is a buy
+            campaign_direction: Campaign direction ('long' or 'short')
+
+        Returns:
+            One of: 'open', 'add', 'reduce', 'close', 'flip_close', 'flip_open'
+        """
+        was_flat = abs(prev_position) < 0.0001
+        is_flat = abs(new_position) < 0.0001
+        was_long = prev_position > 0.0001
+        was_short = prev_position < -0.0001
+        is_long = new_position > 0.0001
+        is_short = new_position < -0.0001
+
+        # Check for direction flip (crossing zero and going to opposite side)
+        crossed_zero = (was_long and is_short) or (was_short and is_long)
+
+        if crossed_zero:
+            # This is a flip scenario - would require flip_close followed by flip_open
+            # For simplicity, we'll assign based on the dominant action
+            if is_buy:
+                if was_short:
+                    # Buy while short -> closing short (flip_close) or going long
+                    if is_flat:
+                        return "close"
+                    elif is_long:
+                        return "flip_open"
+                    else:
+                        return "reduce"
+            else:
+                if was_long:
+                    # Sell while long -> closing long (flip_close) or going short
+                    if is_flat:
+                        return "close"
+                    elif is_short:
+                        return "flip_open"
+                    else:
+                        return "reduce"
+
+        # From flat -> position = 'open'
+        if was_flat and not is_flat:
+            return "open"
+
+        # From position -> flat = 'close'
+        if not was_flat and is_flat:
+            return "close"
+
+        # Adding to position (same direction, increasing magnitude)
+        if was_long and is_long and new_position > prev_position:
+            return "add"
+        if was_short and is_short and new_position < prev_position:
+            return "add"
+
+        # Reducing position (same direction, decreasing magnitude)
+        if was_long and is_long and new_position < prev_position:
+            return "reduce"
+        if was_short and is_short and new_position > prev_position:
+            return "reduce"
+
+        # Default fallback
+        if was_flat:
+            return "open"
+        elif is_flat:
+            return "close"
+        else:
+            # Continuing in same direction
+            if abs(new_position) > abs(prev_position):
+                return "add"
+            else:
+                return "reduce"

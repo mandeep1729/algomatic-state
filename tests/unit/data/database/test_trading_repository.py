@@ -573,3 +573,311 @@ class TestFinalizeCampaign:
 
         # 2 hours = 7200 seconds
         assert campaign.holding_period_sec == 7200
+
+
+class TestPopulateLegsFromCampaigns:
+    """Tests for populate_legs_from_campaigns method."""
+
+    def test_returns_zero_stats_when_campaign_not_found(self, repository, mock_session):
+        """Test that zero stats are returned when campaign doesn't exist."""
+        mock_session.query.return_value.filter.return_value.first.return_value = None
+
+        result = repository.populate_legs_from_campaigns(campaign_id=999)
+
+        assert result["legs_created"] == 0
+        assert result["fill_maps_created"] == 0
+
+    def test_creates_open_and_close_legs_for_simple_round_trip(self, repository, mock_session):
+        """Test that open and close legs are created for a simple buy->sell."""
+        now = datetime.now(timezone.utc)
+
+        # Create mock campaign
+        mock_campaign = MagicMock()
+        mock_campaign.id = 1
+        mock_campaign.direction = "long"
+
+        # Create mock lot
+        mock_lot = make_lot(
+            id=1, symbol="AAPL", direction="long",
+            open_qty=10, remaining_qty=0, avg_open_price=150.0,
+            opened_at=now, open_fill_id=1,
+        )
+        mock_lot.campaign_id = 1
+
+        # Create mock closure
+        mock_closure = MagicMock()
+        mock_closure.id = 1
+        mock_closure.lot_id = 1
+        mock_closure.matched_qty = 10
+        mock_closure.close_price = 160.0
+        mock_closure.close_fill_id = 2
+
+        # Create mock fills
+        buy_fill = make_fill(1, "AAPL", "buy", 10, 150.0, now)
+        sell_fill = make_fill(2, "AAPL", "sell", 10, 160.0, now + timedelta(hours=1))
+
+        with patch.object(repository, "get_campaign", return_value=mock_campaign):
+            with patch.object(repository, "get_closures_for_lot", return_value=[mock_closure]):
+                with patch.object(repository, "get_legs_for_campaign", return_value=[]):
+                    with patch.object(repository, "create_leg") as mock_create_leg:
+                        with patch.object(repository, "create_leg_fill_map") as mock_create_lfm:
+                            # Mock the lots query
+                            mock_session.query.return_value.filter.return_value.all.return_value = [mock_lot]
+                            # Mock the fills query
+                            mock_session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [
+                                buy_fill, sell_fill
+                            ]
+
+                            mock_leg = MagicMock()
+                            mock_leg.id = 1
+                            mock_create_leg.return_value = mock_leg
+
+                            result = repository.populate_legs_from_campaigns(campaign_id=1)
+
+        assert result["legs_created"] == 2
+        assert result["fill_maps_created"] == 2
+
+        # Verify leg types
+        leg_calls = mock_create_leg.call_args_list
+        assert len(leg_calls) == 2
+        assert leg_calls[0].kwargs["leg_type"] == "open"
+        assert leg_calls[0].kwargs["side"] == "buy"
+        assert leg_calls[1].kwargs["leg_type"] == "close"
+        assert leg_calls[1].kwargs["side"] == "sell"
+
+
+class TestDetermineLegType:
+    """Tests for _determine_leg_type method."""
+
+    def test_flat_to_long_is_open(self, repository):
+        """Test that going from flat to long is an 'open' leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=0.0,
+            new_position=10.0,
+            is_buy=True,
+            campaign_direction="long",
+        )
+        assert leg_type == "open"
+
+    def test_flat_to_short_is_open(self, repository):
+        """Test that going from flat to short is an 'open' leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=0.0,
+            new_position=-10.0,
+            is_buy=False,
+            campaign_direction="short",
+        )
+        assert leg_type == "open"
+
+    def test_long_to_flat_is_close(self, repository):
+        """Test that going from long to flat is a 'close' leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=10.0,
+            new_position=0.0,
+            is_buy=False,
+            campaign_direction="long",
+        )
+        assert leg_type == "close"
+
+    def test_short_to_flat_is_close(self, repository):
+        """Test that going from short to flat is a 'close' leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=-10.0,
+            new_position=0.0,
+            is_buy=True,
+            campaign_direction="short",
+        )
+        assert leg_type == "close"
+
+    def test_increasing_long_is_add(self, repository):
+        """Test that adding to a long position is an 'add' leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=10.0,
+            new_position=20.0,
+            is_buy=True,
+            campaign_direction="long",
+        )
+        assert leg_type == "add"
+
+    def test_increasing_short_is_add(self, repository):
+        """Test that adding to a short position is an 'add' leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=-10.0,
+            new_position=-20.0,
+            is_buy=False,
+            campaign_direction="short",
+        )
+        assert leg_type == "add"
+
+    def test_decreasing_long_is_reduce(self, repository):
+        """Test that reducing a long position is a 'reduce' leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=20.0,
+            new_position=10.0,
+            is_buy=False,
+            campaign_direction="long",
+        )
+        assert leg_type == "reduce"
+
+    def test_decreasing_short_is_reduce(self, repository):
+        """Test that reducing a short position is a 'reduce' leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=-20.0,
+            new_position=-10.0,
+            is_buy=True,
+            campaign_direction="short",
+        )
+        assert leg_type == "reduce"
+
+    def test_flip_long_to_short_is_flip_open(self, repository):
+        """Test that flipping from long to short creates a flip_open leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=10.0,
+            new_position=-5.0,
+            is_buy=False,
+            campaign_direction="long",
+        )
+        assert leg_type == "flip_open"
+
+    def test_flip_short_to_long_is_flip_open(self, repository):
+        """Test that flipping from short to long creates a flip_open leg."""
+        leg_type = repository._determine_leg_type(
+            prev_position=-10.0,
+            new_position=5.0,
+            is_buy=True,
+            campaign_direction="short",
+        )
+        assert leg_type == "flip_open"
+
+
+class TestComputeLegTypes:
+    """Tests for _compute_leg_types method."""
+
+    def test_simple_open_close_long(self, repository):
+        """Test open/close legs for a simple long position."""
+        now = datetime.now(timezone.utc)
+
+        buy_fill = make_fill(1, "AAPL", "buy", 10, 150.0, now)
+        sell_fill = make_fill(2, "AAPL", "sell", 10, 160.0, now + timedelta(hours=1))
+
+        mock_lot = MagicMock()
+        mock_lot.open_qty = 10
+        mock_lot.avg_open_price = 150.0
+
+        mock_closure = MagicMock()
+        mock_closure.matched_qty = 10
+        mock_closure.close_price = 160.0
+
+        legs = repository._compute_leg_types(
+            fills=[buy_fill, sell_fill],
+            lot_by_open_fill={1: mock_lot},
+            closures_by_close_fill={2: [mock_closure]},
+            campaign_direction="long",
+        )
+
+        assert len(legs) == 2
+        assert legs[0]["leg_type"] == "open"
+        assert legs[0]["side"] == "buy"
+        assert legs[0]["quantity"] == 10
+        assert legs[1]["leg_type"] == "close"
+        assert legs[1]["side"] == "sell"
+        assert legs[1]["quantity"] == 10
+
+    def test_scale_in_creates_add_leg(self, repository):
+        """Test that scale-in creates an 'add' leg."""
+        now = datetime.now(timezone.utc)
+
+        buy1 = make_fill(1, "AAPL", "buy", 5, 150.0, now)
+        buy2 = make_fill(2, "AAPL", "buy", 5, 152.0, now + timedelta(hours=1))
+        sell_fill = make_fill(3, "AAPL", "sell", 10, 160.0, now + timedelta(hours=2))
+
+        mock_lot1 = MagicMock()
+        mock_lot1.open_qty = 5
+        mock_lot1.avg_open_price = 150.0
+
+        mock_lot2 = MagicMock()
+        mock_lot2.open_qty = 5
+        mock_lot2.avg_open_price = 152.0
+
+        mock_closure1 = MagicMock()
+        mock_closure1.matched_qty = 5
+        mock_closure1.close_price = 160.0
+
+        mock_closure2 = MagicMock()
+        mock_closure2.matched_qty = 5
+        mock_closure2.close_price = 160.0
+
+        legs = repository._compute_leg_types(
+            fills=[buy1, buy2, sell_fill],
+            lot_by_open_fill={1: mock_lot1, 2: mock_lot2},
+            closures_by_close_fill={3: [mock_closure1, mock_closure2]},
+            campaign_direction="long",
+        )
+
+        assert len(legs) == 3
+        assert legs[0]["leg_type"] == "open"
+        assert legs[0]["side"] == "buy"
+        assert legs[1]["leg_type"] == "add"
+        assert legs[1]["side"] == "buy"
+        assert legs[2]["leg_type"] == "close"
+        assert legs[2]["side"] == "sell"
+
+    def test_scale_out_creates_reduce_and_close_legs(self, repository):
+        """Test that scale-out creates 'reduce' then 'close' legs."""
+        now = datetime.now(timezone.utc)
+
+        buy_fill = make_fill(1, "AAPL", "buy", 10, 150.0, now)
+        sell1 = make_fill(2, "AAPL", "sell", 5, 160.0, now + timedelta(hours=1))
+        sell2 = make_fill(3, "AAPL", "sell", 5, 165.0, now + timedelta(hours=2))
+
+        mock_lot = MagicMock()
+        mock_lot.open_qty = 10
+        mock_lot.avg_open_price = 150.0
+
+        mock_closure1 = MagicMock()
+        mock_closure1.matched_qty = 5
+        mock_closure1.close_price = 160.0
+
+        mock_closure2 = MagicMock()
+        mock_closure2.matched_qty = 5
+        mock_closure2.close_price = 165.0
+
+        legs = repository._compute_leg_types(
+            fills=[buy_fill, sell1, sell2],
+            lot_by_open_fill={1: mock_lot},
+            closures_by_close_fill={2: [mock_closure1], 3: [mock_closure2]},
+            campaign_direction="long",
+        )
+
+        assert len(legs) == 3
+        assert legs[0]["leg_type"] == "open"
+        assert legs[1]["leg_type"] == "reduce"
+        assert legs[2]["leg_type"] == "close"
+
+    def test_short_position_legs(self, repository):
+        """Test leg types for a short position round trip."""
+        now = datetime.now(timezone.utc)
+
+        sell_fill = make_fill(1, "AAPL", "sell", 10, 160.0, now)
+        buy_fill = make_fill(2, "AAPL", "buy", 10, 150.0, now + timedelta(hours=1))
+
+        mock_lot = MagicMock()
+        mock_lot.open_qty = 10
+        mock_lot.avg_open_price = 160.0
+
+        mock_closure = MagicMock()
+        mock_closure.matched_qty = 10
+        mock_closure.close_price = 150.0
+
+        legs = repository._compute_leg_types(
+            fills=[sell_fill, buy_fill],
+            lot_by_open_fill={1: mock_lot},
+            closures_by_close_fill={2: [mock_closure]},
+            campaign_direction="short",
+        )
+
+        assert len(legs) == 2
+        assert legs[0]["leg_type"] == "open"
+        assert legs[0]["side"] == "sell"
+        assert legs[1]["leg_type"] == "close"
+        assert legs[1]["side"] == "buy"
