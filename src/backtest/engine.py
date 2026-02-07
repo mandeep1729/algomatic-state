@@ -225,6 +225,7 @@ class BacktestEngine:
 
     def _reset_state(self) -> None:
         """Reset internal state."""
+        logger.debug("Resetting backtest state, initial_capital=%.2f", self._config.initial_capital)
         self._cash = self._config.initial_capital
         self._positions: dict[str, Position] = {}
         self._pending_orders: list[dict[str, Any]] = []
@@ -407,6 +408,10 @@ class BacktestEngine:
         """
         symbol = signal.symbol
         current_position = self._positions.get(symbol)
+        logger.debug(
+            "Processing signal: symbol=%s, direction=%s, strength=%.2f, timestamp=%s",
+            symbol, signal.direction.value, signal.strength, timestamp,
+        )
 
         if signal.direction == SignalDirection.FLAT:
             # Exit signal - close position
@@ -490,6 +495,8 @@ class BacktestEngine:
         """
         orders_to_execute = self._pending_orders.copy()
         self._pending_orders = []
+        if orders_to_execute:
+            logger.debug("Executing %d pending orders at %s", len(orders_to_execute), timestamp)
 
         for order in orders_to_execute:
             symbol = order["symbol"]
@@ -544,6 +551,10 @@ class BacktestEngine:
             timestamp: Timestamp
             direction: Position direction
         """
+        logger.debug(
+            "Opening position: symbol=%s, size=$%.2f, price=%.2f, direction=%s",
+            symbol, size_dollars, fill_price, direction.value,
+        )
         # Calculate shares
         shares = size_dollars / fill_price
         if not self._config.allow_fractional_shares:
@@ -612,9 +623,14 @@ class BacktestEngine:
             timestamp: Timestamp
         """
         if symbol not in self._positions:
+            logger.debug("No position to close for %s", symbol)
             return
 
         pos = self._positions[symbol]
+        logger.debug(
+            "Closing position: symbol=%s, qty=%.2f, entry=%.2f, exit=%.2f",
+            symbol, pos.quantity, pos.avg_price, fill_price,
+        )
 
         # Calculate P&L
         if pos.is_long:
@@ -647,6 +663,10 @@ class BacktestEngine:
             commission=commission,
             slippage=slippage_cost,
         ))
+        logger.debug(
+            "Trade recorded: symbol=%s, pnl=%.2f, commission=%.2f",
+            symbol, net_pnl, commission,
+        )
 
         # Remove position
         del self._positions[symbol]

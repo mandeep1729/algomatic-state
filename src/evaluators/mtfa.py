@@ -55,7 +55,13 @@ class MTFAEvaluator(Evaluator):
 
         mtfa = context.mtfa
         if mtfa is None or mtfa.alignment_score is None:
+            logger.debug("MTFA evaluate: no mtfa data available")
             return items
+
+        logger.debug(
+            "MTFA evaluate: symbol=%s, alignment_score=%.2f, conflicts=%d",
+            intent.symbol, mtfa.alignment_score, len(mtfa.conflicts) if mtfa.conflicts else 0,
+        )
 
         low_threshold = cfg.get_threshold(
             "low_alignment_threshold", DEFAULT_LOW_ALIGNMENT_THRESHOLD
@@ -81,6 +87,7 @@ class MTFAEvaluator(Evaluator):
         htf_items = self._check_htf_transition_risk(context, htf_transition_threshold, cfg)
         items.extend(htf_items)
 
+        logger.debug("MTFA evaluate complete: %d items generated", len(items))
         return items
 
     def _check_low_alignment(

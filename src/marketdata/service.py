@@ -125,6 +125,7 @@ class MarketDataService:
             self._pending_requests[request_key] = pending
 
         # Do the actual work
+        logger.debug("Processing ensure_data request for %s, timeframes=%s", symbol, timeframes)
         try:
             result = self._do_ensure_data(symbol, timeframes, start, end)
             pending.result = result
@@ -194,6 +195,7 @@ class MarketDataService:
         end: datetime,
     ) -> int:
         """Fetch missing 1-minute bars from the provider."""
+        logger.debug("Ensuring 1Min data for %s: start=%s, end=%s", symbol, start, end)
         db_latest = repo.get_latest_timestamp(symbol, "1Min")
 
         if db_latest is None:
@@ -223,6 +225,7 @@ class MarketDataService:
         end: datetime,
     ) -> int:
         """Fetch missing daily bars from the provider."""
+        logger.debug("Ensuring 1Day data for %s: start=%s, end=%s", symbol, start, end)
         db_latest = repo.get_latest_timestamp(symbol, "1Day")
 
         if db_latest is None:
@@ -310,6 +313,7 @@ class MarketDataService:
         end: datetime,
     ) -> int:
         """Aggregate 1Min data to a higher intraday timeframe and insert."""
+        logger.debug("Aggregating %s for %s from %s to %s", target_tf, symbol, start, end)
         try:
             df_1min = repo.get_bars(symbol, "1Min", start, end)
             if df_1min.empty:

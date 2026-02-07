@@ -105,10 +105,12 @@ class CSVLoader(BaseDataLoader):
 
         # Normalize OHLCV column names
         df = self._normalize_columns(df)
+        logger.debug("Columns normalized, rows=%d", len(df))
 
         # Handle missing values
         if self.fill_missing:
             df = self._handle_missing(df)
+            logger.debug("Missing values handled")
 
         # Set timestamp as index and sort
         df = df.set_index("timestamp").sort_index()
@@ -195,7 +197,9 @@ class CSVLoader(BaseDataLoader):
         """Find the timestamp column in the DataFrame."""
         for col in df.columns:
             if col.lower() in TIMESTAMP_COLUMN_NAMES:
+                logger.debug("Found timestamp column: %s", col)
                 return col
+        logger.debug("No timestamp column found in: %s", list(df.columns))
         return None
 
     def _try_parse_dates(self, series: pd.Series) -> pd.Series | None:
@@ -215,6 +219,7 @@ class CSVLoader(BaseDataLoader):
                 # Accept if >95% of values parsed successfully
                 valid_ratio = parsed.notna().mean()
                 if valid_ratio > 0.95:
+                    logger.debug("Date format matched: %s (valid_ratio=%.2f)", fmt, valid_ratio)
                     return parsed
             except (ValueError, TypeError):
                 continue
