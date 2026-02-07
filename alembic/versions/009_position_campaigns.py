@@ -305,8 +305,8 @@ def upgrade() -> None:
         nullable=True,
     )
 
-    # Drop the unique constraint on intent_id
-    op.drop_constraint("trade_evaluations_intent_id_key", "trade_evaluations", type_="unique")
+    # Drop the unique constraint on intent_id (created in migration 005)
+    op.drop_constraint("uq_trade_evaluations_intent", "trade_evaluations", type_="unique")
 
     # Add new columns
     op.add_column(
@@ -411,9 +411,9 @@ def downgrade() -> None:
     op.drop_column("trade_evaluations", "leg_id")
     op.drop_column("trade_evaluations", "campaign_id")
 
-    # Restore unique constraint on intent_id
+    # Restore unique constraint on intent_id (original name from migration 005)
     op.create_unique_constraint(
-        "trade_evaluations_intent_id_key", "trade_evaluations", ["intent_id"]
+        "uq_trade_evaluations_intent", "trade_evaluations", ["intent_id"]
     )
 
     # Make intent_id NOT NULL again
