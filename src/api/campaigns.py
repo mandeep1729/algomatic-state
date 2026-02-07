@@ -2,15 +2,17 @@
 
 Provides endpoints for:
 - Fetching campaign details with legs and fill information
-- This replaces the mock fetchTradeDetail function in the frontend
+- Fetching P&L summary aggregated by ticker symbol
+- This replaces the mock fetchTradeDetail and fetchTickerPnl functions in the frontend
 """
 
 import logging
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from src.api.auth_middleware import get_current_user
@@ -86,9 +88,177 @@ class CampaignDetailResponse(BaseModel):
     notes: Optional[str] = None
 
 
+class TickerPnlResponse(BaseModel):
+    """P&L summary for a single ticker symbol.
+
+    Aggregates P&L and trade statistics from position_campaigns.
+    """
+
+    symbol: str
+    total_pnl: float
+    total_pnl_pct: float
+    trade_count: int
+    closed_count: int
+    first_entry_time: Optional[datetime] = None
+
+
+class TickerPnlListResponse(BaseModel):
+    """List of ticker P&L summaries."""
+
+    tickers: List[TickerPnlResponse]
+
+
 # -----------------------------------------------------------------------------
 # Endpoints
 # -----------------------------------------------------------------------------
+
+
+@router.get("/pnl/by-ticker", response_model=TickerPnlListResponse)
+async def get_pnl_by_ticker(
+    status: Literal["open", "closed", "all"] = Query(
+        "all", description="Filter by campaign status"
+    ),
+    limit: int = Query(50, ge=1, le=200, description="Maximum number of tickers to return"),
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get P&L summary aggregated by ticker symbol.
+
+    Aggregates realized P&L and trade counts from position_campaigns
+    grouped by symbol. Ordered by total P&L descending.
+
+    Args:
+        status: Filter by campaign status ('open', 'closed', or 'all')
+        limit: Maximum number of tickers to return (default 50, max 200)
+
+    Returns:
+        List of ticker P&L summaries.
+    """
+    logger.debug(
+        "Fetching P&L by ticker for user_id=%d, status=%s, limit=%d",
+        user_id,
+        status,
+        limit,
+    )
+
+    # Build base query with aggregations
+    base_query = db.query(
+        PositionCampaign.symbol,
+        func.coalesce(func.sum(PositionCampaign.realized_pnl), 0.0).label("total_pnl"),
+        func.count(PositionCampaign.id).label("trade_count"),
+        func.count(PositionCampaign.id).filter(
+            PositionCampaign.status == "closed"
+        ).label("closed_count"),
+        func.min(PositionCampaign.opened_at).label("first_entry_time"),
+    ).filter(PositionCampaign.account_id == user_id)
+
+    # Apply status filter
+    if status == "open":
+        base_query = base_query.filter(PositionCampaign.status == "open")
+    elif status == "closed":
+        base_query = base_query.filter(PositionCampaign.status == "closed")
+    # 'all' means no additional filter
+
+    # Group by symbol and order by total P&L descending
+    results = (
+        base_query.group_by(PositionCampaign.symbol)
+        .order_by(func.coalesce(func.sum(PositionCampaign.realized_pnl), 0.0).desc())
+        .limit(limit)
+        .all()
+    )
+
+    logger.debug("Found %d tickers with P&L data", len(results))
+
+    # Build response - need to compute total_pnl_pct from aggregated data
+    tickers = []
+    for row in results:
+        # For P&L percentage, we need to calculate cost basis
+        # Query total cost basis for this symbol (closed trades only have realized P&L)
+        cost_basis_query = db.query(
+            func.sum(PositionCampaign.avg_open_price * PositionCampaign.qty_opened)
+        ).filter(
+            PositionCampaign.account_id == user_id,
+            PositionCampaign.symbol == row.symbol,
+            PositionCampaign.status == "closed",
+        ).scalar()
+
+        total_cost = cost_basis_query or 0.0
+        total_pnl_pct = (row.total_pnl / total_cost * 100) if total_cost > 0 else 0.0
+
+        tickers.append(
+            TickerPnlResponse(
+                symbol=row.symbol,
+                total_pnl=round(row.total_pnl, 2),
+                total_pnl_pct=round(total_pnl_pct, 2),
+                trade_count=row.trade_count,
+                closed_count=row.closed_count,
+                first_entry_time=row.first_entry_time,
+            )
+        )
+
+    return TickerPnlListResponse(tickers=tickers)
+
+
+@router.get("/pnl/{symbol}", response_model=TickerPnlResponse)
+async def get_ticker_pnl(
+    symbol: str,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get P&L summary for a single ticker symbol.
+
+    Args:
+        symbol: The ticker symbol to get P&L for.
+
+    Returns:
+        P&L summary for the specified ticker.
+    """
+    logger.debug("Fetching P&L for symbol=%s, user_id=%d", symbol, user_id)
+
+    # Query aggregated data for this symbol
+    result = db.query(
+        func.coalesce(func.sum(PositionCampaign.realized_pnl), 0.0).label("total_pnl"),
+        func.count(PositionCampaign.id).label("trade_count"),
+        func.count(PositionCampaign.id).filter(
+            PositionCampaign.status == "closed"
+        ).label("closed_count"),
+        func.min(PositionCampaign.opened_at).label("first_entry_time"),
+    ).filter(
+        PositionCampaign.account_id == user_id,
+        PositionCampaign.symbol == symbol.upper(),
+    ).first()
+
+    if result is None or result.trade_count == 0:
+        # Return zero values for unknown ticker
+        return TickerPnlResponse(
+            symbol=symbol.upper(),
+            total_pnl=0.0,
+            total_pnl_pct=0.0,
+            trade_count=0,
+            closed_count=0,
+            first_entry_time=None,
+        )
+
+    # Calculate cost basis for P&L percentage
+    cost_basis_query = db.query(
+        func.sum(PositionCampaign.avg_open_price * PositionCampaign.qty_opened)
+    ).filter(
+        PositionCampaign.account_id == user_id,
+        PositionCampaign.symbol == symbol.upper(),
+        PositionCampaign.status == "closed",
+    ).scalar()
+
+    total_cost = cost_basis_query or 0.0
+    total_pnl_pct = (result.total_pnl / total_cost * 100) if total_cost > 0 else 0.0
+
+    return TickerPnlResponse(
+        symbol=symbol.upper(),
+        total_pnl=round(result.total_pnl, 2),
+        total_pnl_pct=round(total_pnl_pct, 2),
+        trade_count=result.trade_count,
+        closed_count=result.closed_count,
+        first_entry_time=result.first_entry_time,
+    )
 
 
 @router.get("/{campaign_id}", response_model=CampaignDetailResponse)

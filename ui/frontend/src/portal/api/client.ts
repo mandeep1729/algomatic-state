@@ -11,6 +11,7 @@
  *   GET  /api/broker/status           → fetchBrokerStatus
  *   GET  /api/broker/trades           → fetchTrades
  *   GET  /api/campaigns/{campaignId}  → fetchTradeDetail
+ *   GET  /api/campaigns/pnl/{symbol}  → fetchTickerPnl
  *   GET  /api/sync-status/{symbol}    → fetchSyncStatus
  *   POST /api/sync/{symbol}           → triggerSync
  *   GET  /api/ohlcv/{symbol}          → fetchOHLCVData
@@ -353,5 +354,36 @@ export async function fetchTradeDetail(campaignId: string): Promise<TradeDetail>
     evaluation: null,
     notes: res.notes,
     tags,
+  };
+}
+
+// =============================================================================
+// Ticker P&L — GET /api/campaigns/pnl/{symbol}
+// Returns P&L summary for a single ticker symbol
+// =============================================================================
+
+import type { TickerPnlSummary } from '../types';
+
+interface TickerPnlBackendResponse {
+  symbol: string;
+  total_pnl: number;
+  total_pnl_pct: number;
+  trade_count: number;
+  closed_count: number;
+  first_entry_time: string | null;
+}
+
+export async function fetchTickerPnl(symbol: string): Promise<TickerPnlSummary> {
+  const res = await get<TickerPnlBackendResponse>(
+    `/api/campaigns/pnl/${encodeURIComponent(symbol)}`
+  );
+
+  return {
+    symbol: res.symbol,
+    total_pnl: res.total_pnl,
+    total_pnl_pct: res.total_pnl_pct,
+    trade_count: res.trade_count,
+    closed_count: res.closed_count,
+    first_entry_time: res.first_entry_time ?? new Date().toISOString(),
   };
 }
