@@ -24,14 +24,18 @@ function computeCampaignRunningPnl(
 ): number[] {
   const dirSign = direction === 'long' ? 1 : -1;
 
-  // Build position events from legs sorted by time
+  // Build position events from legs sorted by time.
+  // Use legType (not side) to determine direction: open/add increase position,
+  // reduce/close decrease it. This works for both long and short campaigns.
   const events = legs
-    .map((leg) => ({
-      timeMs: new Date(leg.startedAt).getTime(),
-      // buy adds to position, sell removes
-      deltaQty: leg.side === 'buy' ? leg.quantity : -leg.quantity,
-      price: leg.avgPrice,
-    }))
+    .map((leg) => {
+      const isOpening = leg.legType === 'open' || leg.legType === 'add';
+      return {
+        timeMs: new Date(leg.startedAt).getTime(),
+        deltaQty: isOpening ? leg.quantity : -leg.quantity,
+        price: leg.avgPrice,
+      };
+    })
     .sort((a, b) => a.timeMs - b.timeMs);
 
   const pnl: number[] = [];
