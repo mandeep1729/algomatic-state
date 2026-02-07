@@ -1,14 +1,16 @@
-"""Add settings fields, strategy config, and journal entries table.
+"""Add strategy config columns and journal entries table.
 
 This migration:
-1. Adds new profile fields (max_open_positions, stop_loss_required,
-   primary_markets, account_size_range, evaluation_controls)
-2. Adds strategy config columns (direction, timeframes, entry_criteria,
+1. Adds strategy config columns (direction, timeframes, entry_criteria,
    exit_criteria, max_risk_pct, min_risk_reward)
-3. Creates journal_entries table
+2. Creates journal_entries table
 
-Revision ID: 011
-Revises: 010
+Note: user_profiles settings (max_open_positions, stop_loss_required,
+primary_markets, account_size_range, evaluation_controls) are now stored
+in the profile/risk_profile JSONB columns added in migration 011.
+
+Revision ID: 013
+Revises: 012
 Create Date: 2026-02-07
 """
 
@@ -17,36 +19,14 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers
-revision = "011"
-down_revision = "010"
+revision = "013"
+down_revision = "012"
 branch_labels = None
 depends_on = None
 
 
 def upgrade() -> None:
-    # 1. user_profiles: add new settings fields
-    op.add_column(
-        "user_profiles",
-        sa.Column("max_open_positions", sa.Integer(), server_default="5", nullable=False),
-    )
-    op.add_column(
-        "user_profiles",
-        sa.Column("stop_loss_required", sa.Boolean(), server_default=sa.text("true"), nullable=False),
-    )
-    op.add_column(
-        "user_profiles",
-        sa.Column("primary_markets", JSONB, nullable=True),
-    )
-    op.add_column(
-        "user_profiles",
-        sa.Column("account_size_range", sa.String(50), nullable=True),
-    )
-    op.add_column(
-        "user_profiles",
-        sa.Column("evaluation_controls", JSONB, nullable=True),
-    )
-
-    # 2. strategies: add config columns
+    # 1. strategies: add config columns
     op.add_column(
         "strategies",
         sa.Column("direction", sa.String(10), server_default="both", nullable=True),
@@ -72,7 +52,7 @@ def upgrade() -> None:
         sa.Column("min_risk_reward", sa.Float(), server_default="1.5", nullable=True),
     )
 
-    # 3. Create journal_entries table
+    # 2. Create journal_entries table
     op.create_table(
         "journal_entries",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -94,23 +74,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # 3. Drop journal_entries table
+    # 2. Drop journal_entries table
     op.drop_index("ix_journal_entries_account_date", table_name="journal_entries")
     op.drop_index("ix_journal_entries_date", table_name="journal_entries")
     op.drop_index("ix_journal_entries_account_id", table_name="journal_entries")
     op.drop_table("journal_entries")
 
-    # 2. strategies: drop config columns
+    # 1. strategies: drop config columns
     op.drop_column("strategies", "min_risk_reward")
     op.drop_column("strategies", "max_risk_pct")
     op.drop_column("strategies", "exit_criteria")
     op.drop_column("strategies", "entry_criteria")
     op.drop_column("strategies", "timeframes")
     op.drop_column("strategies", "direction")
-
-    # 1. user_profiles: drop new fields
-    op.drop_column("user_profiles", "evaluation_controls")
-    op.drop_column("user_profiles", "account_size_range")
-    op.drop_column("user_profiles", "primary_markets")
-    op.drop_column("user_profiles", "stop_loss_required")
-    op.drop_column("user_profiles", "max_open_positions")
