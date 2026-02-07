@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Search, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import api, { fetchOHLCVData, fetchFeatures } from '../../api';
+import api, { fetchOHLCVData, fetchFeatures, fetchSyncStatus, triggerSync } from '../../api';
 import type { TradeSummary, TickerPnlSummary, PnlTimeseries } from '../../types';
 import { DirectionBadge, SourceBadge, StatusBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
@@ -50,10 +50,12 @@ export default function Trades() {
 
   // Chart state
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  const selectedTickerRef = useRef<string | null>(null);
   const [chartTimeframe, setChartTimeframe] = useState('15Min');
   const [ohlcvData, setOhlcvData] = useState<{ timestamps: string[]; open: number[]; high: number[]; low: number[]; close: number[]; volume: number[] } | null>(null);
   const [featureData, setFeatureData] = useState<{ timestamps: string[]; features: Record<string, number[]>; feature_names: string[] } | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [tickerPnl, setTickerPnl] = useState<TickerPnlSummary | null>(null);
   const [pnlTimeseries, setPnlTimeseries] = useState<PnlTimeseries | null>(null);
 
@@ -107,33 +109,88 @@ export default function Trades() {
     return () => { cancelled = true; };
   }, [sourceFilter, statusFilter, effectiveSymbolFilter, flaggedFilter, sortField, currentPage]);
 
-  // Handle ticker click to load chart
-  const handleTickerClick = useCallback(async (symbol: string, event: React.MouseEvent) => {
-    event.stopPropagation(); // Prevent row click navigation
-    if (selectedTicker === symbol) return;
-    setSelectedTicker(symbol);
+  // Load chart data with sync via MessageBus (same pattern as Overview)
+  const loadChartData = useCallback(async (symbol: string, timeframe: string) => {
+    selectedTickerRef.current = symbol;
     setChartLoading(true);
     setChartActive(true);
-    try {
+
+    const STALE_MS = 15 * 60 * 1000; // 15 minutes
+
+    // Helper: fetch OHLCV + features from backend
+    async function fetchChartData() {
       const [ohlcv, features] = await Promise.all([
-        fetchOHLCVData(symbol, chartTimeframe),
-        fetchFeatures(symbol, chartTimeframe),
+        fetchOHLCVData(symbol, timeframe),
+        fetchFeatures(symbol, timeframe),
       ]);
+      return { ohlcv, features };
+    }
+
+    // Helper: fetch PnL timeseries using OHLCV data
+    async function loadPnlTimeseries(ohlcv: { timestamps: string[]; close: number[] }) {
+      try {
+        const pnl = await api.fetchTickerPnlTimeseries(symbol, ohlcv.timestamps, ohlcv.close);
+        if (selectedTickerRef.current === symbol) {
+          setPnlTimeseries(pnl);
+        }
+      } catch {
+        setPnlTimeseries(null);
+      }
+    }
+
+    // 1. Immediately render with whatever data the DB already has
+    try {
+      const { ohlcv, features } = await fetchChartData();
       setOhlcvData(ohlcv);
       setFeatureData(features);
       setFeatureNames(features.feature_names);
-      // Fetch PnL timeseries in background using OHLCV data
-      api.fetchTickerPnlTimeseries(symbol, ohlcv.timestamps, ohlcv.close)
-        .then((pnl) => setPnlTimeseries(pnl))
-        .catch(() => setPnlTimeseries(null));
+      loadPnlTimeseries(ohlcv);
     } catch {
       setOhlcvData(null);
       setFeatureData(null);
       setFeatureNames([]);
       setPnlTimeseries(null);
-    } finally {
       setChartLoading(false);
+      return; // No backend available
     }
+    setChartLoading(false);
+
+    // 2. Background: check sync status and trigger sync via MessageBus if stale
+    try {
+      const syncEntries = await fetchSyncStatus(symbol);
+      const entry = syncEntries.find((e) => e.timeframe === timeframe);
+      const isStale =
+        !entry ||
+        !entry.last_synced_timestamp ||
+        Date.now() - new Date(entry.last_synced_timestamp).getTime() > STALE_MS;
+
+      if (isStale) {
+        setSyncing(true);
+        await triggerSync(symbol, timeframe); // Publishes MARKET_DATA_REQUEST via MessageBus
+
+        // Guard: user may have clicked a different ticker while sync was in flight
+        if (selectedTickerRef.current !== symbol) return;
+
+        // Re-fetch with the newly synced data
+        const { ohlcv, features } = await fetchChartData();
+        setOhlcvData(ohlcv);
+        setFeatureData(features);
+        setFeatureNames(features.feature_names);
+        loadPnlTimeseries(ohlcv);
+      }
+    } catch {
+      // Sync failed — chart already shows existing data, nothing to do
+    } finally {
+      setSyncing(false);
+    }
+  }, [setChartActive, setFeatureNames]);
+
+  // Handle ticker click to load chart
+  const handleTickerClick = useCallback(async (symbol: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent row click navigation
+    if (selectedTicker === symbol) return;
+    setSelectedTicker(symbol);
+    loadChartData(symbol, chartTimeframe);
     // Fetch running PnL for this ticker
     try {
       const pnl = await api.fetchTickerPnl(symbol);
@@ -141,10 +198,11 @@ export default function Trades() {
     } catch {
       setTickerPnl(null);
     }
-  }, [selectedTicker, chartTimeframe, setChartActive, setFeatureNames]);
+  }, [selectedTicker, chartTimeframe, loadChartData]);
 
   const handleCloseChart = useCallback(() => {
     setSelectedTicker(null);
+    selectedTickerRef.current = null;
     setOhlcvData(null);
     setFeatureData(null);
     setChartActive(false);
@@ -156,28 +214,8 @@ export default function Trades() {
   const handleTimeframeChange = useCallback(async (newTimeframe: string) => {
     setChartTimeframe(newTimeframe);
     if (!selectedTicker) return;
-    setChartLoading(true);
-    try {
-      const [ohlcv, features] = await Promise.all([
-        fetchOHLCVData(selectedTicker, newTimeframe),
-        fetchFeatures(selectedTicker, newTimeframe),
-      ]);
-      setOhlcvData(ohlcv);
-      setFeatureData(features);
-      setFeatureNames(features.feature_names);
-      // Re-fetch PnL timeseries for new timeframe data
-      api.fetchTickerPnlTimeseries(selectedTicker, ohlcv.timestamps, ohlcv.close)
-        .then((pnl) => setPnlTimeseries(pnl))
-        .catch(() => setPnlTimeseries(null));
-    } catch {
-      setOhlcvData(null);
-      setFeatureData(null);
-      setFeatureNames([]);
-      setPnlTimeseries(null);
-    } finally {
-      setChartLoading(false);
-    }
-  }, [selectedTicker, setFeatureNames]);
+    loadChartData(selectedTicker, newTimeframe);
+  }, [selectedTicker, loadChartData]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -281,6 +319,7 @@ export default function Trades() {
                   <option value="1Hour">1h</option>
                   <option value="1Day">1d</option>
                 </select>
+                {syncing && <span className="text-[10px] text-[var(--accent-yellow)]">Syncing...</span>}
                 {tickerPnl && tickerPnl.closed_count > 0 && (
                   <span className="ml-1 flex items-center gap-1.5 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0.5 text-xs">
                     <span className="text-[var(--text-secondary)]">PnL:</span>
