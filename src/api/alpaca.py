@@ -419,6 +419,73 @@ async def get_trades(
     )
 
 
+class PopulateCampaignsResponse(BaseModel):
+    """Response for populate-campaigns endpoint."""
+    status: str
+    lots_created: int
+    closures_created: int
+    campaigns_created: int
+    legs_created: int
+    fills_processed: int
+    message: str
+
+
+@router.post("/populate-campaigns", response_model=PopulateCampaignsResponse)
+async def populate_campaigns(
+    symbol: Optional[str] = None,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Populate position campaigns from synced trade fills.
+
+    Processes trade fills using FIFO matching to create:
+    - PositionLot: Tracking individual open positions
+    - LotClosure: Pairing opening and closing fills with P&L
+    - PositionCampaign: Round-trip trade journeys (flat->flat)
+    - CampaignLeg: Semantic decision points (open, close)
+
+    Call /sync first to ensure fills are up to date.
+
+    Args:
+        symbol: Optional filter to process only one symbol
+    """
+    from src.data.database.trading_repository import TradingBuddyRepository
+
+    try:
+        repo = TradingBuddyRepository(db)
+        stats = repo.populate_campaigns_from_fills(
+            account_id=user_id,
+            symbol=symbol.upper() if symbol else None,
+        )
+
+        message_parts = []
+        if stats["campaigns_created"]:
+            message_parts.append(f"{stats['campaigns_created']} campaigns")
+        if stats["lots_created"]:
+            message_parts.append(f"{stats['lots_created']} lots")
+        if stats["closures_created"]:
+            message_parts.append(f"{stats['closures_created']} closures")
+
+        if message_parts:
+            message = f"Created {', '.join(message_parts)}"
+        else:
+            message = "No new campaigns to create (fills may already be processed)"
+
+        return PopulateCampaignsResponse(
+            status="success",
+            lots_created=stats["lots_created"],
+            closures_created=stats["closures_created"],
+            campaigns_created=stats["campaigns_created"],
+            legs_created=stats["legs_created"],
+            fills_processed=stats["fills_processed"],
+            message=message,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to populate campaigns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/status")
 async def get_status(
     user_id: int = Depends(get_current_user),
