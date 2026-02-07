@@ -332,38 +332,15 @@ export default function CampaignDetail() {
           )}
         </div>
 
-        {/* Leg steps + Chart side-by-side */}
-        <div className="mt-3 flex items-start gap-4">
-          {/* Left: Leg steps list */}
-          <div className="min-w-0 flex-1 space-y-2 pt-1">
-            {detail.legs.map((leg, idx) => {
-              const isEntry = leg.legType === 'open' || leg.legType === 'add';
-              return (
-                <div
-                  key={leg.legId}
-                  className="flex items-center gap-2 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 text-xs"
-                >
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[var(--border-color)] text-[10px] font-semibold text-[var(--text-primary)]">
-                    {idx + 1}
-                  </span>
-                  <span
-                    className={`font-semibold uppercase ${
-                      isEntry
-                        ? 'text-[var(--accent-blue)]'
-                        : 'text-[var(--accent-orange)]'
-                    }`}
-                  >
-                    {leg.legType}
-                  </span>
-                  <span className="font-mono text-[var(--text-primary)]">
-                    ${leg.avgPrice.toFixed(2)}
-                  </span>
-                  <span className="text-[var(--text-secondary)]">
-                    x{leg.quantity}
-                  </span>
-                </div>
-              );
-            })}
+        {/* Timeline + Chart side-by-side */}
+        <div className="mt-4 flex items-start gap-4">
+          {/* Left: Timeline (horizontal leg dots) */}
+          <div className="min-w-0 flex-1 pt-1">
+            <Timeline
+              legs={detail.legs}
+              activeIndex={activeLegIndex}
+              onSelect={handleTimelineSelect}
+            />
           </div>
 
           {/* Right: Price + PnL chart (60% of panel) */}
@@ -383,15 +360,6 @@ export default function CampaignDetail() {
               />
             ) : null}
           </div>
-        </div>
-
-        {/* Timeline */}
-        <div className="mt-4">
-          <Timeline
-            legs={detail.legs}
-            activeIndex={activeLegIndex}
-            onSelect={handleTimelineSelect}
-          />
         </div>
 
         {/* Tabs */}
