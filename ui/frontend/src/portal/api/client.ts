@@ -23,6 +23,9 @@ import type {
   BrokerStatus,
   TradeListResponse,
   TradeSummary,
+  CampaignSummary,
+  CampaignDetail,
+  DecisionContext,
 } from '../types';
 
 const TOKEN_KEY = 'auth_token';
@@ -65,6 +68,10 @@ function get<T>(url: string): Promise<T> {
 
 function post<T>(url: string, body?: unknown): Promise<T> {
   return request<T>(url, { method: 'POST', body: body != null ? JSON.stringify(body) : undefined });
+}
+
+function put<T>(url: string, body?: unknown): Promise<T> {
+  return request<T>(url, { method: 'PUT', body: body != null ? JSON.stringify(body) : undefined });
 }
 
 // =============================================================================
@@ -260,4 +267,114 @@ export async function fetchTrades(params: {
   }));
 
   return { trades, total: res.total, page: res.page, limit: res.limit };
+}
+
+// =============================================================================
+// Campaigns — GET /api/campaigns
+// =============================================================================
+
+/**
+ * Backend returns campaign detail without evaluation bundles (those are
+ * not yet implemented server-side). The frontend provides empty defaults
+ * for evaluationCampaign, evaluationByLeg so the UI renders gracefully.
+ */
+
+interface BackendCampaignDetail {
+  campaign: CampaignDetail['campaign'];
+  legs: CampaignDetail['legs'];
+  contextsByLeg: Record<string, DecisionContext | undefined>;
+}
+
+export async function fetchCampaigns(
+  params: { symbol?: string; status?: string } = {},
+): Promise<CampaignSummary[]> {
+  const qs = new URLSearchParams();
+  if (params.symbol) qs.set('symbol', params.symbol);
+  if (params.status) qs.set('status', params.status);
+  const qsStr = qs.toString();
+  return get<CampaignSummary[]>(`/api/campaigns${qsStr ? `?${qsStr}` : ''}`);
+}
+
+export async function fetchCampaignDetail(campaignId: string): Promise<CampaignDetail> {
+  const raw = await get<BackendCampaignDetail>(`/api/campaigns/${encodeURIComponent(campaignId)}`);
+
+  // Backend does not yet return evaluation bundles. Provide empty defaults
+  // so the UI can render the campaign detail page without errors.
+  const emptyBundle = {
+    bundleId: `backend-${campaignId}`,
+    evalScope: 'campaign' as const,
+    overallLabel: 'mixed' as const,
+    dimensions: [],
+  };
+
+  return {
+    campaign: raw.campaign,
+    legs: raw.legs,
+    evaluationCampaign: emptyBundle,
+    evaluationByLeg: {},
+    contextsByLeg: raw.contextsByLeg ?? {},
+  };
+}
+
+export async function saveDecisionContext(context: DecisionContext): Promise<DecisionContext> {
+  const campaignId = context.campaignId;
+  if (!campaignId) throw new Error('campaignId is required to save context');
+
+  const body = {
+    scope: context.scope,
+    campaignId: context.campaignId,
+    legId: context.legId,
+    contextType: context.contextType,
+    strategyTags: context.strategyTags,
+    hypothesis: context.hypothesis,
+    exitIntent: context.exitIntent,
+    feelingsThen: context.feelingsThen,
+    feelingsNow: context.feelingsNow,
+    notes: context.notes,
+  };
+
+  const res = await put<{
+    contextId: string;
+    scope: string;
+    campaignId?: string;
+    legId?: string;
+    contextType: string;
+    strategyTags: string[];
+    hypothesis?: string;
+    exitIntent?: string;
+    feelingsThen?: { chips: string[]; intensity?: number; note?: string };
+    feelingsNow?: { chips: string[]; intensity?: number; note?: string };
+    notes?: string;
+    updatedAt: string;
+  }>(`/api/campaigns/${encodeURIComponent(campaignId)}/context`, body);
+
+  return {
+    contextId: res.contextId,
+    scope: res.scope as DecisionContext['scope'],
+    campaignId: res.campaignId,
+    legId: res.legId,
+    contextType: res.contextType as DecisionContext['contextType'],
+    strategyTags: res.strategyTags,
+    hypothesis: res.hypothesis,
+    exitIntent: res.exitIntent as DecisionContext['exitIntent'],
+    feelingsThen: res.feelingsThen,
+    feelingsNow: res.feelingsNow,
+    notes: res.notes,
+    updatedAt: res.updatedAt,
+  };
+}
+
+// =============================================================================
+// Campaign OHLCV — GET /api/ohlcv/{symbol} with date range
+// Convenience wrapper that accepts ms timestamps for campaign chart data.
+// =============================================================================
+
+export async function fetchCampaignOHLCVData(
+  symbol: string,
+  rangeStartMs: number,
+  rangeEndMs: number,
+): Promise<OHLCVData> {
+  const startDate = new Date(rangeStartMs).toISOString().split('T')[0];
+  const endDate = new Date(rangeEndMs).toISOString().split('T')[0];
+  return fetchOHLCVData(symbol, undefined, startDate, endDate);
 }

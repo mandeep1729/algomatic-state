@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
-import { fetchCampaigns } from '../../mocks/mockApi';
+import api from '../../api';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
 import type { CampaignSummary } from '../../types';
 
@@ -30,7 +30,7 @@ export default function Campaigns() {
     async function load() {
       setLoading(true);
       try {
-        const data = await fetchCampaigns();
+        const data = await api.fetchCampaigns();
         if (!cancelled) setCampaigns(data);
       } finally {
         if (!cancelled) setLoading(false);

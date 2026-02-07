@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { fetchCampaignDetail, saveDecisionContext, fetchMockCampaignOHLCVData } from '../../mocks/mockApi';
+import api from '../../api';
+import { USE_MOCKS } from '../../mocks/enable';
+import { fetchMockCampaignOHLCVData } from '../../mocks/mockApi';
+import { fetchCampaignOHLCVData } from '../../api';
 import { Timeline } from '../../components/campaigns/Timeline';
 import { EvaluationGrid } from '../../components/campaigns/EvaluationGrid';
 import { ContextPanel } from '../../components/campaigns/ContextPanel';
@@ -95,7 +98,7 @@ export default function CampaignDetail() {
     async function load() {
       setLoading(true);
       try {
-        const data = await fetchCampaignDetail(campaignId!);
+        const data = await api.fetchCampaignDetail(campaignId!);
         if (!cancelled) {
           setDetail(data);
           setContextsByLeg(data.contextsByLeg ?? {});
@@ -131,7 +134,9 @@ export default function CampaignDetail() {
           ? new Date(campaign.closedAt).getTime()
           : Date.now();
 
-        const ohlcv = await fetchMockCampaignOHLCVData(symbol, rangeStartMs, rangeEndMs);
+        const ohlcv = USE_MOCKS
+          ? await fetchMockCampaignOHLCVData(symbol, rangeStartMs, rangeEndMs)
+          : await fetchCampaignOHLCVData(symbol, rangeStartMs, rangeEndMs);
         if (cancelled) return;
 
         const filteredTs = ohlcv.timestamps;
@@ -241,7 +246,7 @@ export default function CampaignDetail() {
   const handleAutosave = useCallback(async (ctx: DecisionContext) => {
     setContextsByLeg((prev) => ({ ...prev, [ctx.legId ?? 'campaign']: ctx }));
     try {
-      await saveDecisionContext(ctx);
+      await api.saveDecisionContext(ctx);
     } catch {
       // Silently fail -- context is still saved locally in state
     }

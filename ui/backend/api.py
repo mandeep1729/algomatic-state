@@ -53,6 +53,7 @@ from src.api.user_profile import router as user_profile_router
 from src.api.trading_buddy import router as trading_buddy_router
 from src.api.broker import router as broker_router
 from src.api.alpaca import router as alpaca_router
+from src.api.campaigns import router as campaigns_router
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,7 @@ app.include_router(user_profile_router)
 app.include_router(trading_buddy_router)
 app.include_router(broker_router)
 app.include_router(alpaca_router)
+app.include_router(campaigns_router)
 
 # Enable CORS for React frontend
 app.add_middleware(

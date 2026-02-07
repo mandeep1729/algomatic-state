@@ -10,14 +10,18 @@ import * as realApi from './client';
  * falls back to mocks for everything else.
  *
  * Real backend endpoints available:
- *   - evaluateTrade      → POST /api/trading-buddy/evaluate
- *   - fetchEvaluators    → GET  /api/trading-buddy/evaluators
- *   - fetchBrokerStatus  → GET  /api/broker/status
- *   - fetchTrades        → GET  /api/broker/trades
- *   - fetchSyncStatus    → GET  /api/sync-status/{symbol}
- *   - triggerSync        → POST /api/sync/{symbol}
- *   - fetchOHLCVData     → GET  /api/ohlcv/{symbol}
- *   - fetchFeatures      → GET  /api/features/{symbol}
+ *   - evaluateTrade          -> POST /api/trading-buddy/evaluate
+ *   - fetchEvaluators        -> GET  /api/trading-buddy/evaluators
+ *   - fetchBrokerStatus      -> GET  /api/broker/status
+ *   - fetchTrades            -> GET  /api/broker/trades
+ *   - fetchSyncStatus        -> GET  /api/sync-status/{symbol}
+ *   - triggerSync            -> POST /api/sync/{symbol}
+ *   - fetchOHLCVData         -> GET  /api/ohlcv/{symbol}
+ *   - fetchFeatures          -> GET  /api/features/{symbol}
+ *   - fetchCampaigns         -> GET  /api/campaigns
+ *   - fetchCampaignDetail    -> GET  /api/campaigns/{id}
+ *   - saveDecisionContext    -> PUT  /api/campaigns/{id}/context
+ *   - fetchCampaignOHLCVData -> GET  /api/ohlcv/{symbol} (with date range)
  */
 const api = USE_MOCKS
   ? mockApi
@@ -27,6 +31,11 @@ const api = USE_MOCKS
       fetchEvaluators: realApi.fetchEvaluators,
       fetchBrokerStatus: realApi.fetchBrokerStatus,
       fetchTrades: realApi.fetchTrades,
+
+      // Campaign endpoints — real backend
+      fetchCampaigns: realApi.fetchCampaigns,
+      fetchCampaignDetail: realApi.fetchCampaignDetail,
+      saveDecisionContext: realApi.saveDecisionContext,
 
       // Mock fallbacks — no backend endpoints yet
       fetchCurrentUser: mockApi.fetchCurrentUser,
@@ -61,8 +70,11 @@ export default api;
 // Re-export real chart data functions from client
 export { fetchSyncStatus, triggerSync, fetchOHLCVData, fetchFeatures } from './client';
 
+// Re-export campaign OHLCV helper from client (uses real /api/ohlcv with date range)
+export { fetchCampaignOHLCVData } from './client';
+
 // Re-export mock chart data helpers for fallback use
-export { fetchMockOHLCVData, fetchMockFeatures } from '../mocks/mockApi';
+export { fetchMockOHLCVData, fetchMockFeatures, fetchMockCampaignOHLCVData } from '../mocks/mockApi';
 
 // Re-export PnL timeseries for direct use
 export { fetchTickerPnlTimeseries } from '../mocks/mockApi';
