@@ -1,7 +1,8 @@
-"""Unit tests for TradingBuddyRepository campaign population.
+"""Unit tests for TradingBuddyRepository campaign population and strategy risk profiles.
 
 Tests the populate_campaigns_from_fills functionality that matches
-buys/sells into position lots, closures, and campaigns.
+buys/sells into position lots, closures, and campaigns, plus
+strategy-level risk_profile overrides in evaluator config building.
 """
 
 from datetime import datetime, timezone, timedelta
@@ -11,6 +12,10 @@ import pytest
 
 from src.data.database.trading_repository import TradingBuddyRepository
 from src.data.database.broker_models import TradeFill as TradeFillModel
+from src.data.database.strategy_models import Strategy as StrategyModel
+from src.data.database.trading_buddy_models import (
+    UserProfile as UserProfileModel,
+)
 from src.data.database.trade_lifecycle_models import (
     PositionLot as PositionLotModel,
     LotClosure as LotClosureModel,
@@ -967,3 +972,211 @@ class TestComputeLegTypes:
         assert legs[0]["side"] == "sell"
         assert legs[1]["leg_type"] == "close"
         assert legs[1]["side"] == "buy"
+
+
+class TestCreateStrategyWithRiskProfile:
+    """Tests for create_strategy with risk_profile parameter."""
+
+    def test_create_strategy_without_risk_profile(self, repository, mock_session):
+        """Test creating a strategy with no risk_profile passes None."""
+        with patch.object(repository, "create_strategy", wraps=repository.create_strategy):
+            strategy = StrategyModel(
+                account_id=1,
+                name="Scalping",
+                description="Quick scalp trades",
+            )
+            mock_session.add.return_value = None
+            mock_session.flush.return_value = None
+
+            # Call the actual method (it calls session.add + flush)
+            result = repository.create_strategy(
+                account_id=1,
+                name="Scalping",
+                description="Quick scalp trades",
+            )
+
+            # Verify session.add was called with the model
+            mock_session.add.assert_called_once()
+            added_obj = mock_session.add.call_args[0][0]
+            assert added_obj.name == "Scalping"
+            assert added_obj.risk_profile is None
+
+    def test_create_strategy_with_risk_profile(self, repository, mock_session):
+        """Test creating a strategy with risk_profile overrides."""
+        risk_overrides = {
+            "max_position_size_pct": 2.5,
+            "max_risk_per_trade_pct": 0.5,
+        }
+
+        mock_session.add.return_value = None
+        mock_session.flush.return_value = None
+
+        result = repository.create_strategy(
+            account_id=1,
+            name="Scalping",
+            description="Quick scalp trades",
+            risk_profile=risk_overrides,
+        )
+
+        # Verify the model was created with risk_profile set
+        added_obj = mock_session.add.call_args[0][0]
+        assert added_obj.risk_profile == risk_overrides
+        assert added_obj.risk_profile["max_position_size_pct"] == 2.5
+        assert added_obj.risk_profile["max_risk_per_trade_pct"] == 0.5
+
+
+class TestBuildEvaluatorConfigsWithStrategy:
+    """Tests for build_evaluator_configs with strategy_id parameter."""
+
+    def _make_mock_profile(self):
+        """Create a mock UserProfile with standard defaults."""
+        profile = MagicMock(spec=UserProfileModel)
+        profile.account_balance = 10000.0
+        profile.max_position_size_pct = 5.0
+        profile.max_risk_per_trade_pct = 1.0
+        profile.min_risk_reward_ratio = 2.0
+        return profile
+
+    def test_build_configs_without_strategy(self, repository):
+        """Test that configs use profile defaults when no strategy is given."""
+        mock_account = MagicMock()
+        mock_account.id = 1
+        mock_profile = self._make_mock_profile()
+
+        with patch.object(repository, "get_account", return_value=mock_account):
+            with patch.object(repository, "get_or_create_profile", return_value=mock_profile):
+                with patch.object(repository, "get_user_rules", return_value=[]):
+                    configs = repository.build_evaluator_configs(account_id=1)
+
+        # Default evaluators should be created
+        assert "risk_reward" in configs
+        assert "exit_plan" in configs
+
+        # Verify profile defaults are used
+        rr_config = configs["risk_reward"]
+        assert rr_config.custom_params["max_position_size_pct"] == 5.0
+        assert rr_config.custom_params["max_risk_per_trade_pct"] == 1.0
+        assert rr_config.custom_params["min_rr_ratio"] == 2.0
+
+    def test_build_configs_with_strategy_risk_overrides(self, repository):
+        """Test that strategy risk_profile overrides user profile defaults."""
+        mock_account = MagicMock()
+        mock_account.id = 1
+        mock_profile = self._make_mock_profile()
+
+        mock_strategy = MagicMock(spec=StrategyModel)
+        mock_strategy.id = 10
+        mock_strategy.risk_profile = {
+            "max_position_size_pct": 2.5,
+            "max_risk_per_trade_pct": 0.5,
+        }
+
+        with patch.object(repository, "get_account", return_value=mock_account):
+            with patch.object(repository, "get_or_create_profile", return_value=mock_profile):
+                with patch.object(repository, "get_user_rules", return_value=[]):
+                    with patch.object(repository, "get_strategy", return_value=mock_strategy):
+                        configs = repository.build_evaluator_configs(
+                            account_id=1,
+                            strategy_id=10,
+                        )
+
+        # Strategy overrides should be applied
+        rr_config = configs["risk_reward"]
+        assert rr_config.custom_params["max_position_size_pct"] == 2.5
+        assert rr_config.custom_params["max_risk_per_trade_pct"] == 0.5
+        # Non-overridden values should remain from profile
+        assert rr_config.custom_params["min_rr_ratio"] == 2.0
+        assert rr_config.custom_params["account_balance"] == 10000.0
+
+    def test_build_configs_strategy_with_no_risk_profile(self, repository):
+        """Test that strategy with null risk_profile does not modify defaults."""
+        mock_account = MagicMock()
+        mock_account.id = 1
+        mock_profile = self._make_mock_profile()
+
+        mock_strategy = MagicMock(spec=StrategyModel)
+        mock_strategy.id = 10
+        mock_strategy.risk_profile = None
+
+        with patch.object(repository, "get_account", return_value=mock_account):
+            with patch.object(repository, "get_or_create_profile", return_value=mock_profile):
+                with patch.object(repository, "get_user_rules", return_value=[]):
+                    with patch.object(repository, "get_strategy", return_value=mock_strategy):
+                        configs = repository.build_evaluator_configs(
+                            account_id=1,
+                            strategy_id=10,
+                        )
+
+        # Profile defaults should remain unchanged
+        rr_config = configs["risk_reward"]
+        assert rr_config.custom_params["max_position_size_pct"] == 5.0
+        assert rr_config.custom_params["max_risk_per_trade_pct"] == 1.0
+
+    def test_build_configs_strategy_not_found(self, repository):
+        """Test that non-existent strategy_id gracefully falls back to defaults."""
+        mock_account = MagicMock()
+        mock_account.id = 1
+        mock_profile = self._make_mock_profile()
+
+        with patch.object(repository, "get_account", return_value=mock_account):
+            with patch.object(repository, "get_or_create_profile", return_value=mock_profile):
+                with patch.object(repository, "get_user_rules", return_value=[]):
+                    with patch.object(repository, "get_strategy", return_value=None):
+                        configs = repository.build_evaluator_configs(
+                            account_id=1,
+                            strategy_id=999,
+                        )
+
+        # Profile defaults should remain unchanged
+        rr_config = configs["risk_reward"]
+        assert rr_config.custom_params["max_position_size_pct"] == 5.0
+
+    def test_build_configs_strategy_min_rr_override(self, repository):
+        """Test that min_risk_reward_ratio maps correctly to min_rr_ratio."""
+        mock_account = MagicMock()
+        mock_account.id = 1
+        mock_profile = self._make_mock_profile()
+
+        mock_strategy = MagicMock(spec=StrategyModel)
+        mock_strategy.id = 10
+        mock_strategy.risk_profile = {
+            "min_risk_reward_ratio": 3.0,
+        }
+
+        with patch.object(repository, "get_account", return_value=mock_account):
+            with patch.object(repository, "get_or_create_profile", return_value=mock_profile):
+                with patch.object(repository, "get_user_rules", return_value=[]):
+                    with patch.object(repository, "get_strategy", return_value=mock_strategy):
+                        configs = repository.build_evaluator_configs(
+                            account_id=1,
+                            strategy_id=10,
+                        )
+
+        # min_risk_reward_ratio should map to min_rr_ratio in base_params
+        rr_config = configs["risk_reward"]
+        assert rr_config.custom_params["min_rr_ratio"] == 3.0
+
+    def test_build_configs_strategy_overrides_applied_to_all_evaluators(self, repository):
+        """Test that strategy overrides propagate to all evaluator configs."""
+        mock_account = MagicMock()
+        mock_account.id = 1
+        mock_profile = self._make_mock_profile()
+
+        mock_strategy = MagicMock(spec=StrategyModel)
+        mock_strategy.id = 10
+        mock_strategy.risk_profile = {
+            "max_position_size_pct": 1.0,
+        }
+
+        with patch.object(repository, "get_account", return_value=mock_account):
+            with patch.object(repository, "get_or_create_profile", return_value=mock_profile):
+                with patch.object(repository, "get_user_rules", return_value=[]):
+                    with patch.object(repository, "get_strategy", return_value=mock_strategy):
+                        configs = repository.build_evaluator_configs(
+                            account_id=1,
+                            strategy_id=10,
+                        )
+
+        # Both default evaluators should have the override
+        assert configs["risk_reward"].custom_params["max_position_size_pct"] == 1.0
+        assert configs["exit_plan"].custom_params["max_position_size_pct"] == 1.0

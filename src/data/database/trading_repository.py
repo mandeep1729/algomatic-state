@@ -365,14 +365,21 @@ class TradingBuddyRepository:
     def build_evaluator_configs(
         self,
         account_id: int,
+        strategy_id: Optional[int] = None,
     ) -> dict[str, EvaluatorConfig]:
-        """Build EvaluatorConfig objects from user profile and rules.
+        """Build EvaluatorConfig objects from user profile, rules, and strategy.
 
-        Combines profile-level defaults with rule-specific overrides
-        to create configuration for each evaluator.
+        Combines profile-level defaults with strategy-level risk overrides
+        and rule-specific overrides to create configuration for each evaluator.
+
+        Override precedence (highest to lowest):
+        1. User rules (per-evaluator overrides)
+        2. Strategy risk_profile (strategy-level overrides)
+        3. User profile risk_profile (account-level defaults)
 
         Args:
             account_id: Account ID
+            strategy_id: Optional strategy ID for risk profile overrides
 
         Returns:
             Dict mapping evaluator name to EvaluatorConfig
@@ -391,6 +398,25 @@ class TradingBuddyRepository:
             "max_risk_per_trade_pct": profile.max_risk_per_trade_pct,
             "min_rr_ratio": profile.min_risk_reward_ratio,
         }
+
+        # Apply strategy-level risk overrides if a strategy is specified
+        if strategy_id is not None:
+            strategy = self.get_strategy(strategy_id)
+            if strategy and strategy.risk_profile:
+                logger.info(
+                    "Applying strategy risk overrides: strategy_id=%s overrides=%s",
+                    strategy_id, strategy.risk_profile,
+                )
+                # Map strategy risk_profile keys to base_params keys
+                key_mapping = {
+                    "max_position_size_pct": "max_position_size_pct",
+                    "max_risk_per_trade_pct": "max_risk_per_trade_pct",
+                    "max_daily_loss_pct": "max_daily_loss_pct",
+                    "min_risk_reward_ratio": "min_rr_ratio",
+                }
+                for risk_key, param_key in key_mapping.items():
+                    if risk_key in strategy.risk_profile:
+                        base_params[param_key] = strategy.risk_profile[risk_key]
 
         # Group rules by evaluator
         rules_by_evaluator: dict[str, list[UserRuleModel]] = {}
@@ -455,6 +481,7 @@ class TradingBuddyRepository:
         account_id: int,
         name: str,
         description: Optional[str] = None,
+        risk_profile: Optional[dict] = None,
     ) -> StrategyModel:
         """Create a new strategy for an account.
 
@@ -462,6 +489,7 @@ class TradingBuddyRepository:
             account_id: Account ID
             name: Strategy name (unique per account)
             description: Optional description
+            risk_profile: Optional risk overrides (e.g., max_position_size_pct)
 
         Returns:
             Created StrategyModel
@@ -470,12 +498,13 @@ class TradingBuddyRepository:
             account_id=account_id,
             name=name,
             description=description,
+            risk_profile=risk_profile,
         )
         self.session.add(strategy)
         self.session.flush()
         logger.info(
-            "Created strategy id=%s name='%s' account_id=%s",
-            strategy.id, strategy.name, strategy.account_id,
+            "Created strategy id=%s name='%s' account_id=%s risk_profile=%s",
+            strategy.id, strategy.name, strategy.account_id, risk_profile,
         )
         return strategy
 
