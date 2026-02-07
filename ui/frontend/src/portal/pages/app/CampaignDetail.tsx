@@ -59,7 +59,7 @@ export default function CampaignDetail() {
 
   // Fetch chart data (price + PnL) when campaign detail is loaded
   useEffect(() => {
-    if (!detail) return;
+    if (!detail || detail.legs.length === 0) return;
     const { campaign, legs } = detail;
     const symbol = campaign.symbol;
     symbolRef.current = symbol;
@@ -69,20 +69,52 @@ export default function CampaignDetail() {
       setChartLoading(true);
       setChartError(null);
       try {
-        // Fetch OHLCV covering the full campaign date range so all leg
-        // markers (OPEN, ADD, CLOSE, etc.) map to distinct chart positions.
-        const rangeStartMs = new Date(campaign.openedAt).getTime();
-        const rangeEndMs = campaign.closedAt
-          ? new Date(campaign.closedAt).getTime()
-          : Date.now();
+        // Determine t1 (first leg) and t2 (last leg) timestamps
+        const legTimesMs = legs.map((l) => new Date(l.startedAt).getTime());
+        const t1Ms = Math.min(...legTimesMs);
+        const t2Ms = Math.max(...legTimesMs);
+        const spanMs = t2Ms - t1Ms;
+
+        // Fetch with extra padding so we have bars for the 5% buffer.
+        // Use 15% padding on the fetch to ensure we have enough data.
+        const fetchPadMs = Math.max(spanMs * 0.15, 3600_000); // at least 1h
+        const fetchStartMs = t1Ms - fetchPadMs;
+        const fetchEndMs = legs.length === 1
+          ? Date.now() // single leg: fetch up to now
+          : t2Ms + fetchPadMs;
 
         const ohlcv = USE_MOCKS
-          ? await fetchMockCampaignOHLCVData(symbol, rangeStartMs, rangeEndMs)
-          : await fetchCampaignOHLCVData(symbol, rangeStartMs, rangeEndMs);
+          ? await fetchMockCampaignOHLCVData(symbol, fetchStartMs, fetchEndMs)
+          : await fetchCampaignOHLCVData(symbol, fetchStartMs, fetchEndMs);
         if (cancelled) return;
 
-        const filteredTs = ohlcv.timestamps;
-        const filteredClose = ohlcv.close;
+        // Find tick indices closest to t1 and t2
+        const allTs = ohlcv.timestamps;
+        const allClose = ohlcv.close;
+
+        const findClosestIdx = (targetMs: number) => {
+          let bestIdx = 0;
+          let bestDist = Infinity;
+          for (let i = 0; i < allTs.length; i++) {
+            const dist = Math.abs(new Date(allTs[i]).getTime() - targetMs);
+            if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+          }
+          return bestIdx;
+        };
+
+        const t1Idx = findClosestIdx(t1Ms);
+        const t2Idx = findClosestIdx(t2Ms);
+        const tickSpan = t2Idx - t1Idx;
+        const buffer = Math.max(Math.round(tickSpan * 0.05), 1);
+
+        const windowStart = Math.max(0, t1Idx - buffer);
+        // Single leg: show all available data after t1
+        const windowEnd = legs.length === 1
+          ? allTs.length - 1
+          : Math.min(allTs.length - 1, t2Idx + buffer);
+
+        const filteredTs = allTs.slice(windowStart, windowEnd + 1);
+        const filteredClose = allClose.slice(windowStart, windowEnd + 1);
 
         setPriceTimestamps(filteredTs);
         setClosePrices(filteredClose);

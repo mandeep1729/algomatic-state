@@ -37,8 +37,8 @@ describe('computeCampaignRunningPnl', () => {
       makeLeg({ legType: 'open', side: 'buy', quantity: 10, avgPrice: 100, startedAt: '2026-01-01T10:00:00Z' }),
       makeLeg({ legId: '2', legType: 'close', side: 'sell', quantity: 10, avgPrice: 110, startedAt: '2026-01-01T14:00:00Z' }),
     ];
-    const { timestamps, closes } = makeOhlcv('2026-01-01T09:00:00Z', 8, 105);
-    // Override close prices to show progression: 95, 100, 102, 105, 108, 110, 112, 112
+    const { timestamps } = makeOhlcv('2026-01-01T09:00:00Z', 8, 105);
+    // Override close prices to show price progression
     const prices = [95, 100, 102, 105, 108, 110, 112, 112];
 
     const pnl = computeCampaignRunningPnl(legs, 'long', timestamps, prices);
