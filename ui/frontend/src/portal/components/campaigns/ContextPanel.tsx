@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DecisionContext } from '../../types';
 import { StrategyChips } from './StrategyChips';
 import { EmotionChips } from './EmotionChips';
@@ -52,12 +52,19 @@ export function ContextPanel({
   );
 
   const [draft, setDraft] = useState<Draft>(initialDraft);
+  // Track whether the user has edited anything (skip autosave on mount / tab switch)
+  const dirtyRef = useRef(false);
 
   // Sync when initial prop changes (e.g. switching legs)
-  useEffect(() => setDraft(initialDraft), [initialDraft]);
-
-  // Debounced autosave at 600ms
   useEffect(() => {
+    setDraft(initialDraft);
+    dirtyRef.current = false;
+  }, [initialDraft]);
+
+  // Debounced autosave — only fires after user edits, 5s debounce
+  useEffect(() => {
+    if (!dirtyRef.current) return;
+
     const timer = setTimeout(() => {
       const next: DecisionContext = {
         contextId: initial?.contextId ?? crypto.randomUUID(),
@@ -76,12 +83,13 @@ export function ContextPanel({
         updatedAt: new Date().toISOString(),
       };
       onAutosave(next);
-    }, 600);
+    }, 5000);
 
     return () => clearTimeout(timer);
   }, [draft, initial?.contextId, scope, contextType, campaignId, legId, onAutosave]);
 
   const updateDraft = <K extends keyof Draft>(key: K, value: Draft[K]) => {
+    dirtyRef.current = true;
     setDraft((prev) => ({ ...prev, [key]: value }));
   };
 
