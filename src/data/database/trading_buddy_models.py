@@ -122,9 +122,20 @@ class UserProfile(Base):
         JSONB, default=lambda: ["1Min", "5Min", "15Min", "1Hour"], nullable=False
     )
 
+    # Additional risk settings
+    max_open_positions: Mapped[int] = mapped_column(Integer, default=5, nullable=False)
+    stop_loss_required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
     # Trading profile
     experience_level: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     trading_style: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    primary_markets: Mapped[Optional[dict]] = mapped_column(
+        JSONB, default=lambda: ["US_EQUITIES"], nullable=True
+    )
+    account_size_range: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Evaluation controls (JSONB for flexibility)
+    evaluation_controls: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(

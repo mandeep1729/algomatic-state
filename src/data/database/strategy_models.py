@@ -10,6 +10,7 @@ from typing import Optional
 from sqlalchemy import (
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.data.database.models import Base
@@ -40,6 +42,12 @@ class Strategy(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    direction: Mapped[Optional[str]] = mapped_column(String(10), default="both", nullable=True)
+    timeframes: Mapped[Optional[dict]] = mapped_column(JSONB, default=list, nullable=True)
+    entry_criteria: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    exit_criteria: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    max_risk_pct: Mapped[Optional[float]] = mapped_column(Float, default=2.0, nullable=True)
+    min_risk_reward: Mapped[Optional[float]] = mapped_column(Float, default=1.5, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
