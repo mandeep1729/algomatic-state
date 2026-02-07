@@ -909,3 +909,862 @@ class TradingBuddyRepository:
         return self.session.query(DecisionContextModel).filter(
             DecisionContextModel.id == context_id
         ).first()
+
+    # -------------------------------------------------------------------------
+    # Campaign Population from Fills
+    # -------------------------------------------------------------------------
+
+    def get_processed_fill_ids(self, account_id: int) -> set[int]:
+        """Get fill IDs that have already been processed into lots.
+
+        Args:
+            account_id: Account ID
+
+        Returns:
+            Set of fill IDs that are already in position_lots
+        """
+        results = self.session.query(PositionLotModel.open_fill_id).filter(
+            PositionLotModel.account_id == account_id
+        ).all()
+        return {r[0] for r in results}
+
+    def get_unprocessed_fills(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+    ) -> list[TradeFillModel]:
+        """Get trade fills that haven't been processed into lots/campaigns.
+
+        Args:
+            account_id: Account ID
+            symbol: Optional symbol filter
+
+        Returns:
+            List of unprocessed fills ordered by executed_at ascending
+        """
+        processed_ids = self.get_processed_fill_ids(account_id)
+
+        # Also get fill IDs used in closures
+        closure_fill_ids = self.session.query(LotClosureModel.close_fill_id).join(
+            PositionLotModel,
+            PositionLotModel.id == LotClosureModel.lot_id,
+        ).filter(
+            PositionLotModel.account_id == account_id
+        ).all()
+        processed_ids.update(r[0] for r in closure_fill_ids)
+
+        query = self.session.query(TradeFillModel).filter(
+            TradeFillModel.account_id == account_id,
+        )
+
+        if symbol:
+            query = query.filter(TradeFillModel.symbol == symbol)
+
+        if processed_ids:
+            query = query.filter(TradeFillModel.id.notin_(processed_ids))
+
+        return query.order_by(TradeFillModel.executed_at.asc()).all()
+
+    def populate_campaigns_from_fills(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+    ) -> dict:
+        """Build position campaigns from trade fills using FIFO matching.
+
+        Processes fills chronologically:
+        - BUY opens/adds to long lots or closes short lots
+        - SELL opens/adds to short lots or closes long lots
+
+        When a position returns to flat, a campaign is created to group
+        the complete round-trip.
+
+        Args:
+            account_id: Account ID to process fills for
+            symbol: Optional symbol filter (process single symbol)
+
+        Returns:
+            Dict with stats: lots_created, closures_created, campaigns_created
+        """
+        stats = {
+            "lots_created": 0,
+            "closures_created": 0,
+            "campaigns_created": 0,
+            "legs_created": 0,
+            "fills_processed": 0,
+        }
+
+        # Get all fills for account (both processed and unprocessed)
+        # We need all fills to properly track position state
+        query = self.session.query(TradeFillModel).filter(
+            TradeFillModel.account_id == account_id,
+        )
+        if symbol:
+            query = query.filter(TradeFillModel.symbol == symbol)
+
+        all_fills = query.order_by(TradeFillModel.executed_at.asc()).all()
+
+        if not all_fills:
+            logger.info("No fills to process for account_id=%s", account_id)
+            return stats
+
+        # Group fills by symbol
+        fills_by_symbol: dict[str, list[TradeFillModel]] = {}
+        for fill in all_fills:
+            if fill.symbol not in fills_by_symbol:
+                fills_by_symbol[fill.symbol] = []
+            fills_by_symbol[fill.symbol].append(fill)
+
+        # Get already processed fill IDs
+        processed_fill_ids = self.get_processed_fill_ids(account_id)
+
+        # Also track fill IDs used in closures
+        closure_results = self.session.query(LotClosureModel.close_fill_id).join(
+            PositionLotModel,
+            PositionLotModel.id == LotClosureModel.lot_id,
+        ).filter(
+            PositionLotModel.account_id == account_id
+        ).all()
+        processed_fill_ids.update(r[0] for r in closure_results)
+
+        # Process each symbol
+        for sym, fills in fills_by_symbol.items():
+            sym_stats = self._process_symbol_fills(
+                account_id=account_id,
+                symbol=sym,
+                fills=fills,
+                processed_fill_ids=processed_fill_ids,
+            )
+            for key in stats:
+                stats[key] += sym_stats[key]
+
+        logger.info(
+            "Populated campaigns for account_id=%s: %s",
+            account_id,
+            stats,
+        )
+        return stats
+
+    def _process_symbol_fills(
+        self,
+        account_id: int,
+        symbol: str,
+        fills: list[TradeFillModel],
+        processed_fill_ids: set[int],
+    ) -> dict:
+        """Process fills for a single symbol to create lots/closures/campaigns.
+
+        Args:
+            account_id: Account ID
+            symbol: Symbol being processed
+            fills: List of fills for this symbol, ordered by executed_at
+            processed_fill_ids: Set of fill IDs already processed
+
+        Returns:
+            Dict with processing stats
+        """
+        stats = {
+            "lots_created": 0,
+            "closures_created": 0,
+            "campaigns_created": 0,
+            "legs_created": 0,
+            "fills_processed": 0,
+        }
+
+        # Track open lots (FIFO order)
+        open_long_lots: list[PositionLotModel] = []
+        open_short_lots: list[PositionLotModel] = []
+
+        # Load existing open lots from database
+        existing_lots = self.get_open_lots(account_id, symbol)
+        for lot in existing_lots:
+            if lot.direction == "long":
+                open_long_lots.append(lot)
+            else:
+                open_short_lots.append(lot)
+
+        # Track current campaign in progress (None means flat)
+        current_campaign: Optional[PositionCampaignModel] = None
+        campaign_lots: list[PositionLotModel] = []
+        campaign_closures: list[LotClosureModel] = []
+
+        for fill in fills:
+            is_buy = fill.side.lower() == "buy"
+            is_new_fill = fill.id not in processed_fill_ids
+
+            if is_buy:
+                # BUY: closes short lots first, then opens long
+                remaining_qty = fill.quantity
+
+                # Close short lots (FIFO)
+                while remaining_qty > 0 and open_short_lots:
+                    lot = open_short_lots[0]
+                    close_qty = min(remaining_qty, lot.remaining_qty)
+
+                    if is_new_fill:
+                        # Calculate P&L for short: (open_price - close_price) * qty
+                        pnl = (lot.avg_open_price - fill.price) * close_qty
+                        closure = self.create_closure(
+                            lot_id=lot.id,
+                            open_fill_id=lot.open_fill_id,
+                            close_fill_id=fill.id,
+                            matched_qty=close_qty,
+                            open_price=lot.avg_open_price,
+                            close_price=fill.price,
+                            realized_pnl=pnl,
+                            match_method="fifo",
+                        )
+                        campaign_closures.append(closure)
+                        stats["closures_created"] += 1
+
+                        # Update lot remaining qty
+                        new_remaining = lot.remaining_qty - close_qty
+                        self.update_lot_remaining_qty(lot.id, new_remaining)
+                        lot.remaining_qty = new_remaining
+
+                    remaining_qty -= close_qty
+
+                    if lot.remaining_qty <= 0:
+                        open_short_lots.pop(0)
+
+                # Open new long lot with remaining qty
+                if remaining_qty > 0 and is_new_fill:
+                    # Start a new campaign if we're flat
+                    if current_campaign is None:
+                        current_campaign = self.create_campaign(
+                            account_id=account_id,
+                            symbol=symbol,
+                            direction="long",
+                            opened_at=fill.executed_at,
+                            status="open",
+                            source="broker_synced",
+                        )
+                        stats["campaigns_created"] += 1
+                        campaign_lots = []
+                        campaign_closures = []
+
+                    lot = self.create_lot(
+                        account_id=account_id,
+                        symbol=symbol,
+                        direction="long",
+                        opened_at=fill.executed_at,
+                        open_fill_id=fill.id,
+                        open_qty=remaining_qty,
+                        remaining_qty=remaining_qty,
+                        avg_open_price=fill.price,
+                        campaign_id=current_campaign.id,
+                        status="open",
+                    )
+                    open_long_lots.append(lot)
+                    campaign_lots.append(lot)
+                    stats["lots_created"] += 1
+
+            else:
+                # SELL: closes long lots first, then opens short
+                remaining_qty = fill.quantity
+
+                # Close long lots (FIFO)
+                while remaining_qty > 0 and open_long_lots:
+                    lot = open_long_lots[0]
+                    close_qty = min(remaining_qty, lot.remaining_qty)
+
+                    if is_new_fill:
+                        # Calculate P&L for long: (close_price - open_price) * qty
+                        pnl = (fill.price - lot.avg_open_price) * close_qty
+                        closure = self.create_closure(
+                            lot_id=lot.id,
+                            open_fill_id=lot.open_fill_id,
+                            close_fill_id=fill.id,
+                            matched_qty=close_qty,
+                            open_price=lot.avg_open_price,
+                            close_price=fill.price,
+                            realized_pnl=pnl,
+                            match_method="fifo",
+                        )
+                        campaign_closures.append(closure)
+                        stats["closures_created"] += 1
+
+                        # Update lot remaining qty
+                        new_remaining = lot.remaining_qty - close_qty
+                        self.update_lot_remaining_qty(lot.id, new_remaining)
+                        lot.remaining_qty = new_remaining
+
+                    remaining_qty -= close_qty
+
+                    if lot.remaining_qty <= 0:
+                        open_long_lots.pop(0)
+
+                # Open new short lot with remaining qty
+                if remaining_qty > 0 and is_new_fill:
+                    # Start a new campaign if we're flat
+                    if current_campaign is None:
+                        current_campaign = self.create_campaign(
+                            account_id=account_id,
+                            symbol=symbol,
+                            direction="short",
+                            opened_at=fill.executed_at,
+                            status="open",
+                            source="broker_synced",
+                        )
+                        stats["campaigns_created"] += 1
+                        campaign_lots = []
+                        campaign_closures = []
+
+                    lot = self.create_lot(
+                        account_id=account_id,
+                        symbol=symbol,
+                        direction="short",
+                        opened_at=fill.executed_at,
+                        open_fill_id=fill.id,
+                        open_qty=remaining_qty,
+                        remaining_qty=remaining_qty,
+                        avg_open_price=fill.price,
+                        campaign_id=current_campaign.id,
+                        status="open",
+                    )
+                    open_short_lots.append(lot)
+                    campaign_lots.append(lot)
+                    stats["lots_created"] += 1
+
+            if is_new_fill:
+                stats["fills_processed"] += 1
+                processed_fill_ids.add(fill.id)
+
+            # Check if we've returned to flat
+            if not open_long_lots and not open_short_lots and current_campaign:
+                # Finalize the campaign
+                self._finalize_campaign(
+                    current_campaign,
+                    campaign_lots,
+                    campaign_closures,
+                    fills,
+                )
+                stats["legs_created"] += self._create_campaign_legs(
+                    current_campaign,
+                    fills,
+                    campaign_lots,
+                    campaign_closures,
+                )
+                current_campaign = None
+                campaign_lots = []
+                campaign_closures = []
+
+        return stats
+
+    def _finalize_campaign(
+        self,
+        campaign: PositionCampaignModel,
+        lots: list[PositionLotModel],
+        closures: list[LotClosureModel],
+        fills: list[TradeFillModel],
+    ) -> None:
+        """Finalize a campaign by computing aggregated metrics.
+
+        Args:
+            campaign: Campaign to finalize
+            lots: Lots in this campaign
+            closures: Closures in this campaign
+            fills: All fills for this symbol (used for timing)
+        """
+        if not lots:
+            return
+
+        # Calculate aggregates
+        total_pnl = sum(c.realized_pnl or 0 for c in closures)
+        total_qty_opened = sum(lot.open_qty for lot in lots)
+        total_qty_closed = sum(c.matched_qty for c in closures)
+        num_fills = len(set(lot.open_fill_id for lot in lots)) + len(
+            set(c.close_fill_id for c in closures)
+        )
+
+        # Calculate average prices
+        if lots:
+            total_open_value = sum(lot.open_qty * lot.avg_open_price for lot in lots)
+            avg_open_price = total_open_value / total_qty_opened if total_qty_opened else 0
+        else:
+            avg_open_price = None
+
+        if closures:
+            total_close_value = sum(c.matched_qty * c.close_price for c in closures)
+            avg_close_price = total_close_value / total_qty_closed if total_qty_closed else 0
+        else:
+            avg_close_price = None
+
+        # Get first open and last close times
+        opened_at = min(lot.opened_at for lot in lots)
+        if closures:
+            # Find close fill times
+            close_fill_ids = [c.close_fill_id for c in closures]
+            close_fills = [f for f in fills if f.id in close_fill_ids]
+            if close_fills:
+                closed_at = max(f.executed_at for f in close_fills)
+            else:
+                closed_at = datetime.utcnow()
+        else:
+            closed_at = datetime.utcnow()
+
+        # Calculate holding period
+        holding_period_sec = int((closed_at - opened_at).total_seconds())
+
+        # Calculate return percentage
+        cost_basis = total_qty_opened * (avg_open_price or 0)
+        return_pct = (total_pnl / cost_basis * 100) if cost_basis else 0
+
+        # Update campaign
+        campaign.opened_at = opened_at
+        campaign.closed_at = closed_at
+        campaign.qty_opened = total_qty_opened
+        campaign.qty_closed = total_qty_closed
+        campaign.avg_open_price = avg_open_price
+        campaign.avg_close_price = avg_close_price
+        campaign.realized_pnl = total_pnl
+        campaign.return_pct = return_pct
+        campaign.holding_period_sec = holding_period_sec
+        campaign.num_fills = num_fills
+        campaign.max_qty = total_qty_opened
+        campaign.status = "closed"
+        campaign.derived_from = {
+            "lot_ids": [lot.id for lot in lots],
+            "closure_ids": [c.id for c in closures],
+        }
+
+        self.session.flush()
+        logger.info(
+            "Finalized campaign id=%s symbol=%s pnl=%.2f return=%.2f%%",
+            campaign.id,
+            campaign.symbol,
+            total_pnl,
+            return_pct,
+        )
+
+    def _create_campaign_legs(
+        self,
+        campaign: PositionCampaignModel,
+        fills: list[TradeFillModel],
+        lots: list[PositionLotModel],
+        closures: list[LotClosureModel],
+    ) -> int:
+        """Create campaign legs linking to fills.
+
+        Args:
+            campaign: Campaign to add legs to
+            fills: All fills for this symbol
+            lots: Lots in this campaign
+            closures: Closures in this campaign
+
+        Returns:
+            Number of legs created
+        """
+        legs_created = 0
+
+        # Create opening leg
+        if lots:
+            open_fill_ids = [lot.open_fill_id for lot in lots]
+            open_fills = [f for f in fills if f.id in open_fill_ids]
+            if open_fills:
+                first_fill = min(open_fills, key=lambda f: f.executed_at)
+                total_open_qty = sum(lot.open_qty for lot in lots)
+                avg_price = sum(
+                    lot.open_qty * lot.avg_open_price for lot in lots
+                ) / total_open_qty
+
+                leg = self.create_leg(
+                    campaign_id=campaign.id,
+                    leg_type="open",
+                    side=first_fill.side.lower(),
+                    quantity=total_open_qty,
+                    avg_price=avg_price,
+                    started_at=first_fill.executed_at,
+                    ended_at=max(f.executed_at for f in open_fills),
+                    fill_count=len(open_fills),
+                )
+                legs_created += 1
+
+                # Create fill mappings
+                for fill in open_fills:
+                    lot_for_fill = next(
+                        (lot for lot in lots if lot.open_fill_id == fill.id),
+                        None,
+                    )
+                    qty = lot_for_fill.open_qty if lot_for_fill else fill.quantity
+                    self.create_leg_fill_map(
+                        leg_id=leg.id,
+                        fill_id=fill.id,
+                        allocated_qty=qty,
+                    )
+
+        # Create closing leg
+        if closures:
+            close_fill_ids = list(set(c.close_fill_id for c in closures))
+            close_fills = [f for f in fills if f.id in close_fill_ids]
+            if close_fills:
+                first_close = min(close_fills, key=lambda f: f.executed_at)
+                total_close_qty = sum(c.matched_qty for c in closures)
+                avg_price = sum(
+                    c.matched_qty * c.close_price for c in closures
+                ) / total_close_qty
+
+                leg = self.create_leg(
+                    campaign_id=campaign.id,
+                    leg_type="close",
+                    side=first_close.side.lower(),
+                    quantity=total_close_qty,
+                    avg_price=avg_price,
+                    started_at=first_close.executed_at,
+                    ended_at=max(f.executed_at for f in close_fills),
+                    fill_count=len(close_fills),
+                )
+                legs_created += 1
+
+                # Create fill mappings
+                for fill in close_fills:
+                    closures_for_fill = [
+                        c for c in closures if c.close_fill_id == fill.id
+                    ]
+                    qty = sum(c.matched_qty for c in closures_for_fill)
+                    self.create_leg_fill_map(
+                        leg_id=leg.id,
+                        fill_id=fill.id,
+                        allocated_qty=qty,
+                    )
+
+        return legs_created
+
+    # -------------------------------------------------------------------------
+    # Campaign Leg Population with Semantic Leg Types
+    # -------------------------------------------------------------------------
+
+    def populate_legs_from_campaigns(self, campaign_id: int) -> dict:
+        """Populate CampaignLeg records from a campaign's fills.
+
+        Creates legs with semantic leg_type based on position direction transitions:
+        - open: First entry into a position (from flat)
+        - add: Adding to an existing position (scale-in)
+        - reduce: Partially reducing a position (scale-out)
+        - close: Fully closing a position (back to flat)
+        - flip_close: Closing a position as part of a direction flip
+        - flip_open: Opening a new position after a flip
+
+        Args:
+            campaign_id: The campaign to populate legs for
+
+        Returns:
+            Dict with stats: legs_created, fill_maps_created
+        """
+        stats = {
+            "legs_created": 0,
+            "fill_maps_created": 0,
+        }
+
+        campaign = self.get_campaign(campaign_id)
+        if not campaign:
+            logger.warning("Campaign id=%s not found for leg population", campaign_id)
+            return stats
+
+        # Get lots and closures for this campaign
+        lots = self.session.query(PositionLotModel).filter(
+            PositionLotModel.campaign_id == campaign_id
+        ).all()
+
+        closures = []
+        for lot in lots:
+            lot_closures = self.get_closures_for_lot(lot.id)
+            closures.extend(lot_closures)
+
+        if not lots and not closures:
+            logger.info("No lots or closures for campaign id=%s", campaign_id)
+            return stats
+
+        # Gather all relevant fill IDs
+        fill_ids = set()
+        for lot in lots:
+            fill_ids.add(lot.open_fill_id)
+        for closure in closures:
+            fill_ids.add(closure.close_fill_id)
+
+        if not fill_ids:
+            return stats
+
+        # Get fills and sort chronologically
+        fills = self.session.query(TradeFillModel).filter(
+            TradeFillModel.id.in_(fill_ids)
+        ).order_by(TradeFillModel.executed_at.asc()).all()
+
+        if not fills:
+            return stats
+
+        # Build lookup maps for efficient access
+        lot_by_open_fill: dict[int, PositionLotModel] = {
+            lot.open_fill_id: lot for lot in lots
+        }
+        closures_by_close_fill: dict[int, list[LotClosureModel]] = {}
+        for closure in closures:
+            if closure.close_fill_id not in closures_by_close_fill:
+                closures_by_close_fill[closure.close_fill_id] = []
+            closures_by_close_fill[closure.close_fill_id].append(closure)
+
+        # Delete existing legs for this campaign (for idempotency)
+        existing_legs = self.get_legs_for_campaign(campaign_id)
+        for leg in existing_legs:
+            self.session.delete(leg)
+        self.session.flush()
+
+        # Process fills and create legs with semantic types
+        legs_data = self._compute_leg_types(
+            fills=fills,
+            lot_by_open_fill=lot_by_open_fill,
+            closures_by_close_fill=closures_by_close_fill,
+            campaign_direction=campaign.direction,
+        )
+
+        # Create leg records and fill maps
+        for leg_data in legs_data:
+            leg = self.create_leg(
+                campaign_id=campaign_id,
+                leg_type=leg_data["leg_type"],
+                side=leg_data["side"],
+                quantity=leg_data["quantity"],
+                avg_price=leg_data["avg_price"],
+                started_at=leg_data["started_at"],
+                ended_at=leg_data["ended_at"],
+                fill_count=leg_data["fill_count"],
+            )
+            stats["legs_created"] += 1
+
+            # Create fill mappings
+            for fill_id, allocated_qty in leg_data["fill_allocations"]:
+                self.create_leg_fill_map(
+                    leg_id=leg.id,
+                    fill_id=fill_id,
+                    allocated_qty=allocated_qty,
+                )
+                stats["fill_maps_created"] += 1
+
+        logger.info(
+            "Populated legs for campaign id=%s: %s",
+            campaign_id,
+            stats,
+        )
+        return stats
+
+    def _compute_leg_types(
+        self,
+        fills: list[TradeFillModel],
+        lot_by_open_fill: dict[int, PositionLotModel],
+        closures_by_close_fill: dict[int, list[LotClosureModel]],
+        campaign_direction: str,
+    ) -> list[dict]:
+        """Compute semantic leg types based on position state transitions.
+
+        Processes fills chronologically and tracks position state to determine
+        the appropriate leg_type for each fill or group of fills.
+
+        Args:
+            fills: Fills sorted by executed_at ascending
+            lot_by_open_fill: Map of open_fill_id to PositionLot
+            closures_by_close_fill: Map of close_fill_id to list of LotClosure
+            campaign_direction: Campaign direction ('long' or 'short')
+
+        Returns:
+            List of leg data dicts with keys:
+            - leg_type, side, quantity, avg_price, started_at, ended_at,
+              fill_count, fill_allocations (list of (fill_id, qty) tuples)
+        """
+        legs_data = []
+
+        # Track current position state
+        # position > 0 means long, position < 0 means short, position == 0 means flat
+        position = 0.0
+
+        for fill in fills:
+            is_buy = fill.side.lower() == "buy"
+            fill_side = "buy" if is_buy else "sell"
+
+            # Determine if this fill opens or closes position
+            is_opening_fill = fill.id in lot_by_open_fill
+            is_closing_fill = fill.id in closures_by_close_fill
+
+            # Calculate position change from this fill
+            if is_opening_fill:
+                lot = lot_by_open_fill[fill.id]
+                open_qty = lot.open_qty
+                # Open fills increase position in the campaign direction
+                if campaign_direction == "long":
+                    qty_change = open_qty
+                else:
+                    qty_change = -open_qty
+            elif is_closing_fill:
+                close_closures = closures_by_close_fill[fill.id]
+                close_qty = sum(c.matched_qty for c in close_closures)
+                # Close fills decrease position toward flat
+                if campaign_direction == "long":
+                    qty_change = -close_qty
+                else:
+                    qty_change = close_qty
+            else:
+                # Fill not associated with lots or closures, skip
+                continue
+
+            # Determine leg_type based on position state transition
+            prev_position = position
+            new_position = position + qty_change
+
+            leg_type = self._determine_leg_type(
+                prev_position=prev_position,
+                new_position=new_position,
+                is_buy=is_buy,
+                campaign_direction=campaign_direction,
+            )
+
+            # Calculate fill quantity and price for this leg
+            if is_opening_fill:
+                lot = lot_by_open_fill[fill.id]
+                quantity = lot.open_qty
+                avg_price = lot.avg_open_price
+                fill_allocations = [(fill.id, quantity)]
+            else:
+                close_closures = closures_by_close_fill[fill.id]
+                quantity = sum(c.matched_qty for c in close_closures)
+                total_value = sum(c.matched_qty * c.close_price for c in close_closures)
+                avg_price = total_value / quantity if quantity > 0 else 0
+                fill_allocations = [(fill.id, quantity)]
+
+            # Create leg data
+            leg_data = {
+                "leg_type": leg_type,
+                "side": fill_side,
+                "quantity": quantity,
+                "avg_price": avg_price,
+                "started_at": fill.executed_at,
+                "ended_at": fill.executed_at,
+                "fill_count": 1,
+                "fill_allocations": fill_allocations,
+            }
+            legs_data.append(leg_data)
+
+            # Update position state
+            position = new_position
+
+        return legs_data
+
+    def populate_campaigns_and_legs(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+    ) -> dict:
+        """Orchestrator method to build complete trading journal from fills.
+
+        Calls populate_campaigns_from_fills to create campaigns and lots,
+        then calculates total P&L across all created campaigns.
+
+        Args:
+            account_id: Account ID to process fills for
+            symbol: Optional symbol filter (process single symbol)
+
+        Returns:
+            Dict with stats: campaigns_created, lots_created, closures_created,
+            legs_created, fills_processed, total_pnl
+        """
+        # Run the main population logic
+        stats = self.populate_campaigns_from_fills(account_id=account_id, symbol=symbol)
+
+        # Calculate total P&L from newly created campaigns
+        # Get all campaigns for this account to calculate total realized P&L
+        campaigns = self.get_campaigns(account_id, symbol=symbol, limit=1000)
+        total_pnl = sum(c.realized_pnl or 0.0 for c in campaigns if c.status == "closed")
+
+        stats["total_pnl"] = total_pnl
+
+        logger.info(
+            "Populated campaigns and legs for account_id=%s: "
+            "campaigns=%d, lots=%d, legs=%d, pnl=%.2f",
+            account_id,
+            stats["campaigns_created"],
+            stats["lots_created"],
+            stats["legs_created"],
+            total_pnl,
+        )
+
+        return stats
+
+    def _determine_leg_type(
+        self,
+        prev_position: float,
+        new_position: float,
+        is_buy: bool,
+        campaign_direction: str,
+    ) -> str:
+        """Determine the semantic leg type based on position state transition.
+
+        Args:
+            prev_position: Position before the fill (positive=long, negative=short)
+            new_position: Position after the fill
+            is_buy: True if the fill is a buy
+            campaign_direction: Campaign direction ('long' or 'short')
+
+        Returns:
+            One of: 'open', 'add', 'reduce', 'close', 'flip_close', 'flip_open'
+        """
+        was_flat = abs(prev_position) < 0.0001
+        is_flat = abs(new_position) < 0.0001
+        was_long = prev_position > 0.0001
+        was_short = prev_position < -0.0001
+        is_long = new_position > 0.0001
+        is_short = new_position < -0.0001
+
+        # Check for direction flip (crossing zero and going to opposite side)
+        crossed_zero = (was_long and is_short) or (was_short and is_long)
+
+        if crossed_zero:
+            # This is a flip scenario - would require flip_close followed by flip_open
+            # For simplicity, we'll assign based on the dominant action
+            if is_buy:
+                if was_short:
+                    # Buy while short -> closing short (flip_close) or going long
+                    if is_flat:
+                        return "close"
+                    elif is_long:
+                        return "flip_open"
+                    else:
+                        return "reduce"
+            else:
+                if was_long:
+                    # Sell while long -> closing long (flip_close) or going short
+                    if is_flat:
+                        return "close"
+                    elif is_short:
+                        return "flip_open"
+                    else:
+                        return "reduce"
+
+        # From flat -> position = 'open'
+        if was_flat and not is_flat:
+            return "open"
+
+        # From position -> flat = 'close'
+        if not was_flat and is_flat:
+            return "close"
+
+        # Adding to position (same direction, increasing magnitude)
+        if was_long and is_long and new_position > prev_position:
+            return "add"
+        if was_short and is_short and new_position < prev_position:
+            return "add"
+
+        # Reducing position (same direction, decreasing magnitude)
+        if was_long and is_long and new_position < prev_position:
+            return "reduce"
+        if was_short and is_short and new_position > prev_position:
+            return "reduce"
+
+        # Default fallback
+        if was_flat:
+            return "open"
+        elif is_flat:
+            return "close"
+        else:
+            # Continuing in same direction
+            if abs(new_position) > abs(prev_position):
+                return "add"
+            else:
+                return "reduce"

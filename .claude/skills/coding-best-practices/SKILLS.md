@@ -7,9 +7,8 @@ description: Coding best practices for python programming.
 - Must follow PEP 8 style guide
 - Ensure code has proper logging and error handling. All errors, potential issues and key progress steps should be logged.
 - Keep functions short and focused. Give them meaningful names.
+- Ensure there is enough info, warning, error and debug mode logging in the code. When debug mode is on, one should be able to follow code flow by looking at the logs.
 - Always commit and push after every meaningful change with meaningful commit messages
-
-## PYTHON programming best practices
 
 - Beautiful is better than ugly.
 - Explicit is better than implicit.

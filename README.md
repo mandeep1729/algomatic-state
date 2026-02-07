@@ -23,7 +23,7 @@ Algomatic State has three major subsystems:
 - **Production Monitoring**: Drift detection, shadow inference, retraining triggers
 - **Trade Evaluation**: Pluggable evaluator modules (risk/reward, exit plan, regime fit, MTFA)
 - **Standalone Momentum Agent**: Dockerised agent with scheduler loop, risk manager, and Alpaca/Finnhub data providers
-- **Broker Integration**: SnapTrade-based broker connection for trade history sync
+- **Broker Integration**: SnapTrade-based broker connection and direct Alpaca API for trade history sync
 
 ## Architecture
 
@@ -369,6 +369,40 @@ def setup_function():
 ```
 
 Subscriber errors are isolated — one failing callback does not prevent other subscribers from being notified.
+
+## Broker Trade Sync
+
+The platform syncs trade fills from connected brokers to build trade history and enable post-trade analysis.
+
+### Alpaca Direct Integration
+
+For users with Alpaca paper or live trading accounts, trade fills are synced directly via the Alpaca API:
+
+- **On-Login Sync**: When a user authenticates (`/api/auth/me`), a background task automatically syncs any new trade fills from Alpaca.
+- **Manual Sync**: Call `POST /api/alpaca/sync` to force a sync.
+- **Sync Status**: Check `GET /api/alpaca/status` for connection status and last sync time.
+- **Trade History**: Fetch synced trades via `GET /api/alpaca/trades`.
+
+The sync is idempotent — duplicate fills are detected via `external_trade_id` and skipped.
+
+### SnapTrade Integration
+
+For multi-broker support, SnapTrade provides a universal connection layer:
+
+- **Connect Broker**: `POST /api/broker/connect` generates a connection link.
+- **Sync Trades**: `POST /api/broker/sync` fetches activities from all connected brokers.
+- **Trade History**: `GET /api/broker/trades` returns synced trades.
+
+### TODO: Webhook Integration for Live Trading
+
+> **Note**: The current sync mechanism is polling-based (on-login + manual). For production live trading, implement Alpaca webhooks for real-time trade fill notifications:
+>
+> 1. Set up a publicly accessible webhook endpoint (`/api/alpaca/webhook`)
+> 2. Register the webhook with Alpaca for `trade_updates` events
+> 3. Process `fill` events to insert trades in real-time
+> 4. This eliminates sync delays and reduces API polling overhead
+>
+> See: https://docs.alpaca.markets/docs/streaming-trade-updates
 
 ## Project Structure
 

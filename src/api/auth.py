@@ -2,14 +2,14 @@
 
 Provides:
 - POST /api/auth/google — verify Google ID token, find/create user, issue JWT
-- GET  /api/auth/me — return current user info
+- GET  /api/auth/me — return current user info (triggers background broker sync)
 - POST /api/auth/logout — placeholder (JWT is stateless, client discards token)
 """
 
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from jose import jwt
@@ -162,8 +162,17 @@ async def google_login(request: GoogleLoginRequest):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(user_id: int = Depends(get_current_user)):
-    """Return the current authenticated user's info."""
+async def get_me(
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(get_current_user),
+):
+    """Return the current authenticated user's info.
+
+    Also triggers background sync of broker trade fills (Alpaca).
+    """
+    # Import here to avoid circular dependency
+    from src.api.alpaca import sync_alpaca_fills_background
+
     db_manager = get_db_manager()
     with db_manager.get_session() as session:
         repo = TradingBuddyRepository(session)
@@ -171,7 +180,7 @@ async def get_me(user_id: int = Depends(get_current_user)):
         if account is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-        return UserResponse(
+        user_response = UserResponse(
             id=account.id,
             name=account.name,
             email=account.email,
@@ -181,6 +190,11 @@ async def get_me(user_id: int = Depends(get_current_user)):
             is_active=account.is_active,
             created_at=account.created_at.isoformat(),
         )
+
+    # Trigger background sync of Alpaca trade fills
+    background_tasks.add_task(sync_alpaca_fills_background, user_id)
+
+    return user_response
 
 
 @router.post("/logout")
