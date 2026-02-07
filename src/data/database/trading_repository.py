@@ -1374,6 +1374,23 @@ class TradingBuddyRepository:
                 campaign_lots = []
                 campaign_closures = []
 
+        # Handle still-open campaign: create legs for positions not yet closed
+        if current_campaign and campaign_lots:
+            # Check if legs already exist to avoid duplicates on re-runs
+            existing_legs = self.get_legs_for_campaign(current_campaign.id)
+            if not existing_legs:
+                stats["legs_created"] += self._create_campaign_legs(
+                    current_campaign,
+                    fills,
+                    campaign_lots,
+                    campaign_closures,
+                )
+                logger.info(
+                    "Created legs for open campaign id=%s symbol=%s",
+                    current_campaign.id,
+                    symbol,
+                )
+
         return stats
 
     def _finalize_campaign(
