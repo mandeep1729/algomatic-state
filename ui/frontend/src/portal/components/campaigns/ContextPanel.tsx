@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { DecisionContext } from '../../types';
+import type { DecisionContext, StrategyDefinition } from '../../types';
+import api from '../../api';
 import { StrategyChips } from './StrategyChips';
 import { EmotionChips } from './EmotionChips';
 
@@ -54,6 +55,35 @@ export function ContextPanel({
   const [draft, setDraft] = useState<Draft>(initialDraft);
   // Track whether the user has edited anything (skip autosave on mount / tab switch)
   const dirtyRef = useRef(false);
+
+  // Strategies fetched from API
+  const [strategies, setStrategies] = useState<StrategyDefinition[]>([]);
+  const [strategiesLoading, setStrategiesLoading] = useState(true);
+
+  // Fetch strategies on mount
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStrategies() {
+      setStrategiesLoading(true);
+      try {
+        const data = await api.fetchStrategies();
+        if (!cancelled) {
+          setStrategies(data);
+        }
+      } catch (err) {
+        console.error('[ContextPanel] Failed to fetch strategies:', err);
+        if (!cancelled) {
+          setStrategies([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setStrategiesLoading(false);
+        }
+      }
+    }
+    loadStrategies();
+    return () => { cancelled = true; };
+  }, []);
 
   // Sync when initial prop changes (e.g. switching legs)
   useEffect(() => {
@@ -111,6 +141,8 @@ export function ContextPanel({
           <StrategyChips
             value={draft.strategyTags}
             onChange={(v) => updateDraft('strategyTags', v)}
+            strategies={strategies}
+            loading={strategiesLoading}
           />
         </div>
 
