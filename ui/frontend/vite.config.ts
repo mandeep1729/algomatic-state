@@ -11,6 +11,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
+    host: true, // Listen on all interfaces for LAN access
     proxy: {
       '/api': {
         target: `http://localhost:${apiPort}`,
