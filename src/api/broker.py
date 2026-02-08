@@ -13,6 +13,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from src.api.auth_middleware import get_current_user
 from src.data.database.connection import get_db_manager
@@ -646,6 +647,10 @@ async def save_fill_context(
         existing_context.feelings_now = request.feelings_now
         existing_context.notes = request.notes
         existing_context.updated_at = datetime.utcnow()
+        # SQLAlchemy doesn't auto-detect JSONB mutations; flag them explicitly
+        flag_modified(existing_context, "exit_intent")
+        flag_modified(existing_context, "feelings_then")
+        flag_modified(existing_context, "feelings_now")
         db.flush()
 
         context = existing_context

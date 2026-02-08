@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from src.data.database.trading_buddy_models import (
     UserAccount as UserAccountModel,
@@ -279,18 +280,22 @@ class TradingBuddyRepository:
         site_pref_keys = set(UserProfileModel.SITE_PREF_DEFAULTS.keys())
 
         # Handle structured dict updates
+        # Note: JSONB columns need flag_modified to ensure SQLAlchemy detects changes
         if "profile" in kwargs:
             updated = dict(existing.profile or UserProfileModel.PROFILE_DEFAULTS)
             updated.update(kwargs.pop("profile"))
             existing.profile = updated
+            flag_modified(existing, "profile")
         if "risk_profile" in kwargs:
             updated = dict(existing.risk_profile or UserProfileModel.RISK_PROFILE_DEFAULTS)
             updated.update(kwargs.pop("risk_profile"))
             existing.risk_profile = updated
+            flag_modified(existing, "risk_profile")
         if "site_prefs" in kwargs:
             updated = dict(existing.site_prefs or UserProfileModel.SITE_PREF_DEFAULTS)
             updated.update(kwargs.pop("site_prefs"))
             existing.site_prefs = updated
+            flag_modified(existing, "site_prefs")
 
         # Handle flat kwargs for backward compatibility
         profile_updates = {}
@@ -308,16 +313,19 @@ class TradingBuddyRepository:
             updated = dict(existing.profile or UserProfileModel.PROFILE_DEFAULTS)
             updated.update(profile_updates)
             existing.profile = updated
+            flag_modified(existing, "profile")
 
         if risk_updates:
             updated = dict(existing.risk_profile or UserProfileModel.RISK_PROFILE_DEFAULTS)
             updated.update(risk_updates)
             existing.risk_profile = updated
+            flag_modified(existing, "risk_profile")
 
         if site_pref_updates:
             updated = dict(existing.site_prefs or UserProfileModel.SITE_PREF_DEFAULTS)
             updated.update(site_pref_updates)
             existing.site_prefs = updated
+            flag_modified(existing, "site_prefs")
 
         self.session.flush()
         return existing

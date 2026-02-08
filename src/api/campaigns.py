@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm.attributes import flag_modified
 
 from src.api.auth_middleware import get_current_user
 from src.data.database.connection import get_db_manager
@@ -680,6 +681,10 @@ async def save_context(
         existing.feelings_now = request.feelingsNow
         existing.notes = request.notes
         existing.updated_at = datetime.now(timezone.utc)
+        # SQLAlchemy doesn't auto-detect JSONB mutations; flag them explicitly
+        flag_modified(existing, "exit_intent")
+        flag_modified(existing, "feelings_then")
+        flag_modified(existing, "feelings_now")
         db.flush()
         logger.info("Updated decision context id=%s for campaign %s", existing.id, campaign_id)
         return _context_to_response(existing)
