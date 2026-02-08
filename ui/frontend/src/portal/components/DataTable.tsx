@@ -11,7 +11,7 @@
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { Settings2, X } from 'lucide-react';
-import { fetchSitePrefs, updateSitePrefs } from '../api/client';
+import api from '../api';
 
 export interface Column<T> {
   /** Unique key for this column */
@@ -76,13 +76,17 @@ export function DataTable<T>({
 
     async function loadPrefs() {
       try {
-        const prefs = await fetchSitePrefs();
+        const prefs = await api.fetchSitePrefs();
         if (cancelled) return;
 
         const savedColumns = prefs.table_columns?.[tableName];
         if (savedColumns && Array.isArray(savedColumns) && savedColumns.length > 0) {
-          // Use saved preferences
-          setVisibleColumns(new Set(savedColumns));
+          // Filter saved columns to only include keys that exist in current columns definition
+          const validColumnKeys = new Set(columns.map((c) => c.key));
+          const validSavedColumns = savedColumns.filter((key) => validColumnKeys.has(key));
+          if (validSavedColumns.length > 0) {
+            setVisibleColumns(new Set(validSavedColumns));
+          }
         }
       } catch {
         // Preferences not available, use defaults
@@ -95,7 +99,7 @@ export function DataTable<T>({
     return () => {
       cancelled = true;
     };
-  }, [tableName]);
+  }, [tableName, columns]);
 
   // Save preferences when columns change (after initial load)
   const savePrefs = useCallback(
@@ -103,7 +107,7 @@ export function DataTable<T>({
       if (!prefsLoaded) return;
 
       try {
-        await updateSitePrefs({
+        await api.updateSitePrefs({
           table_columns: {
             [tableName]: Array.from(cols),
           },
