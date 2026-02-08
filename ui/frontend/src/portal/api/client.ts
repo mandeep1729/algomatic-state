@@ -625,3 +625,20 @@ export async function fetchSitePrefs(): Promise<SitePrefs> {
 export async function updateSitePrefs(prefs: Partial<SitePrefs>): Promise<SitePrefs> {
   return put<SitePrefs>('/api/user/site-prefs', prefs);
 }
+
+// =============================================================================
+// Fill Context — GET/PUT /api/broker/fills/{fillId}/context
+// =============================================================================
+
+import type { FillContextDetail, SaveFillContextRequest } from '../types';
+
+export async function fetchFillContext(fillId: string): Promise<FillContextDetail> {
+  return get<FillContextDetail>(`/api/broker/fills/${encodeURIComponent(fillId)}/context`);
+}
+
+export async function saveFillContext(
+  fillId: string,
+  context: SaveFillContextRequest
+): Promise<FillContextDetail> {
+  return put<FillContextDetail>(`/api/broker/fills/${encodeURIComponent(fillId)}/context`, context);
+}

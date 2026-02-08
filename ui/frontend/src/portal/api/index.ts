@@ -39,6 +39,8 @@ import * as realApi from './client';
  *   - fetchBehavioralTags      -> GET  /api/journal/tags
  *   - fetchSitePrefs           -> GET  /api/user/site-prefs
  *   - updateSitePrefs          -> PUT  /api/user/site-prefs
+ *   - fetchFillContext         -> GET  /api/broker/fills/{id}/context
+ *   - saveFillContext          -> PUT  /api/broker/fills/{id}/context
  */
 const api = USE_MOCKS
   ? mockApi
@@ -110,3 +112,6 @@ export { fetchMockOHLCVData, fetchMockFeatures, fetchMockCampaignOHLCVData } fro
 
 // Re-export mock PnL timeseries for fallback use
 export { fetchTickerPnlTimeseries as fetchMockTickerPnlTimeseries } from '../mocks/mockApi';
+
+// Re-export fill context functions from client
+export { fetchFillContext, saveFillContext } from './client';

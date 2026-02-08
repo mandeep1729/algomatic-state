@@ -402,3 +402,30 @@ export interface BrokerStatus {
 export interface SitePrefs {
   table_columns: Record<string, string[]>;
 }
+
+// --- Fill Context (for editing context from Transactions view) ---
+
+export interface FillContextDetail {
+  fill_id: number;
+  campaign_id: number | null;
+  leg_id: number | null;
+  context_id: number | null;
+  context_type: string | null;
+  strategy_id: number | null;
+  strategy_name: string | null;
+  hypothesis: string | null;
+  exit_intent: string | null;
+  feelings_then: { chips: string[]; intensity?: number; note?: string } | null;
+  feelings_now: { chips: string[]; intensity?: number; note?: string } | null;
+  notes: string | null;
+  updated_at: string | null;
+}
+
+export interface SaveFillContextRequest {
+  strategy_id?: number | null;
+  hypothesis?: string | null;
+  exit_intent?: string | null;
+  feelings_then?: { chips: string[]; intensity?: number; note?: string } | null;
+  feelings_now?: { chips: string[]; intensity?: number; note?: string } | null;
+  notes?: string | null;
+}

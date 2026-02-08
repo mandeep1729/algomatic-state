@@ -466,3 +466,250 @@ async def broker_callback(
         "message": "Connection process completed. Check /api/broker/status for connection state."
     }
 
+
+# -----------------------------------------------------------------------------
+# Fill Context Endpoints
+# -----------------------------------------------------------------------------
+
+class FillContextDetail(BaseModel):
+    """Full decision context for a trade fill."""
+
+    fill_id: int
+    campaign_id: Optional[int] = None
+    leg_id: Optional[int] = None
+    context_id: Optional[int] = None
+    context_type: Optional[str] = None
+    strategy_id: Optional[int] = None
+    strategy_name: Optional[str] = None
+    hypothesis: Optional[str] = None
+    exit_intent: Optional[str] = None
+    feelings_then: Optional[Dict[str, Any]] = None
+    feelings_now: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = None
+    updated_at: Optional[datetime] = None
+
+
+class SaveFillContextRequest(BaseModel):
+    """Request body for saving a decision context for a fill."""
+
+    strategy_id: Optional[int] = None
+    hypothesis: Optional[str] = None
+    exit_intent: Optional[str] = None
+    feelings_then: Optional[Dict[str, Any]] = None
+    feelings_now: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = None
+
+
+@router.get("/fills/{fill_id}/context", response_model=FillContextDetail)
+async def get_fill_context(
+    fill_id: int,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get the full decision context for a specific trade fill.
+
+    Returns context details including campaign/leg IDs needed for editing.
+    If the fill is not linked to a campaign, returns null values for context fields.
+    """
+    logger.debug("get_fill_context: fill_id=%d, user_id=%d", fill_id, user_id)
+
+    # Verify fill belongs to user
+    snap_user = db.query(SnapTradeUser).filter(
+        SnapTradeUser.user_account_id == user_id
+    ).first()
+
+    if not snap_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    fill = db.query(TradeFill).join(BrokerConnection).filter(
+        TradeFill.id == fill_id,
+        BrokerConnection.snaptrade_user_id == snap_user.id
+    ).first()
+
+    if not fill:
+        raise HTTPException(status_code=404, detail=f"Fill {fill_id} not found")
+
+    # Get the leg mapping and context
+    # Path: TradeFill -> LegFillMap -> CampaignLeg -> DecisionContext
+    result = (
+        db.query(
+            LegFillMap.fill_id,
+            CampaignLeg.id.label("leg_id"),
+            CampaignLeg.campaign_id,
+            CampaignLeg.leg_type,
+            DecisionContext.id.label("context_id"),
+            DecisionContext.context_type,
+            DecisionContext.strategy_id,
+            Strategy.name.label("strategy_name"),
+            DecisionContext.hypothesis,
+            DecisionContext.exit_intent,
+            DecisionContext.feelings_then,
+            DecisionContext.feelings_now,
+            DecisionContext.notes,
+            DecisionContext.updated_at,
+        )
+        .select_from(LegFillMap)
+        .join(CampaignLeg, CampaignLeg.id == LegFillMap.leg_id)
+        .outerjoin(DecisionContext, DecisionContext.leg_id == CampaignLeg.id)
+        .outerjoin(Strategy, Strategy.id == DecisionContext.strategy_id)
+        .filter(LegFillMap.fill_id == fill_id)
+        .first()
+    )
+
+    if not result:
+        # Fill is not linked to a campaign/leg
+        return FillContextDetail(fill_id=fill_id)
+
+    # Extract exit_intent string from JSONB if present
+    exit_intent_str: Optional[str] = None
+    if result.exit_intent:
+        if isinstance(result.exit_intent, dict):
+            exit_intent_str = result.exit_intent.get("type")
+        elif isinstance(result.exit_intent, str):
+            exit_intent_str = result.exit_intent
+
+    return FillContextDetail(
+        fill_id=fill_id,
+        campaign_id=result.campaign_id,
+        leg_id=result.leg_id,
+        context_id=result.context_id,
+        context_type=result.context_type or result.leg_type,
+        strategy_id=result.strategy_id,
+        strategy_name=result.strategy_name,
+        hypothesis=result.hypothesis,
+        exit_intent=exit_intent_str,
+        feelings_then=result.feelings_then,
+        feelings_now=result.feelings_now,
+        notes=result.notes,
+        updated_at=result.updated_at,
+    )
+
+
+@router.put("/fills/{fill_id}/context", response_model=FillContextDetail)
+async def save_fill_context(
+    fill_id: int,
+    request: SaveFillContextRequest,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Save or update the decision context for a trade fill.
+
+    The fill must be linked to a campaign/leg. If no context exists for
+    the leg, a new one is created. Otherwise, the existing context is updated.
+    """
+    logger.debug("save_fill_context: fill_id=%d, user_id=%d", fill_id, user_id)
+
+    # Verify fill belongs to user
+    snap_user = db.query(SnapTradeUser).filter(
+        SnapTradeUser.user_account_id == user_id
+    ).first()
+
+    if not snap_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    fill = db.query(TradeFill).join(BrokerConnection).filter(
+        TradeFill.id == fill_id,
+        BrokerConnection.snaptrade_user_id == snap_user.id
+    ).first()
+
+    if not fill:
+        raise HTTPException(status_code=404, detail=f"Fill {fill_id} not found")
+
+    # Get the leg mapping
+    leg_map = (
+        db.query(LegFillMap, CampaignLeg)
+        .join(CampaignLeg, CampaignLeg.id == LegFillMap.leg_id)
+        .filter(LegFillMap.fill_id == fill_id)
+        .first()
+    )
+
+    if not leg_map:
+        raise HTTPException(
+            status_code=400,
+            detail="Fill is not linked to a campaign. Cannot save context."
+        )
+
+    _, leg = leg_map
+    campaign_id = leg.campaign_id
+
+    # Check if a context already exists for this leg
+    existing_context = db.query(DecisionContext).filter(
+        DecisionContext.leg_id == leg.id
+    ).first()
+
+    # Build exit_intent value
+    exit_intent_value: Optional[str] = request.exit_intent
+
+    if existing_context:
+        # Update existing context
+        if request.strategy_id is not None:
+            existing_context.strategy_id = request.strategy_id
+        existing_context.hypothesis = request.hypothesis
+        existing_context.exit_intent = exit_intent_value
+        existing_context.feelings_then = request.feelings_then
+        existing_context.feelings_now = request.feelings_now
+        existing_context.notes = request.notes
+        existing_context.updated_at = datetime.utcnow()
+        db.flush()
+
+        context = existing_context
+        logger.info(
+            "Updated fill context: fill_id=%d, context_id=%d",
+            fill_id, context.id
+        )
+    else:
+        # Create new context
+        # Determine context_type from leg type
+        context_type_map = {
+            "open": "entry",
+            "add": "add",
+            "reduce": "reduce",
+            "close": "exit",
+            "flip_close": "exit",
+            "flip_open": "entry",
+        }
+        context_type = context_type_map.get(leg.leg_type, "entry")
+
+        context = DecisionContext(
+            account_id=user_id,
+            campaign_id=campaign_id,
+            leg_id=leg.id,
+            context_type=context_type,
+            strategy_id=request.strategy_id,
+            hypothesis=request.hypothesis,
+            exit_intent=exit_intent_value,
+            feelings_then=request.feelings_then,
+            feelings_now=request.feelings_now,
+            notes=request.notes,
+        )
+        db.add(context)
+        db.flush()
+
+        logger.info(
+            "Created fill context: fill_id=%d, context_id=%d",
+            fill_id, context.id
+        )
+
+    # Get strategy name for response
+    strategy_name: Optional[str] = None
+    if context.strategy_id:
+        strategy = db.query(Strategy).filter(Strategy.id == context.strategy_id).first()
+        if strategy:
+            strategy_name = strategy.name
+
+    return FillContextDetail(
+        fill_id=fill_id,
+        campaign_id=campaign_id,
+        leg_id=leg.id,
+        context_id=context.id,
+        context_type=context.context_type,
+        strategy_id=context.strategy_id,
+        strategy_name=strategy_name,
+        hypothesis=context.hypothesis,
+        exit_intent=exit_intent_value,
+        feelings_then=context.feelings_then,
+        feelings_now=context.feelings_now,
+        notes=context.notes,
+        updated_at=context.updated_at,
+    )
+

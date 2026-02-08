@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, Filter } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, Filter, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../../api';
 import { DataTable, type Column } from '../../components/DataTable';
+import { FillContextModal } from '../../components/FillContextModal';
 import type { TradeSummary } from '../../types';
 
 const SORT_OPTIONS: { label: string; value: string }[] = [
@@ -41,92 +42,6 @@ function formatContextSummary(trade: TradeSummary): string | null {
   return parts.length > 0 ? parts.join(' | ') : null;
 }
 
-// Define table columns for transactions
-const columns: Column<TradeSummary>[] = [
-  {
-    key: 'date',
-    header: 'Date',
-    hideable: false,
-    render: (trade) => (
-      <span className="text-xs text-[var(--text-secondary)]">
-        {formatDate(trade.entry_time)}
-      </span>
-    ),
-  },
-  {
-    key: 'symbol',
-    header: 'Symbol',
-    hideable: false,
-    render: (trade) => (
-      <span className="font-medium text-[var(--accent-blue)]">
-        {trade.symbol}
-      </span>
-    ),
-  },
-  {
-    key: 'side',
-    header: 'Side',
-    render: (trade) => (
-      <span
-        className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${
-          trade.direction === 'long'
-            ? 'bg-[var(--accent-green)]/10 text-[var(--accent-green)]'
-            : 'bg-[var(--accent-red)]/10 text-[var(--accent-red)]'
-        }`}
-      >
-        {trade.direction === 'long' ? 'BUY' : 'SELL'}
-      </span>
-    ),
-  },
-  {
-    key: 'quantity',
-    header: 'Quantity',
-    render: (trade) => (
-      <span className="text-[var(--text-secondary)]">{trade.quantity}</span>
-    ),
-  },
-  {
-    key: 'price',
-    header: 'Price',
-    render: (trade) => (
-      <span className="font-mono text-xs text-[var(--text-secondary)]">
-        {formatCurrency(trade.entry_price)}
-      </span>
-    ),
-  },
-  {
-    key: 'broker',
-    header: 'Broker',
-    render: (trade) => (
-      <span className="text-xs text-[var(--text-secondary)]">
-        {trade.brokerage || '-'}
-      </span>
-    ),
-  },
-  {
-    key: 'context',
-    header: 'Context',
-    render: (trade) => {
-      const summary = formatContextSummary(trade);
-      if (!summary) {
-        return (
-          <span className="text-xs text-[var(--text-secondary)] opacity-50">
-            -
-          </span>
-        );
-      }
-      return (
-        <span
-          className="block max-w-[200px] truncate text-xs text-[var(--text-secondary)]"
-          title={summary}
-        >
-          {summary}
-        </span>
-      );
-    },
-  },
-];
-
 export default function Transactions() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -139,6 +54,10 @@ export default function Transactions() {
   const [trades, setTrades] = useState<TradeSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  // Context modal state
+  const [selectedFill, setSelectedFill] = useState<TradeSummary | null>(null);
+  const [contextModalOpen, setContextModalOpen] = useState(false);
 
   const updateParam = useCallback(
     (key: string, value: string) => {
@@ -160,6 +79,23 @@ export default function Transactions() {
   const toggleUncategorized = useCallback(() => {
     updateParam('uncategorized', uncategorizedFilter ? '' : 'true');
   }, [uncategorizedFilter, updateParam]);
+
+  const loadTrades = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.fetchTrades({
+        symbol: symbolFilter || undefined,
+        uncategorized: uncategorizedFilter || undefined,
+        sort: sortField,
+        page: currentPage,
+        limit: PAGE_SIZE,
+      });
+      setTrades(res.trades);
+      setTotal(res.total);
+    } finally {
+      setLoading(false);
+    }
+  }, [symbolFilter, uncategorizedFilter, sortField, currentPage]);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,6 +122,117 @@ export default function Transactions() {
     load();
     return () => { cancelled = true; };
   }, [symbolFilter, uncategorizedFilter, sortField, currentPage]);
+
+  // Handle context cell click
+  const handleContextClick = useCallback((trade: TradeSummary, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent row click if any
+    setSelectedFill(trade);
+    setContextModalOpen(true);
+  }, []);
+
+  // Handle context save - refresh the data
+  const handleContextSave = useCallback(() => {
+    loadTrades();
+  }, [loadTrades]);
+
+  // Close modal
+  const handleCloseModal = useCallback(() => {
+    setContextModalOpen(false);
+    setSelectedFill(null);
+  }, []);
+
+  // Define table columns with context click handler
+  const columns: Column<TradeSummary>[] = useMemo(() => [
+    {
+      key: 'date',
+      header: 'Date',
+      hideable: false,
+      render: (trade) => (
+        <span className="text-xs text-[var(--text-secondary)]">
+          {formatDate(trade.entry_time)}
+        </span>
+      ),
+    },
+    {
+      key: 'symbol',
+      header: 'Symbol',
+      hideable: false,
+      render: (trade) => (
+        <span className="font-medium text-[var(--accent-blue)]">
+          {trade.symbol}
+        </span>
+      ),
+    },
+    {
+      key: 'side',
+      header: 'Side',
+      render: (trade) => (
+        <span
+          className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${
+            trade.direction === 'long'
+              ? 'bg-[var(--accent-green)]/10 text-[var(--accent-green)]'
+              : 'bg-[var(--accent-red)]/10 text-[var(--accent-red)]'
+          }`}
+        >
+          {trade.direction === 'long' ? 'BUY' : 'SELL'}
+        </span>
+      ),
+    },
+    {
+      key: 'quantity',
+      header: 'Quantity',
+      render: (trade) => (
+        <span className="text-[var(--text-secondary)]">{trade.quantity}</span>
+      ),
+    },
+    {
+      key: 'price',
+      header: 'Price',
+      render: (trade) => (
+        <span className="font-mono text-xs text-[var(--text-secondary)]">
+          {formatCurrency(trade.entry_price)}
+        </span>
+      ),
+    },
+    {
+      key: 'broker',
+      header: 'Broker',
+      render: (trade) => (
+        <span className="text-xs text-[var(--text-secondary)]">
+          {trade.brokerage || '-'}
+        </span>
+      ),
+    },
+    {
+      key: 'context',
+      header: 'Context',
+      render: (trade) => {
+        const summary = formatContextSummary(trade);
+        return (
+          <button
+            type="button"
+            onClick={(e) => handleContextClick(trade, e)}
+            className="group flex max-w-[200px] items-center gap-1.5 rounded px-1.5 py-0.5 text-left transition-colors hover:bg-[var(--bg-tertiary)]"
+            title={summary || 'Click to add context'}
+          >
+            {summary ? (
+              <span className="truncate text-xs text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">
+                {summary}
+              </span>
+            ) : (
+              <span className="text-xs text-[var(--text-secondary)] opacity-50 group-hover:opacity-100">
+                Add context
+              </span>
+            )}
+            <Pencil
+              size={12}
+              className="shrink-0 text-[var(--text-secondary)] opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+          </button>
+        );
+      },
+    },
+  ], [handleContextClick]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -281,6 +328,17 @@ export default function Transactions() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Context Edit Modal */}
+      {selectedFill && (
+        <FillContextModal
+          isOpen={contextModalOpen}
+          onClose={handleCloseModal}
+          fillId={selectedFill.id}
+          symbol={selectedFill.symbol}
+          onSave={handleContextSave}
+        />
       )}
     </div>
   );
