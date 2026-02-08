@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search } from 'lucide-react';
+import { Search, AlertTriangle, X } from 'lucide-react';
 import api from '../../api';
 import { DataTable, type Column } from '../../components/DataTable';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
@@ -137,6 +137,8 @@ export default function Campaigns() {
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [symbolFilter, setSymbolFilter] = useState('');
+  const [uncategorizedCount, setUncategorizedCount] = useState(0);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,8 +146,14 @@ export default function Campaigns() {
     async function load() {
       setLoading(true);
       try {
-        const data = await api.fetchCampaigns();
-        if (!cancelled) setCampaigns(data);
+        const [data, count] = await Promise.all([
+          api.fetchCampaigns(),
+          api.fetchUncategorizedCount(),
+        ]);
+        if (!cancelled) {
+          setCampaigns(data);
+          setUncategorizedCount(count);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -167,6 +175,27 @@ export default function Campaigns() {
 
   return (
     <div className="p-6">
+      {/* Uncategorized trades banner */}
+      {uncategorizedCount > 0 && !bannerDismissed && (
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <AlertTriangle size={18} className="text-amber-500 flex-shrink-0" />
+            <span className="text-sm text-[var(--text-primary)]">
+              You have <span className="font-semibold">{uncategorizedCount}</span> trade
+              {uncategorizedCount !== 1 ? 's' : ''} without a strategy.
+              Categorize them for better trading insights.
+            </span>
+          </div>
+          <button
+            onClick={() => setBannerDismissed(true)}
+            className="ml-4 p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+            aria-label="Dismiss"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       <div className="mb-6 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Campaigns</h1>
         <span className="text-sm text-[var(--text-secondary)]">

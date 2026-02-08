@@ -529,6 +529,36 @@ async def get_ticker_pnl(
 # Campaign List/Detail Endpoints
 # -----------------------------------------------------------------------------
 
+class UncategorizedCountResponse(BaseModel):
+    """Response for uncategorized trade fills count."""
+    count: int
+
+
+@router.get("/uncategorized-count", response_model=UncategorizedCountResponse)
+async def get_uncategorized_count(
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get count of trade fills not yet categorized into campaigns.
+
+    These are fills that have been synced from the broker but not yet
+    processed into position campaigns. The user should categorize these
+    for better trading insights.
+
+    Returns:
+        Count of uncategorized trade fills.
+    """
+    logger.debug("Fetching uncategorized fills count for user_id=%d", user_id)
+
+    repo = TradingBuddyRepository(db)
+    unprocessed_fills = repo.get_unprocessed_fills(account_id=user_id)
+    count = len(unprocessed_fills)
+
+    logger.debug("Found %d uncategorized fills for user_id=%d", count, user_id)
+
+    return UncategorizedCountResponse(count=count)
+
+
 @router.get("", response_model=List[CampaignSummaryResponse])
 async def list_campaigns(
     symbol: Optional[str] = None,

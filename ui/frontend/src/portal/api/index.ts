@@ -17,6 +17,7 @@ import * as realApi from './client';
  *   - fetchCampaigns           -> GET  /api/campaigns
  *   - fetchCampaignDetail      -> GET  /api/campaigns/{id}
  *   - saveDecisionContext      -> PUT  /api/campaigns/{id}/context
+ *   - fetchUncategorizedCount  -> GET  /api/campaigns/uncategorized-count
  *   - fetchTickerPnl           -> GET  /api/campaigns/pnl/{symbol}
  *   - fetchTickerPnlTimeseries -> GET  /api/campaigns/pnl/timeseries
  *   - fetchSyncStatus          -> GET  /api/sync-status/{symbol}
@@ -54,6 +55,7 @@ const api = USE_MOCKS
       fetchCampaigns: realApi.fetchCampaigns,
       fetchCampaignDetail: realApi.fetchCampaignDetail,
       saveDecisionContext: realApi.saveDecisionContext,
+      fetchUncategorizedCount: realApi.fetchUncategorizedCount,
 
       // User profile & settings -- real backend
       fetchTradingProfile: realApi.fetchTradingProfile,

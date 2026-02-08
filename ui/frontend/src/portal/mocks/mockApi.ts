@@ -1009,6 +1009,12 @@ export async function saveDecisionContext(context: DecisionContext): Promise<Dec
   return { ...context, updatedAt: new Date().toISOString() };
 }
 
+export async function fetchUncategorizedCount(): Promise<number> {
+  await delay();
+  // Mock: return a small number to show the banner in dev mode
+  return 5;
+}
+
 // --- Site Preferences ---
 
 let mockSitePrefs: SitePrefs = { table_columns: {} };

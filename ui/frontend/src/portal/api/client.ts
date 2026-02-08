@@ -314,6 +314,20 @@ export async function fetchCampaigns(
   return get<CampaignSummary[]>(`/api/campaigns${qsStr ? `?${qsStr}` : ''}`);
 }
 
+// =============================================================================
+// Uncategorized Fills Count - GET /api/campaigns/uncategorized-count
+// Returns count of trade fills not yet processed into campaigns
+// =============================================================================
+
+interface UncategorizedCountResponse {
+  count: number;
+}
+
+export async function fetchUncategorizedCount(): Promise<number> {
+  const res = await get<UncategorizedCountResponse>('/api/campaigns/uncategorized-count');
+  return res.count;
+}
+
 export async function fetchCampaignDetail(campaignId: string): Promise<CampaignDetail> {
   const raw = await get<BackendCampaignDetail>(`/api/campaigns/${encodeURIComponent(campaignId)}`);
 
