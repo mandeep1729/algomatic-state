@@ -301,6 +301,11 @@ async def _load_ohlcv_internal(
     history_days = settings.data.history_months * 30  # Approximate days per month
     end = datetime.fromisoformat(end_date) if end_date else datetime.now()
     start = datetime.fromisoformat(start_date) if start_date else end - timedelta(days=history_days)
+    # DatabaseLoader uses exclusive end (start <= t < end). When start and end
+    # are the same (e.g. same-day date-only strings both parse to midnight),
+    # the range is empty. Always ensure at least a 1-day window.
+    if end <= start:
+        end = start + timedelta(days=1)
     logger.info(f"Date range: {start} to {end}")
 
     # This will:
