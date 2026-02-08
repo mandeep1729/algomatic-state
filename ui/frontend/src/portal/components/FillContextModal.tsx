@@ -95,8 +95,9 @@ export function FillContextModal({
         setStrategies(strategiesData);
 
         // Initialize draft from context
+        // Note: strategyTags uses strategy IDs (strings) to match StrategyChips component
         setDraft({
-          strategyTags: contextData.strategy_name ? [contextData.strategy_name] : [],
+          strategyTags: contextData.strategy_id ? [String(contextData.strategy_id)] : [],
           strategyId: contextData.strategy_id,
           hypothesis: contextData.hypothesis || '',
           exitIntent: contextData.exit_intent || 'unknown',
@@ -123,12 +124,12 @@ export function FillContextModal({
   };
 
   // Handle strategy selection change
+  // Note: tags array contains strategy IDs (strings), not names
   const handleStrategyChange = (tags: string[]) => {
     updateDraft('strategyTags', tags);
-    // Find the strategy ID from the name
+    // Convert string ID to number for the API
     if (tags.length > 0) {
-      const strategy = strategies.find((s) => s.name === tags[0]);
-      updateDraft('strategyId', strategy?.id ? parseInt(strategy.id, 10) : null);
+      updateDraft('strategyId', parseInt(tags[0], 10));
     } else {
       updateDraft('strategyId', null);
     }

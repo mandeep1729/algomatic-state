@@ -26,6 +26,7 @@ from src.data.database.trade_lifecycle_models import (
     CampaignLeg,
     DecisionContext,
 )
+from src.data.database.strategy_models import Strategy
 
 logger = logging.getLogger(__name__)
 
@@ -661,6 +662,16 @@ async def save_context(
     # Build exit_intent as the frontend expects
     exit_intent_value = request.exitIntent
 
+    # Lookup strategy_id from strategyTags (names)
+    strategy_id = None
+    if request.strategyTags:
+        strategy = db.query(Strategy).filter(
+            Strategy.name == request.strategyTags[0],
+            Strategy.user_id == user_id,
+        ).first()
+        if strategy:
+            strategy_id = strategy.id
+
     # Check if a context already exists for this campaign + leg
     existing_contexts = repo.get_contexts_for_campaign(campaign_id)
     existing = None
@@ -675,6 +686,7 @@ async def save_context(
     if existing:
         # Update existing context
         existing.context_type = request.contextType
+        existing.strategy_id = strategy_id
         existing.hypothesis = request.hypothesis
         existing.exit_intent = exit_intent_value
         existing.feelings_then = request.feelingsThen
@@ -690,13 +702,12 @@ async def save_context(
         return _context_to_response(existing)
     else:
         # Create new context
-        # Note: strategy_tags from frontend are not persisted yet — the DB uses
-        # strategy_id (FK to strategies table) instead of a tags array.
         ctx = repo.create_decision_context(
             account_id=user_id,
             campaign_id=campaign_id,
             leg_id=leg_id,
             context_type=request.contextType,
+            strategy_id=strategy_id,
             hypothesis=request.hypothesis,
             exit_intent=exit_intent_value,
             feelings_then=request.feelingsThen,

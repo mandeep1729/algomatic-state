@@ -5,7 +5,7 @@ import { StrategyChips } from './StrategyChips';
 import { EmotionChips } from './EmotionChips';
 
 interface Draft {
-  strategyTags: string[];
+  strategyIds: string[];  // Strategy IDs (strings) for StrategyChips component
   hypothesis: string;
   exitIntent: DecisionContext['exitIntent'];
   feelingsThenChips: string[];
@@ -40,9 +40,17 @@ export function ContextPanel({
   campaignId,
   legId,
 }: ContextPanelProps) {
+  // Convert strategy names from API to IDs for StrategyChips component
+  // Note: initial?.strategyTags contains names, but StrategyChips uses IDs
+  const getStrategyIdsFromNames = (names: string[], availableStrategies: StrategyDefinition[]): string[] => {
+    return names
+      .map((name) => availableStrategies.find((s) => s.name === name)?.id)
+      .filter((id): id is string => id !== undefined);
+  };
+
   const initialDraft: Draft = useMemo(
     () => ({
-      strategyTags: initial?.strategyTags ?? [],
+      strategyIds: [], // Will be populated after strategies load
       hypothesis: initial?.hypothesis ?? '',
       exitIntent: initial?.exitIntent ?? 'unknown',
       feelingsThenChips: initial?.feelingsThen?.chips ?? [],
@@ -69,6 +77,11 @@ export function ContextPanel({
         const data = await api.fetchStrategies();
         if (!cancelled) {
           setStrategies(data);
+          // Convert initial strategyTags (names) to IDs now that we have strategies
+          if (initial?.strategyTags?.length) {
+            const ids = getStrategyIdsFromNames(initial.strategyTags, data);
+            setDraft((prev) => ({ ...prev, strategyIds: ids }));
+          }
         }
       } catch (err) {
         console.error('[ContextPanel] Failed to fetch strategies:', err);
@@ -83,13 +96,24 @@ export function ContextPanel({
     }
     loadStrategies();
     return () => { cancelled = true; };
-  }, []);
+  }, [initial?.strategyTags]);
 
   // Sync when initial prop changes (e.g. switching legs)
   useEffect(() => {
-    setDraft(initialDraft);
+    // Convert names to IDs if strategies are already loaded
+    const ids = strategies.length > 0 && initial?.strategyTags?.length
+      ? getStrategyIdsFromNames(initial.strategyTags, strategies)
+      : [];
+    setDraft({ ...initialDraft, strategyIds: ids });
     dirtyRef.current = false;
-  }, [initialDraft]);
+  }, [initialDraft, strategies, initial?.strategyTags]);
+
+  // Convert strategy IDs back to names for the API
+  const getStrategyNamesFromIds = (ids: string[]): string[] => {
+    return ids
+      .map((id) => strategies.find((s) => s.id === id)?.name)
+      .filter((name): name is string => name !== undefined);
+  };
 
   // Debounced autosave — only fires after user edits, 5s debounce
   useEffect(() => {
@@ -102,7 +126,7 @@ export function ContextPanel({
         contextType,
         campaignId,
         legId,
-        strategyTags: draft.strategyTags,
+        strategyTags: getStrategyNamesFromIds(draft.strategyIds),
         hypothesis: draft.hypothesis.trim() || undefined,
         exitIntent: draft.exitIntent,
         feelingsThen: {
@@ -116,7 +140,7 @@ export function ContextPanel({
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, [draft, initial?.contextId, scope, contextType, campaignId, legId, onAutosave]);
+  }, [draft, initial?.contextId, scope, contextType, campaignId, legId, onAutosave, strategies]);
 
   const updateDraft = <K extends keyof Draft>(key: K, value: Draft[K]) => {
     dirtyRef.current = true;
@@ -139,8 +163,8 @@ export function ContextPanel({
             Strategy tags
           </label>
           <StrategyChips
-            value={draft.strategyTags}
-            onChange={(v) => updateDraft('strategyTags', v)}
+            value={draft.strategyIds}
+            onChange={(v) => updateDraft('strategyIds', v)}
             strategies={strategies}
             loading={strategiesLoading}
           />
