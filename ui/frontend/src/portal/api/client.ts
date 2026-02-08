@@ -1,7 +1,9 @@
 /**
  * Real API client — only implements functions that have actual backend endpoints.
  *
- * Backend base URL is proxied via Vite config: /api/* → http://localhost:8000/api/*
+ * Backend base URL is configured via VITE_API_URL environment variable:
+ *   - Development: Uses Vite proxy (VITE_API_URL not set)
+ *   - Production/Vercel: Set VITE_API_URL to full backend URL (e.g., https://api.example.com)
  *
  * Available real endpoints:
  *   POST /api/auth/google              → Google OAuth login
@@ -24,6 +26,7 @@
  * All other functions are served by the mock layer (see api/index.ts).
  */
 
+import { apiUrl } from '../../config';
 import type {
   EvaluateRequest,
   EvaluateResponse,
@@ -78,16 +81,16 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
-function get<T>(url: string): Promise<T> {
-  return request<T>(url);
+function get<T>(path: string): Promise<T> {
+  return request<T>(apiUrl(path));
 }
 
-function post<T>(url: string, body?: unknown): Promise<T> {
-  return request<T>(url, { method: 'POST', body: body != null ? JSON.stringify(body) : undefined });
+function post<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>(apiUrl(path), { method: 'POST', body: body != null ? JSON.stringify(body) : undefined });
 }
 
-function put<T>(url: string, body?: unknown): Promise<T> {
-  return request<T>(url, { method: 'PUT', body: body != null ? JSON.stringify(body) : undefined });
+function put<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>(apiUrl(path), { method: 'PUT', body: body != null ? JSON.stringify(body) : undefined });
 }
 
 // =============================================================================

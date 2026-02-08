@@ -235,6 +235,15 @@ class AuthConfig(BaseSettings):
     dev_mode: bool = Field(default=False, description="Bypass OAuth and use dev user (user_id=1)")
 
 
+class ServerConfig(BaseSettings):
+    """Backend server configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="SERVER_")
+
+    port: int = Field(default=8729, description="Backend server port")
+    host: str = Field(default="0.0.0.0", description="Backend server host")
+
+
 class Settings(BaseSettings):
     """Main settings class combining all configuration."""
 
@@ -259,6 +268,7 @@ class Settings(BaseSettings):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":

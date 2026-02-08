@@ -207,6 +207,7 @@ __marimo__/
 .env.local
 .env.*
 !.env.example
+!ui/frontend/.env.local.example
 **/.claude/settings.local.json
 
 # Node

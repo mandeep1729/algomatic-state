@@ -169,7 +169,7 @@ The web UI provides interactive regime state visualization with price charts, fe
 cd ui && start_ui.bat  # Windows
 ```
 
-This starts both the backend (port 8000) and frontend (port 5173) together.
+This starts both the backend (port 8729 by default) and frontend (port 5173) together.
 
 #### Option B: Manual startup (two terminals)
 
@@ -178,11 +178,13 @@ This starts both the backend (port 8000) and frontend (port 5173) together.
 # From the project root with venv activated
 python -m ui.run_backend
 
-# Alternative: run uvicorn directly
-python -m uvicorn ui.backend.api:app --host 0.0.0.0 --port 8000 --reload
+# Alternative: run uvicorn directly (use SERVER_PORT from .env or default 8729)
+python -m uvicorn ui.backend.api:app --host 0.0.0.0 --port 8729 --reload
 ```
 
-The API server will be available at `http://localhost:8000` (docs at `http://localhost:8000/docs`).
+The API server will be available at `http://localhost:8729` (docs at `http://localhost:8729/docs`).
+
+> **Note:** The backend port is configurable via `SERVER_PORT` in `.env` (default: 8729).
 
 **Terminal 2 -- Frontend:**
 ```bash

@@ -37,6 +37,7 @@ if [ ! -d "node_modules" ]; then
 fi
 
 echo
+echo "Backend will be available at: http://localhost:\${SERVER_PORT:-8729}"
 echo "Frontend will be available at: http://localhost:5173"
 echo
 
