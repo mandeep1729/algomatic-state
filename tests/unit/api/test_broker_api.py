@@ -211,6 +211,185 @@ class TestGetTrades:
 # ---------------------------------------------------------------------------
 
 
+def _create_strategy(db_session: Session, account_id: int, **kwargs):
+    """Helper to create a Strategy row."""
+    from src.data.database.strategy_models import Strategy
+
+    strategy = Strategy(
+        account_id=account_id,
+        name=kwargs.get("name", "Test Strategy"),
+        direction=kwargs.get("direction", "both"),
+        description=kwargs.get("description", "A test strategy"),
+        is_active=kwargs.get("is_active", True),
+    )
+    db_session.add(strategy)
+    db_session.flush()
+    return strategy
+
+
+def _create_campaign(db_session: Session, account_id: int, **kwargs):
+    """Helper to create a PositionCampaign row."""
+    from src.data.database.trade_lifecycle_models import PositionCampaign
+
+    campaign = PositionCampaign(
+        account_id=account_id,
+        symbol=kwargs.get("symbol", "AAPL"),
+        direction=kwargs.get("direction", "long"),
+        status=kwargs.get("status", "open"),
+    )
+    db_session.add(campaign)
+    db_session.flush()
+    return campaign
+
+
+def _create_campaign_leg(db_session: Session, campaign_id: int, **kwargs):
+    """Helper to create a CampaignLeg row."""
+    from src.data.database.trade_lifecycle_models import CampaignLeg
+
+    leg = CampaignLeg(
+        campaign_id=campaign_id,
+        leg_type=kwargs.get("leg_type", "open"),
+        side=kwargs.get("side", "buy"),
+        quantity=kwargs.get("quantity", 10.0),
+        started_at=kwargs.get(
+            "started_at", datetime(2025, 1, 15, 14, 30, tzinfo=timezone.utc)
+        ),
+    )
+    db_session.add(leg)
+    db_session.flush()
+    return leg
+
+
+def _create_leg_fill_map(db_session: Session, leg_id: int, fill_id: int):
+    """Helper to create a LegFillMap row."""
+    from src.data.database.trade_lifecycle_models import LegFillMap
+
+    lfm = LegFillMap(leg_id=leg_id, fill_id=fill_id)
+    db_session.add(lfm)
+    db_session.flush()
+    return lfm
+
+
+def _create_decision_context(db_session: Session, account_id: int, leg_id: int, **kwargs):
+    """Helper to create a DecisionContext row."""
+    from src.data.database.trade_lifecycle_models import DecisionContext
+
+    ctx = DecisionContext(
+        account_id=account_id,
+        leg_id=leg_id,
+        context_type=kwargs.get("context_type", "entry"),
+        strategy_id=kwargs.get("strategy_id"),
+    )
+    db_session.add(ctx)
+    db_session.flush()
+    return ctx
+
+
+class TestUncategorizedFilter:
+    """Tests for GET /api/broker/trades?uncategorized=true"""
+
+    def test_uncategorized_filter_returns_fills_without_strategy(
+        self, client, test_account, db_session: Session
+    ):
+        """Uncategorized filter should return fills without a strategy assigned."""
+        snap_user = _create_snaptrade_user(db_session, TEST_USER_ID)
+        conn = _create_broker_connection(db_session, snap_user.id)
+
+        # Create two fills: one with strategy, one without
+        fill_with_strategy = _create_trade_fill(
+            db_session, conn.id, TEST_USER_ID,
+            symbol="AAPL", external_trade_id="ext_cat_1",
+        )
+        fill_without_strategy = _create_trade_fill(
+            db_session, conn.id, TEST_USER_ID,
+            symbol="MSFT", external_trade_id="ext_uncat_1",
+        )
+
+        # Create a strategy
+        strategy = _create_strategy(db_session, TEST_USER_ID, name="Momentum")
+
+        # Link fill_with_strategy to a campaign/leg with a strategy
+        campaign = _create_campaign(db_session, TEST_USER_ID, symbol="AAPL")
+        leg = _create_campaign_leg(db_session, campaign.id)
+        _create_leg_fill_map(db_session, leg.id, fill_with_strategy.id)
+        _create_decision_context(
+            db_session, TEST_USER_ID, leg.id, strategy_id=strategy.id
+        )
+
+        # fill_without_strategy is NOT linked to any campaign/leg
+
+        response = client.get("/api/broker/trades", params={"uncategorized": "true"})
+        assert response.status_code == 200
+
+        data = response.json()
+        # Should only return the uncategorized fill (MSFT)
+        assert data["total"] == 1
+        assert len(data["trades"]) == 1
+        assert data["trades"][0]["symbol"] == "MSFT"
+
+    def test_uncategorized_filter_includes_fills_with_leg_but_no_strategy(
+        self, client, test_account, db_session: Session
+    ):
+        """Fills linked to a leg but without a strategy should be uncategorized."""
+        snap_user = _create_snaptrade_user(db_session, TEST_USER_ID)
+        conn = _create_broker_connection(db_session, snap_user.id)
+
+        # Create a fill linked to a campaign/leg but without a strategy
+        fill_no_strategy = _create_trade_fill(
+            db_session, conn.id, TEST_USER_ID,
+            symbol="GOOGL", external_trade_id="ext_no_strat_1",
+        )
+
+        campaign = _create_campaign(db_session, TEST_USER_ID, symbol="GOOGL")
+        leg = _create_campaign_leg(db_session, campaign.id)
+        _create_leg_fill_map(db_session, leg.id, fill_no_strategy.id)
+        # DecisionContext exists but strategy_id is NULL
+        _create_decision_context(
+            db_session, TEST_USER_ID, leg.id, strategy_id=None
+        )
+
+        response = client.get("/api/broker/trades", params={"uncategorized": "true"})
+        assert response.status_code == 200
+
+        data = response.json()
+        # Should return the fill (has leg but no strategy)
+        assert data["total"] == 1
+        assert data["trades"][0]["symbol"] == "GOOGL"
+
+    def test_uncategorized_false_returns_all_fills(
+        self, client, test_account, db_session: Session
+    ):
+        """Without uncategorized filter, should return all fills."""
+        snap_user = _create_snaptrade_user(db_session, TEST_USER_ID)
+        conn = _create_broker_connection(db_session, snap_user.id)
+
+        # Create two fills
+        fill1 = _create_trade_fill(
+            db_session, conn.id, TEST_USER_ID,
+            symbol="AAPL", external_trade_id="ext_all_1",
+        )
+        _create_trade_fill(
+            db_session, conn.id, TEST_USER_ID,
+            symbol="MSFT", external_trade_id="ext_all_2",
+        )
+
+        # Categorize first fill
+        strategy = _create_strategy(db_session, TEST_USER_ID)
+        campaign = _create_campaign(db_session, TEST_USER_ID, symbol="AAPL")
+        leg = _create_campaign_leg(db_session, campaign.id)
+        _create_leg_fill_map(db_session, leg.id, fill1.id)
+        _create_decision_context(
+            db_session, TEST_USER_ID, leg.id, strategy_id=strategy.id
+        )
+
+        response = client.get("/api/broker/trades")
+        assert response.status_code == 200
+
+        data = response.json()
+        # Should return both fills
+        assert data["total"] == 2
+
+
 class TestBrokerCallback:
     """GET /api/broker/callback"""
 

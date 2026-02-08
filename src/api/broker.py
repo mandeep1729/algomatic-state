@@ -307,27 +307,23 @@ async def get_trades(
     if symbol:
         query = query.filter(TradeFill.symbol == symbol)
 
-    # Filter for uncategorized fills (not processed into lots/campaigns)
+    # Filter for uncategorized fills (fills without a strategy assigned)
+    # A fill is "uncategorized" if it lacks a strategy assignment in its DecisionContext
     if uncategorized:
-        from src.data.database.trade_lifecycle_models import PositionLot, LotClosure
+        from sqlalchemy import select
 
-        # Get fills used as opening fills in lots
-        open_fill_subq = db.query(PositionLot.open_fill_id).filter(
-            PositionLot.account_id == user_id
-        ).subquery()
-
-        # Get fills used as closing fills in closures
-        close_fill_subq = db.query(LotClosure.close_fill_id).join(
-            PositionLot, PositionLot.id == LotClosure.lot_id
-        ).filter(
-            PositionLot.account_id == user_id
-        ).subquery()
-
-        # Exclude processed fills
-        query = query.filter(
-            TradeFill.id.notin_(open_fill_subq),
-            TradeFill.id.notin_(close_fill_subq),
+        # Subquery: fills that have a strategy assigned via LegFillMap -> CampaignLeg -> DecisionContext
+        categorized_fill_subq = (
+            select(LegFillMap.fill_id)
+            .select_from(LegFillMap)
+            .join(CampaignLeg, CampaignLeg.id == LegFillMap.leg_id)
+            .join(DecisionContext, DecisionContext.leg_id == CampaignLeg.id)
+            .where(DecisionContext.strategy_id.isnot(None))
+            .scalar_subquery()
         )
+
+        # Only include fills that are NOT categorized (no strategy assigned)
+        query = query.filter(TradeFill.id.notin_(categorized_fill_subq))
 
     total = query.count()
 
