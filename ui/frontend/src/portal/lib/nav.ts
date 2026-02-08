@@ -26,6 +26,11 @@ export const appNavSections: NavItem[] = [
     icon: 'ArrowRightLeft',
   },
   {
+    path: '/app/transactions',
+    label: 'Transactions',
+    icon: 'Receipt',
+  },
+  {
     path: '/app/evaluate',
     label: 'Evaluate',
     icon: 'Search',

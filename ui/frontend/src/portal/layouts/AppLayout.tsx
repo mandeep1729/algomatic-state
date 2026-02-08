@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Receipt,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { appNavSections } from '../lib/nav';
@@ -30,6 +31,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   '/app/campaigns': 'Campaigns',
   '/app/evaluate': 'Evaluate',
   '/app/trades': 'Trades',
+  '/app/transactions': 'Transactions',
   '/app/insights': 'Insights',
   '/app/journal': 'Journal',
   '/app/settings/profile': 'Profile',
@@ -98,6 +100,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Link: LinkIcon,
   Sliders: SlidersHorizontal,
   Lock,
+  Receipt,
 };
 
 export default function AppLayout() {

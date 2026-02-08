@@ -262,13 +262,25 @@ async def sync_data(
 async def get_trades(
     user_id: int = Depends(get_current_user),
     symbol: Optional[str] = None,
+    uncategorized: bool = False,
     sort: str = "-executed_at",
     page: int = 1,
     limit: int = 50,
     db: Session = Depends(get_db),
 ):
-    """Get trade history, optionally filtered by symbol, with pagination."""
-    logger.debug("get_trades: user_id=%d, symbol=%s, page=%d, limit=%d", user_id, symbol, page, limit)
+    """Get trade history, optionally filtered by symbol, with pagination.
+
+    Args:
+        symbol: Filter by ticker symbol
+        uncategorized: If True, only return fills not yet processed into campaigns
+        sort: Sort field (prefix with - for descending)
+        page: Page number (1-indexed)
+        limit: Items per page
+    """
+    logger.debug(
+        "get_trades: user_id=%d, symbol=%s, uncategorized=%s, page=%d, limit=%d",
+        user_id, symbol, uncategorized, page, limit
+    )
     snap_user = db.query(SnapTradeUser).filter(
         SnapTradeUser.user_account_id == user_id
     ).first()
@@ -283,6 +295,28 @@ async def get_trades(
 
     if symbol:
         query = query.filter(TradeFill.symbol == symbol)
+
+    # Filter for uncategorized fills (not processed into lots/campaigns)
+    if uncategorized:
+        from src.data.database.trade_lifecycle_models import PositionLot, LotClosure
+
+        # Get fills used as opening fills in lots
+        open_fill_subq = db.query(PositionLot.open_fill_id).filter(
+            PositionLot.account_id == user_id
+        ).subquery()
+
+        # Get fills used as closing fills in closures
+        close_fill_subq = db.query(LotClosure.close_fill_id).join(
+            PositionLot, PositionLot.id == LotClosure.lot_id
+        ).filter(
+            PositionLot.account_id == user_id
+        ).subquery()
+
+        # Exclude processed fills
+        query = query.filter(
+            TradeFill.id.notin_(open_fill_subq),
+            TradeFill.id.notin_(close_fill_subq),
+        )
 
     total = query.count()
 

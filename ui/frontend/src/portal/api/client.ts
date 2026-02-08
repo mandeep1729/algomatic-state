@@ -244,6 +244,7 @@ export async function fetchTrades(params: {
   flagged?: boolean;
   symbol?: string;
   status?: string;
+  uncategorized?: boolean;
   sort?: string;
   page?: number;
   limit?: number;
@@ -261,6 +262,7 @@ export async function fetchTrades(params: {
   const qs = new URLSearchParams();
   // user_id is extracted from JWT token by the auth middleware
   if (params.symbol) qs.set('symbol', params.symbol);
+  if (params.uncategorized) qs.set('uncategorized', 'true');
   const sortVal = mapSort(params.sort);
   if (sortVal) qs.set('sort', sortVal);
   if (params.page) qs.set('page', String(params.page));
