@@ -142,6 +142,7 @@ export default function Transactions() {
   }, []);
 
   // Define table columns with context click handler
+  // Each column includes filterFn for case-insensitive filtering on the actual data
   const columns: Column<TradeSummary>[] = useMemo(() => [
     {
       key: 'date',
@@ -152,6 +153,10 @@ export default function Transactions() {
           {formatDate(trade.entry_time)}
         </span>
       ),
+      filterFn: (trade, filterText) => {
+        const formatted = formatDate(trade.entry_time);
+        return formatted.toLowerCase().includes(filterText.toLowerCase());
+      },
     },
     {
       key: 'symbol',
@@ -162,6 +167,8 @@ export default function Transactions() {
           {trade.symbol}
         </span>
       ),
+      filterFn: (trade, filterText) =>
+        trade.symbol.toLowerCase().includes(filterText.toLowerCase()),
     },
     {
       key: 'side',
@@ -177,6 +184,13 @@ export default function Transactions() {
           {trade.direction === 'long' ? 'BUY' : 'SELL'}
         </span>
       ),
+      filterFn: (trade, filterText) => {
+        // Allow filtering by direction (long/short) or display value (buy/sell)
+        const searchLower = filterText.toLowerCase();
+        const direction = trade.direction.toLowerCase();
+        const displayValue = trade.direction === 'long' ? 'buy' : 'sell';
+        return direction.includes(searchLower) || displayValue.includes(searchLower);
+      },
     },
     {
       key: 'quantity',
@@ -184,6 +198,8 @@ export default function Transactions() {
       render: (trade) => (
         <span className="text-[var(--text-secondary)]">{trade.quantity}</span>
       ),
+      filterFn: (trade, filterText) =>
+        String(trade.quantity).includes(filterText),
     },
     {
       key: 'price',
@@ -193,6 +209,12 @@ export default function Transactions() {
           {formatCurrency(trade.entry_price)}
         </span>
       ),
+      filterFn: (trade, filterText) => {
+        // Allow filtering by formatted price (e.g., "$123.45") or raw number
+        const formatted = formatCurrency(trade.entry_price);
+        const raw = String(trade.entry_price);
+        return formatted.includes(filterText) || raw.includes(filterText);
+      },
     },
     {
       key: 'broker',
@@ -202,6 +224,10 @@ export default function Transactions() {
           {trade.brokerage || '-'}
         </span>
       ),
+      filterFn: (trade, filterText) => {
+        if (!trade.brokerage) return false;
+        return trade.brokerage.toLowerCase().includes(filterText.toLowerCase());
+      },
     },
     {
       key: 'context',
@@ -230,6 +256,11 @@ export default function Transactions() {
             />
           </button>
         );
+      },
+      filterFn: (trade, filterText) => {
+        const summary = formatContextSummary(trade);
+        if (!summary) return false;
+        return summary.toLowerCase().includes(filterText.toLowerCase());
       },
     },
   ], [handleContextClick]);
