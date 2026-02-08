@@ -36,6 +36,8 @@ import * as realApi from './client';
  *   - createJournalEntry       -> POST /api/journal/entries
  *   - updateJournalEntry       -> PUT  /api/journal/entries/{id}
  *   - fetchBehavioralTags      -> GET  /api/journal/tags
+ *   - fetchSitePrefs           -> GET  /api/user/site-prefs
+ *   - updateSitePrefs          -> PUT  /api/user/site-prefs
  */
 const api = USE_MOCKS
   ? mockApi
@@ -69,6 +71,10 @@ const api = USE_MOCKS
       createJournalEntry: realApi.createJournalEntry,
       updateJournalEntry: realApi.updateJournalEntry,
       fetchBehavioralTags: realApi.fetchBehavioralTags,
+
+      // Site preferences -- real backend
+      fetchSitePrefs: realApi.fetchSitePrefs,
+      updateSitePrefs: realApi.updateSitePrefs,
 
       // Mock fallbacks -- no backend endpoints yet
       fetchCurrentUser: mockApi.fetchCurrentUser,

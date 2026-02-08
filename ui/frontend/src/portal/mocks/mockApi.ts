@@ -41,6 +41,7 @@ import type {
   CampaignSummary,
   CampaignDetail,
   DecisionContext,
+  SitePrefs,
 } from '../types';
 
 // Simulate network delay
@@ -1006,4 +1007,21 @@ export async function fetchCampaignDetail(campaignId: string): Promise<CampaignD
 export async function saveDecisionContext(context: DecisionContext): Promise<DecisionContext> {
   await delay();
   return { ...context, updatedAt: new Date().toISOString() };
+}
+
+// --- Site Preferences ---
+
+let mockSitePrefs: SitePrefs = { table_columns: {} };
+
+export async function fetchSitePrefs(): Promise<SitePrefs> {
+  await delay();
+  return { ...mockSitePrefs };
+}
+
+export async function updateSitePrefs(prefs: Partial<SitePrefs>): Promise<SitePrefs> {
+  await delay();
+  if (prefs.table_columns) {
+    mockSitePrefs.table_columns = { ...mockSitePrefs.table_columns, ...prefs.table_columns };
+  }
+  return { ...mockSitePrefs };
 }

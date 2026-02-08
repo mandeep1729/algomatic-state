@@ -7,6 +7,8 @@ Provides:
 - PUT  /api/user/risk-preferences — update risk preferences (frontend format)
 - GET  /api/user/evaluation-controls — get evaluation controls
 - PUT  /api/user/evaluation-controls — update evaluation controls
+- GET  /api/user/site-prefs — get site preferences (table column visibility, etc.)
+- PUT  /api/user/site-prefs — update site preferences
 - GET  /api/user/risk — get risk preferences (legacy format)
 - PUT  /api/user/risk — update risk preferences (legacy format)
 """
@@ -256,6 +258,62 @@ async def update_evaluation_controls(
         logger.info("Updated evaluation controls for user_id=%d", user_id)
 
         return EvaluationControlsResponse(**current)
+
+
+# -----------------------------------------------------------------------------
+# Site Preferences — matches frontend SitePrefs type (table column visibility)
+# -----------------------------------------------------------------------------
+
+class SitePrefsResponse(BaseModel):
+    """Site preferences for UI state (table column visibility, etc.)."""
+    table_columns: dict[str, list[str]] = {}
+
+
+class SitePrefsUpdate(BaseModel):
+    """Site preferences update."""
+    table_columns: Optional[dict[str, list[str]]] = None
+
+
+@router.get("/site-prefs", response_model=SitePrefsResponse)
+async def get_site_prefs(user_id: int = Depends(get_current_user)):
+    """Get the authenticated user's site preferences (table column visibility, etc.)."""
+    db_manager = get_db_manager()
+    with db_manager.get_session() as session:
+        repo = TradingBuddyRepository(session)
+        profile = repo.get_or_create_profile(user_id)
+
+        site_prefs = profile.site_prefs or {}
+        table_columns = site_prefs.get("table_columns", {})
+
+        return SitePrefsResponse(table_columns=table_columns)
+
+
+@router.put("/site-prefs", response_model=SitePrefsResponse)
+async def update_site_prefs(
+    data: SitePrefsUpdate,
+    user_id: int = Depends(get_current_user),
+):
+    """Update the authenticated user's site preferences (table column visibility, etc.)."""
+    db_manager = get_db_manager()
+    with db_manager.get_session() as session:
+        repo = TradingBuddyRepository(session)
+        profile = repo.get_or_create_profile(user_id)
+
+        # Merge with existing site_prefs
+        current = profile.site_prefs or {}
+        updates = data.model_dump(exclude_none=True)
+
+        # Handle table_columns update specifically (merge table entries)
+        if "table_columns" in updates:
+            existing_table_columns = current.get("table_columns", {})
+            existing_table_columns.update(updates["table_columns"])
+            current["table_columns"] = existing_table_columns
+
+        repo.update_profile(user_id, site_prefs=current)
+
+        logger.info("Updated site prefs for user_id=%d tables=%s", user_id, list(updates.get("table_columns", {}).keys()))
+
+        return SitePrefsResponse(table_columns=current.get("table_columns", {}))
 
 
 # -----------------------------------------------------------------------------

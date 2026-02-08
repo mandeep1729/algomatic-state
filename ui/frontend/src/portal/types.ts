@@ -386,3 +386,9 @@ export interface BrokerStatus {
   connected: boolean;
   brokerages: string[];
 }
+
+// --- Site Preferences (table column visibility, etc.) ---
+
+export interface SitePrefs {
+  table_columns: Record<string, string[]>;
+}

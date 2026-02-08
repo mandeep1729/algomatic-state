@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import api from '../../api';
+import { DataTable, type Column } from '../../components/DataTable';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
 import type { CampaignSummary } from '../../types';
 
@@ -32,17 +33,90 @@ function formatQtyWithLegs(legQuantities: number[]): string {
 
   // Build leg breakdown string: first leg uses + for positive or - for negative,
   // subsequent legs use +/- as separator based on sign
-  const legParts = legQuantities.map((qty, index) => {
+  const legParts = legQuantities.map((qty) => {
     const absQty = Math.abs(qty);
-    if (index === 0) {
-      return qty >= 0 ? `+${absQty}` : `-${absQty}`;
-    }
     return qty >= 0 ? `+${absQty}` : `-${absQty}`;
   });
 
   const breakdown = legParts.join('');
   return `${total} (${breakdown})`;
 }
+
+// Define table columns
+const columns: Column<CampaignSummary>[] = [
+  {
+    key: 'campaign',
+    header: 'Campaign',
+    hideable: false,
+    render: (campaign) => (
+      <div>
+        <div className="font-medium text-[var(--text-primary)]">
+          {campaign.symbol}{' '}
+          <span
+            className={`text-xs font-medium ${
+              campaign.direction === 'long'
+                ? 'text-[var(--accent-green)]'
+                : 'text-[var(--accent-red)]'
+            }`}
+          >
+            {campaign.direction.toUpperCase()}
+          </span>
+        </div>
+        <div className="mt-0.5 text-xs text-[var(--text-secondary)]">
+          {formatDateRange(campaign.openedAt, campaign.closedAt)}
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: 'legs',
+    header: 'Legs',
+    render: (campaign) => (
+      <span className="text-[var(--text-secondary)]">{campaign.legsCount}</span>
+    ),
+  },
+  {
+    key: 'qty',
+    header: 'Qty',
+    render: (campaign) => (
+      <span className="text-[var(--text-secondary)]">
+        {formatQtyWithLegs(campaign.legQuantities)}
+      </span>
+    ),
+  },
+  {
+    key: 'status',
+    header: 'Status',
+    render: (campaign) => (
+      <span
+        className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${
+          campaign.status === 'open'
+            ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
+            : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
+        }`}
+      >
+        {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}
+      </span>
+    ),
+  },
+  {
+    key: 'evaluation',
+    header: 'Evaluation',
+    render: (campaign) => (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <OverallLabelBadge label={campaign.overallLabel} />
+        {campaign.keyFlags.slice(0, 2).map((flag) => (
+          <span
+            key={flag}
+            className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]"
+          >
+            {flag.replace(/_/g, ' ')}
+          </span>
+        ))}
+      </div>
+    ),
+  },
+];
 
 export default function Campaigns() {
   const navigate = useNavigate();
@@ -73,6 +147,10 @@ export default function Campaigns() {
     return campaigns.filter((c) => c.symbol.includes(query));
   }, [campaigns, symbolFilter]);
 
+  const handleRowClick = (campaign: CampaignSummary) => {
+    navigate(`/app/campaigns/${campaign.campaignId}`);
+  };
+
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -99,106 +177,16 @@ export default function Campaigns() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-              <th className="px-6 py-4">Campaign</th>
-              <th className="px-6 py-4">Legs</th>
-              <th className="px-6 py-4">Qty</th>
-              <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4">Evaluation</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--border-color)]">
-            {loading ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="px-6 py-12 text-center text-[var(--text-secondary)]"
-                >
-                  Loading...
-                </td>
-              </tr>
-            ) : filtered.length === 0 ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="px-6 py-12 text-center text-[var(--text-secondary)]"
-                >
-                  No campaigns match your search.
-                </td>
-              </tr>
-            ) : (
-              filtered.map((campaign) => (
-                <tr
-                  key={campaign.campaignId}
-                  onClick={() => navigate(`/app/campaigns/${campaign.campaignId}`)}
-                  className="cursor-pointer transition-colors hover:bg-[var(--bg-tertiary)]/50"
-                >
-                  {/* Campaign: symbol + direction + date range */}
-                  <td className="px-6 py-4">
-                    <div className="font-medium text-[var(--text-primary)]">
-                      {campaign.symbol}{' '}
-                      <span
-                        className={`text-xs font-medium ${
-                          campaign.direction === 'long'
-                            ? 'text-[var(--accent-green)]'
-                            : 'text-[var(--accent-red)]'
-                        }`}
-                      >
-                        {campaign.direction.toUpperCase()}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 text-xs text-[var(--text-secondary)]">
-                      {formatDateRange(campaign.openedAt, campaign.closedAt)}
-                    </div>
-                  </td>
-
-                  {/* Legs */}
-                  <td className="px-6 py-4 text-[var(--text-secondary)]">
-                    {campaign.legsCount}
-                  </td>
-
-                  {/* Qty */}
-                  <td className="px-6 py-4 text-[var(--text-secondary)]">
-                    {formatQtyWithLegs(campaign.legQuantities)}
-                  </td>
-
-                  {/* Status */}
-                  <td className="px-6 py-4">
-                    <span
-                      className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${
-                        campaign.status === 'open'
-                          ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
-                          : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
-                      }`}
-                    >
-                      {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}
-                    </span>
-                  </td>
-
-                  {/* Evaluation: overall label badge + key flag pills */}
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <OverallLabelBadge label={campaign.overallLabel} />
-                      {campaign.keyFlags.slice(0, 2).map((flag) => (
-                        <span
-                          key={flag}
-                          className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]"
-                        >
-                          {flag.replace(/_/g, ' ')}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      {/* DataTable with column visibility persistence */}
+      <DataTable
+        tableName="campaigns"
+        columns={columns}
+        data={filtered}
+        loading={loading}
+        emptyMessage="No campaigns match your search."
+        getRowKey={(campaign) => campaign.campaignId}
+        onRowClick={handleRowClick}
+      />
     </div>
   );
 }

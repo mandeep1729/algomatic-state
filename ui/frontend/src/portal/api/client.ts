@@ -45,6 +45,7 @@ import type {
   JournalEntry,
   JournalEntryCreate,
   BehavioralTag,
+  SitePrefs,
 } from '../types';
 
 const TOKEN_KEY = 'auth_token';
@@ -587,4 +588,16 @@ export async function updateJournalEntry(entryId: string, updates: Partial<Journ
 
 export async function fetchBehavioralTags(): Promise<BehavioralTag[]> {
   return get<BehavioralTag[]>('/api/journal/tags');
+}
+
+// =============================================================================
+// Site Preferences — GET/PUT /api/user/site-prefs
+// =============================================================================
+
+export async function fetchSitePrefs(): Promise<SitePrefs> {
+  return get<SitePrefs>('/api/user/site-prefs');
+}
+
+export async function updateSitePrefs(prefs: Partial<SitePrefs>): Promise<SitePrefs> {
+  return put<SitePrefs>('/api/user/site-prefs', prefs);
 }
