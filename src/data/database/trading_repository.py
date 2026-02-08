@@ -197,7 +197,7 @@ class TradingBuddyRepository:
         """Create a user profile with default risk params.
 
         Accepts either flat kwargs (account_balance, max_position_size_pct, etc.)
-        or structured dicts (profile={...}, risk_profile={...}).
+        or structured dicts (profile={...}, risk_profile={...}, site_prefs={...}).
 
         Args:
             account_id: Account ID
@@ -208,26 +208,36 @@ class TradingBuddyRepository:
         """
         profile_data = dict(UserProfileModel.PROFILE_DEFAULTS)
         risk_data = dict(UserProfileModel.RISK_PROFILE_DEFAULTS)
+        site_prefs_data = None
 
         # Allow passing structured dicts directly
         if "profile" in kwargs:
             profile_data.update(kwargs.pop("profile"))
         if "risk_profile" in kwargs:
             risk_data.update(kwargs.pop("risk_profile"))
+        if "site_prefs" in kwargs:
+            site_prefs_data = dict(UserProfileModel.SITE_PREF_DEFAULTS)
+            site_prefs_data.update(kwargs.pop("site_prefs"))
 
         # Also support flat kwargs for backward compatibility
         profile_keys = set(UserProfileModel.PROFILE_DEFAULTS.keys())
         risk_keys = set(UserProfileModel.RISK_PROFILE_DEFAULTS.keys())
+        site_pref_keys = set(UserProfileModel.SITE_PREF_DEFAULTS.keys())
         for key, value in kwargs.items():
             if key in profile_keys:
                 profile_data[key] = value
             elif key in risk_keys:
                 risk_data[key] = value
+            elif key in site_pref_keys:
+                if site_prefs_data is None:
+                    site_prefs_data = dict(UserProfileModel.SITE_PREF_DEFAULTS)
+                site_prefs_data[key] = value
 
         profile = UserProfileModel(
             user_account_id=account_id,
             profile=profile_data,
             risk_profile=risk_data,
+            site_prefs=site_prefs_data,
         )
         self.session.add(profile)
         self.session.flush()
@@ -251,7 +261,7 @@ class TradingBuddyRepository:
         """Update user profile fields.
 
         Accepts either flat kwargs (account_balance, max_position_size_pct, etc.)
-        or structured dicts (profile={...}, risk_profile={...}).
+        or structured dicts (profile={...}, risk_profile={...}, site_prefs={...}).
 
         Args:
             account_id: Account ID
@@ -266,6 +276,7 @@ class TradingBuddyRepository:
 
         profile_keys = set(UserProfileModel.PROFILE_DEFAULTS.keys())
         risk_keys = set(UserProfileModel.RISK_PROFILE_DEFAULTS.keys())
+        site_pref_keys = set(UserProfileModel.SITE_PREF_DEFAULTS.keys())
 
         # Handle structured dict updates
         if "profile" in kwargs:
@@ -276,15 +287,22 @@ class TradingBuddyRepository:
             updated = dict(existing.risk_profile or UserProfileModel.RISK_PROFILE_DEFAULTS)
             updated.update(kwargs.pop("risk_profile"))
             existing.risk_profile = updated
+        if "site_prefs" in kwargs:
+            updated = dict(existing.site_prefs or UserProfileModel.SITE_PREF_DEFAULTS)
+            updated.update(kwargs.pop("site_prefs"))
+            existing.site_prefs = updated
 
         # Handle flat kwargs for backward compatibility
         profile_updates = {}
         risk_updates = {}
+        site_pref_updates = {}
         for key, value in kwargs.items():
             if key in profile_keys:
                 profile_updates[key] = value
             elif key in risk_keys:
                 risk_updates[key] = value
+            elif key in site_pref_keys:
+                site_pref_updates[key] = value
 
         if profile_updates:
             updated = dict(existing.profile or UserProfileModel.PROFILE_DEFAULTS)
@@ -295,6 +313,11 @@ class TradingBuddyRepository:
             updated = dict(existing.risk_profile or UserProfileModel.RISK_PROFILE_DEFAULTS)
             updated.update(risk_updates)
             existing.risk_profile = updated
+
+        if site_pref_updates:
+            updated = dict(existing.site_prefs or UserProfileModel.SITE_PREF_DEFAULTS)
+            updated.update(site_pref_updates)
+            existing.site_prefs = updated
 
         self.session.flush()
         return existing

@@ -125,6 +125,14 @@ class UserProfile(Base):
         "stop_loss_required": True,
     }
 
+    # Default values for site_prefs fields
+    SITE_PREF_DEFAULTS: dict = {
+        "theme": "light",
+        "sidebar_collapsed": False,
+        "notifications_enabled": True,
+        "language": "en",
+    }
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_account_id: Mapped[int] = mapped_column(
         Integer,
@@ -140,6 +148,9 @@ class UserProfile(Base):
     risk_profile: Mapped[dict] = mapped_column(
         JSONB, default=lambda: dict(UserProfile.RISK_PROFILE_DEFAULTS), nullable=False
     )
+
+    # Site/UI preferences (optional JSONB)
+    site_prefs: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -321,6 +332,56 @@ class UserProfile(Base):
         if self.profile is None:
             self.profile = dict(self.PROFILE_DEFAULTS)
         self.profile = {**self.profile, "evaluation_controls": value}
+
+    # ---- Convenience properties for site_prefs fields ----
+
+    @property
+    def theme(self) -> str:
+        """UI theme from site_prefs JSONB."""
+        return (self.site_prefs or {}).get("theme", self.SITE_PREF_DEFAULTS["theme"])
+
+    @theme.setter
+    def theme(self, value: str) -> None:
+        if self.site_prefs is None:
+            self.site_prefs = dict(self.SITE_PREF_DEFAULTS)
+        self.site_prefs = {**self.site_prefs, "theme": value}
+
+    @property
+    def sidebar_collapsed(self) -> bool:
+        """Sidebar collapsed state from site_prefs JSONB."""
+        return (self.site_prefs or {}).get(
+            "sidebar_collapsed", self.SITE_PREF_DEFAULTS["sidebar_collapsed"]
+        )
+
+    @sidebar_collapsed.setter
+    def sidebar_collapsed(self, value: bool) -> None:
+        if self.site_prefs is None:
+            self.site_prefs = dict(self.SITE_PREF_DEFAULTS)
+        self.site_prefs = {**self.site_prefs, "sidebar_collapsed": value}
+
+    @property
+    def notifications_enabled(self) -> bool:
+        """Notifications enabled state from site_prefs JSONB."""
+        return (self.site_prefs or {}).get(
+            "notifications_enabled", self.SITE_PREF_DEFAULTS["notifications_enabled"]
+        )
+
+    @notifications_enabled.setter
+    def notifications_enabled(self, value: bool) -> None:
+        if self.site_prefs is None:
+            self.site_prefs = dict(self.SITE_PREF_DEFAULTS)
+        self.site_prefs = {**self.site_prefs, "notifications_enabled": value}
+
+    @property
+    def language(self) -> str:
+        """Language preference from site_prefs JSONB."""
+        return (self.site_prefs or {}).get("language", self.SITE_PREF_DEFAULTS["language"])
+
+    @language.setter
+    def language(self, value: str) -> None:
+        if self.site_prefs is None:
+            self.site_prefs = dict(self.SITE_PREF_DEFAULTS)
+        self.site_prefs = {**self.site_prefs, "language": value}
 
     def __repr__(self) -> str:
         return f"<UserProfile(id={self.id}, account_id={self.user_account_id})>"

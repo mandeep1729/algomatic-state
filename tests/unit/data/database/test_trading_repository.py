@@ -974,6 +974,225 @@ class TestComputeLegTypes:
         assert legs[1]["side"] == "buy"
 
 
+class TestSitePrefsModel:
+    """Tests for UserProfile.site_prefs JSONB column and property accessors."""
+
+    def test_site_pref_defaults_dict(self):
+        """Test that SITE_PREF_DEFAULTS has the expected keys and values."""
+        defaults = UserProfileModel.SITE_PREF_DEFAULTS
+        assert defaults["theme"] == "light"
+        assert defaults["sidebar_collapsed"] is False
+        assert defaults["notifications_enabled"] is True
+        assert defaults["language"] == "en"
+
+    def test_site_prefs_property_defaults_when_none(self):
+        """Test property accessors return defaults when site_prefs is None."""
+        profile = UserProfileModel(
+            user_account_id=1,
+            profile=dict(UserProfileModel.PROFILE_DEFAULTS),
+            risk_profile=dict(UserProfileModel.RISK_PROFILE_DEFAULTS),
+        )
+        # site_prefs is None by default (nullable column)
+        assert profile.site_prefs is None
+
+        # Property accessors should return defaults
+        assert profile.theme == "light"
+        assert profile.sidebar_collapsed is False
+        assert profile.notifications_enabled is True
+        assert profile.language == "en"
+
+    def test_site_prefs_property_reads_from_dict(self):
+        """Test property accessors read from site_prefs dict when set."""
+        profile = UserProfileModel(
+            user_account_id=1,
+            profile=dict(UserProfileModel.PROFILE_DEFAULTS),
+            risk_profile=dict(UserProfileModel.RISK_PROFILE_DEFAULTS),
+            site_prefs={
+                "theme": "dark",
+                "sidebar_collapsed": True,
+                "notifications_enabled": False,
+                "language": "es",
+            },
+        )
+        assert profile.theme == "dark"
+        assert profile.sidebar_collapsed is True
+        assert profile.notifications_enabled is False
+        assert profile.language == "es"
+
+    def test_site_prefs_property_setter_initializes_from_none(self):
+        """Test that setting a property when site_prefs is None initializes defaults."""
+        profile = UserProfileModel(
+            user_account_id=1,
+            profile=dict(UserProfileModel.PROFILE_DEFAULTS),
+            risk_profile=dict(UserProfileModel.RISK_PROFILE_DEFAULTS),
+        )
+        assert profile.site_prefs is None
+
+        profile.theme = "dark"
+
+        assert profile.site_prefs is not None
+        assert profile.theme == "dark"
+        # Other defaults should be present after initialization
+        assert profile.sidebar_collapsed is False
+        assert profile.notifications_enabled is True
+        assert profile.language == "en"
+
+    def test_site_prefs_property_setter_preserves_other_keys(self):
+        """Test that setting one property preserves other site_prefs values."""
+        profile = UserProfileModel(
+            user_account_id=1,
+            profile=dict(UserProfileModel.PROFILE_DEFAULTS),
+            risk_profile=dict(UserProfileModel.RISK_PROFILE_DEFAULTS),
+            site_prefs={
+                "theme": "dark",
+                "sidebar_collapsed": True,
+                "notifications_enabled": False,
+                "language": "fr",
+            },
+        )
+        profile.language = "de"
+
+        assert profile.language == "de"
+        assert profile.theme == "dark"  # unchanged
+        assert profile.sidebar_collapsed is True  # unchanged
+        assert profile.notifications_enabled is False  # unchanged
+
+    def test_site_prefs_partial_dict_returns_defaults_for_missing(self):
+        """Test that partial site_prefs dict returns defaults for missing keys."""
+        profile = UserProfileModel(
+            user_account_id=1,
+            profile=dict(UserProfileModel.PROFILE_DEFAULTS),
+            risk_profile=dict(UserProfileModel.RISK_PROFILE_DEFAULTS),
+            site_prefs={"theme": "dark"},
+        )
+        assert profile.theme == "dark"
+        # Missing keys should return defaults
+        assert profile.sidebar_collapsed is False
+        assert profile.notifications_enabled is True
+        assert profile.language == "en"
+
+
+class TestCreateProfileWithSitePrefs:
+    """Tests for create_profile with site_prefs parameter."""
+
+    def test_create_profile_without_site_prefs(self, repository, mock_session):
+        """Test creating a profile without site_prefs passes None."""
+        mock_session.add.return_value = None
+        mock_session.flush.return_value = None
+
+        repository.create_profile(account_id=1)
+
+        added_obj = mock_session.add.call_args[0][0]
+        assert added_obj.site_prefs is None
+
+    def test_create_profile_with_site_prefs_dict(self, repository, mock_session):
+        """Test creating a profile with site_prefs structured dict."""
+        mock_session.add.return_value = None
+        mock_session.flush.return_value = None
+
+        repository.create_profile(
+            account_id=1,
+            site_prefs={"theme": "dark", "language": "fr"},
+        )
+
+        added_obj = mock_session.add.call_args[0][0]
+        assert added_obj.site_prefs is not None
+        assert added_obj.site_prefs["theme"] == "dark"
+        assert added_obj.site_prefs["language"] == "fr"
+        # Defaults should be merged in
+        assert added_obj.site_prefs["sidebar_collapsed"] is False
+        assert added_obj.site_prefs["notifications_enabled"] is True
+
+    def test_create_profile_with_flat_site_pref_kwargs(self, repository, mock_session):
+        """Test creating a profile with flat site_pref kwargs."""
+        mock_session.add.return_value = None
+        mock_session.flush.return_value = None
+
+        repository.create_profile(
+            account_id=1,
+            theme="dark",
+            sidebar_collapsed=True,
+        )
+
+        added_obj = mock_session.add.call_args[0][0]
+        assert added_obj.site_prefs is not None
+        assert added_obj.site_prefs["theme"] == "dark"
+        assert added_obj.site_prefs["sidebar_collapsed"] is True
+
+
+class TestUpdateProfileWithSitePrefs:
+    """Tests for update_profile with site_prefs parameter."""
+
+    def test_update_profile_with_site_prefs_dict(self, repository, mock_session):
+        """Test updating profile with site_prefs structured dict."""
+        existing = UserProfileModel(
+            user_account_id=1,
+            profile=dict(UserProfileModel.PROFILE_DEFAULTS),
+            risk_profile=dict(UserProfileModel.RISK_PROFILE_DEFAULTS),
+            site_prefs={"theme": "light", "sidebar_collapsed": False,
+                        "notifications_enabled": True, "language": "en"},
+        )
+        existing.id = 1
+
+        with patch.object(repository, "get_profile", return_value=existing):
+            result = repository.update_profile(
+                account_id=1,
+                site_prefs={"theme": "dark"},
+            )
+
+        assert result is not None
+        assert result.site_prefs["theme"] == "dark"
+        # Other values should be preserved
+        assert result.site_prefs["sidebar_collapsed"] is False
+        assert result.site_prefs["language"] == "en"
+
+    def test_update_profile_with_flat_site_pref_kwargs(self, repository, mock_session):
+        """Test updating profile with flat site_pref kwargs."""
+        existing = UserProfileModel(
+            user_account_id=1,
+            profile=dict(UserProfileModel.PROFILE_DEFAULTS),
+            risk_profile=dict(UserProfileModel.RISK_PROFILE_DEFAULTS),
+            site_prefs=None,
+        )
+        existing.id = 1
+
+        with patch.object(repository, "get_profile", return_value=existing):
+            result = repository.update_profile(
+                account_id=1,
+                theme="dark",
+                notifications_enabled=False,
+            )
+
+        assert result is not None
+        assert result.site_prefs["theme"] == "dark"
+        assert result.site_prefs["notifications_enabled"] is False
+        # Defaults should be applied for unset keys
+        assert result.site_prefs["sidebar_collapsed"] is False
+        assert result.site_prefs["language"] == "en"
+
+    def test_update_profile_site_prefs_does_not_affect_other_fields(self, repository, mock_session):
+        """Test that updating site_prefs does not affect profile or risk_profile."""
+        original_profile = dict(UserProfileModel.PROFILE_DEFAULTS)
+        original_risk = dict(UserProfileModel.RISK_PROFILE_DEFAULTS)
+        existing = UserProfileModel(
+            user_account_id=1,
+            profile=original_profile,
+            risk_profile=original_risk,
+            site_prefs={"theme": "light", "sidebar_collapsed": False,
+                        "notifications_enabled": True, "language": "en"},
+        )
+        existing.id = 1
+
+        with patch.object(repository, "get_profile", return_value=existing):
+            result = repository.update_profile(
+                account_id=1,
+                site_prefs={"theme": "dark"},
+            )
+
+        assert result.profile == original_profile
+        assert result.risk_profile == original_risk
+
+
 class TestCreateStrategyWithRiskProfile:
     """Tests for create_strategy with risk_profile parameter."""
 
