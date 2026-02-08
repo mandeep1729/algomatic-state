@@ -301,6 +301,7 @@ export interface CampaignSummary {
   closedAt?: string;
   legsCount: number;
   maxQty: number;
+  legQuantities: number[];
   overallLabel: OverallLabel;
   keyFlags: string[];
 }

@@ -18,6 +18,32 @@ function formatDateRange(openedAt: string, closedAt?: string): string {
   return `${opened} - ${closed}`;
 }
 
+/**
+ * Format quantity display with leg breakdown.
+ * Shows: total_qty (leg1_qty+leg2_qty-leg3_qty...)
+ * Example: For legs [+3, -1, -2], displays: 0 (+3-1-2)
+ */
+function formatQtyWithLegs(legQuantities: number[]): string {
+  if (!legQuantities || legQuantities.length === 0) {
+    return '0';
+  }
+
+  const total = legQuantities.reduce((sum, qty) => sum + qty, 0);
+
+  // Build leg breakdown string: first leg uses + for positive or - for negative,
+  // subsequent legs use +/- as separator based on sign
+  const legParts = legQuantities.map((qty, index) => {
+    const absQty = Math.abs(qty);
+    if (index === 0) {
+      return qty >= 0 ? `+${absQty}` : `-${absQty}`;
+    }
+    return qty >= 0 ? `+${absQty}` : `-${absQty}`;
+  });
+
+  const breakdown = legParts.join('');
+  return `${total} (${breakdown})`;
+}
+
 export default function Campaigns() {
   const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
@@ -80,7 +106,7 @@ export default function Campaigns() {
             <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
               <th className="px-6 py-4">Campaign</th>
               <th className="px-6 py-4">Legs</th>
-              <th className="px-6 py-4">Max Qty</th>
+              <th className="px-6 py-4">Qty</th>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4">Evaluation</th>
             </tr>
@@ -135,9 +161,9 @@ export default function Campaigns() {
                     {campaign.legsCount}
                   </td>
 
-                  {/* Max Qty */}
+                  {/* Qty */}
                   <td className="px-6 py-4 text-[var(--text-secondary)]">
-                    {campaign.maxQty}
+                    {formatQtyWithLegs(campaign.legQuantities)}
                   </td>
 
                   {/* Status */}

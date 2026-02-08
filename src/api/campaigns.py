@@ -68,6 +68,7 @@ class CampaignSummaryResponse(BaseModel):
     closedAt: Optional[str] = None
     legsCount: int
     maxQty: float
+    legQuantities: List[float]
     overallLabel: str
     keyFlags: List[str]
 
@@ -196,6 +197,16 @@ def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
     # Determine overall label from tags (default to 'mixed' if not set)
     overall_label = tags_dict.get("overall_label", "mixed")
 
+    # Build leg quantities with sign: buy is positive, sell is negative
+    leg_quantities: List[float] = []
+    if campaign.legs:
+        for leg in campaign.legs:
+            qty = leg.quantity or 0
+            # Sell legs are negative, buy legs are positive
+            if leg.side == "sell":
+                qty = -qty
+            leg_quantities.append(qty)
+
     return CampaignSummaryResponse(
         campaignId=str(campaign.id),
         symbol=campaign.symbol,
@@ -205,6 +216,7 @@ def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
         closedAt=_format_dt(campaign.closed_at),
         legsCount=legs_count,
         maxQty=campaign.max_qty or campaign.qty_opened or 0,
+        legQuantities=leg_quantities,
         overallLabel=overall_label,
         keyFlags=key_flags,
     )
