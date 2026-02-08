@@ -17,6 +17,8 @@ from sqlalchemy.orm import Session
 from src.api.auth_middleware import get_current_user
 from src.data.database.connection import get_db_manager
 from src.data.database.broker_models import SnapTradeUser, BrokerConnection, TradeFill
+from src.data.database.trade_lifecycle_models import LegFillMap, CampaignLeg, DecisionContext
+from src.data.database.strategy_models import Strategy
 from src.execution.snaptrade_client import SnapTradeClient
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,14 @@ class ConnectRequest(BaseModel):
 class ConnectResponse(BaseModel):
     redirect_url: str
 
+class ContextSummary(BaseModel):
+    """Summary of decision context for a trade fill."""
+
+    strategy: Optional[str] = None
+    emotions: Optional[str] = None  # Comma-separated chips
+    hypothesis_snippet: Optional[str] = None
+
+
 class TradeResponse(BaseModel):
     id: int
     symbol: str
@@ -58,6 +68,7 @@ class TradeResponse(BaseModel):
     fees: float
     executed_at: datetime
     brokerage: str
+    context_summary: Optional[ContextSummary] = None
 
 class TradeListAPIResponse(BaseModel):
     trades: List[TradeResponse]
@@ -330,6 +341,53 @@ async def get_trades(
     offset = (max(page, 1) - 1) * limit
     trades = query.offset(offset).limit(limit).all()
 
+    # Fetch context summaries for all trade fills in a single query
+    # Path: TradeFill -> LegFillMap -> CampaignLeg -> DecisionContext
+    trade_ids = [t.id for t in trades]
+    context_map: Dict[int, ContextSummary] = {}
+
+    if trade_ids:
+        # Query to get context info for each fill
+        # A fill can be linked to multiple legs, take the first match
+        context_results = (
+            db.query(
+                LegFillMap.fill_id,
+                DecisionContext.hypothesis,
+                DecisionContext.feelings_then,
+                Strategy.name.label("strategy_name"),
+            )
+            .select_from(LegFillMap)
+            .join(CampaignLeg, CampaignLeg.id == LegFillMap.leg_id)
+            .join(DecisionContext, DecisionContext.leg_id == CampaignLeg.id)
+            .outerjoin(Strategy, Strategy.id == DecisionContext.strategy_id)
+            .filter(LegFillMap.fill_id.in_(trade_ids))
+            .all()
+        )
+
+        for fill_id, hypothesis, feelings_then, strategy_name in context_results:
+            if fill_id in context_map:
+                continue  # Already processed, take the first match
+
+            # Build context summary
+            emotions: Optional[str] = None
+            if feelings_then and isinstance(feelings_then, dict):
+                chips = feelings_then.get("chips", [])
+                if chips:
+                    emotions = ", ".join(chips[:3])  # Limit to 3 chips
+
+            hypothesis_snippet: Optional[str] = None
+            if hypothesis:
+                snippet = hypothesis[:50]
+                if len(hypothesis) > 50:
+                    snippet += "..."
+                hypothesis_snippet = snippet
+
+            context_map[fill_id] = ContextSummary(
+                strategy=strategy_name,
+                emotions=emotions,
+                hypothesis_snippet=hypothesis_snippet,
+            )
+
     return TradeListAPIResponse(
         trades=[
             TradeResponse(
@@ -340,7 +398,8 @@ async def get_trades(
                 price=t.price,
                 fees=t.fees,
                 executed_at=t.executed_at,
-                brokerage=t.connection.brokerage_name
+                brokerage=t.connection.brokerage_name,
+                context_summary=context_map.get(t.id),
             )
             for t in trades
         ],

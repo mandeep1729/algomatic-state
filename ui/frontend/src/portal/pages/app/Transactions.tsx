@@ -28,6 +28,19 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+/** Format context summary into a compact display string */
+function formatContextSummary(trade: TradeSummary): string | null {
+  const ctx = trade.context_summary;
+  if (!ctx) return null;
+
+  const parts: string[] = [];
+  if (ctx.strategy) parts.push(ctx.strategy);
+  if (ctx.emotions) parts.push(ctx.emotions);
+  if (ctx.hypothesis_snippet) parts.push(ctx.hypothesis_snippet);
+
+  return parts.length > 0 ? parts.join(' | ') : null;
+}
+
 // Define table columns for transactions
 const columns: Column<TradeSummary>[] = [
   {
@@ -89,6 +102,28 @@ const columns: Column<TradeSummary>[] = [
         {trade.brokerage || '-'}
       </span>
     ),
+  },
+  {
+    key: 'context',
+    header: 'Context',
+    render: (trade) => {
+      const summary = formatContextSummary(trade);
+      if (!summary) {
+        return (
+          <span className="text-xs text-[var(--text-secondary)] opacity-50">
+            -
+          </span>
+        );
+      }
+      return (
+        <span
+          className="block max-w-[200px] truncate text-xs text-[var(--text-secondary)]"
+          title={summary}
+        >
+          {summary}
+        </span>
+      );
+    },
   },
 ];
 

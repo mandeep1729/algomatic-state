@@ -24,6 +24,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: ['rushed_entry'],
+    context_summary: { strategy: 'Momentum', emotions: 'Anxious, FOMO', hypothesis_snippet: 'Breakout above resistance...' },
   },
   {
     id: 'trade-002',
@@ -48,6 +49,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: 'Clean setup, followed plan.',
     tags: [],
+    context_summary: { strategy: 'Swing', emotions: 'Confident', hypothesis_snippet: null },
   },
   {
     id: 'trade-003',
@@ -72,6 +74,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: ['no_stop_loss', 'oversized'],
+    context_summary: null,
   },
   {
     id: 'trade-004',
@@ -96,6 +99,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: [],
+    context_summary: null,
   },
   {
     id: 'trade-005',
@@ -120,6 +124,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: 'Entered after previous loss — possible revenge trade.',
     tags: ['revenge_trade'],
+    context_summary: { strategy: null, emotions: 'Frustrated, Impulsive', hypothesis_snippet: 'Quick scalp to recover...' },
   },
   {
     id: 'trade-006',
@@ -144,6 +149,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: ['strategy_mismatch'],
+    context_summary: null,
   },
   {
     id: 'trade-007',
@@ -168,6 +174,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: [],
+    context_summary: { strategy: 'Trend Following', emotions: 'Calm', hypothesis_snippet: null },
   },
   {
     id: 'trade-008',
@@ -192,6 +199,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: ['poor_timing'],
+    context_summary: null,
   },
   {
     id: 'trade-009',
@@ -216,6 +224,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: [],
+    context_summary: null,
   },
   {
     id: 'trade-010',
@@ -240,6 +249,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: [],
+    context_summary: null,
   },
   {
     id: 'trade-011',
@@ -264,6 +274,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: null,
     tags: ['extreme_volatility'],
+    context_summary: null,
   },
   {
     id: 'trade-012',
@@ -288,6 +299,7 @@ export const MOCK_TRADES: TradeDetail[] = [
     evaluation: null,
     notes: 'Solid entry on earnings gap.',
     tags: [],
+    context_summary: { strategy: 'Gap and Go', emotions: 'Focused', hypothesis_snippet: 'Earnings beat, gap fill expected' },
   },
 ];
 

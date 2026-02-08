@@ -221,6 +221,12 @@ export async function fetchFeatures(
 // Maps broker TradeResponse → portal TradeSummary
 // =============================================================================
 
+interface BrokerContextSummary {
+  strategy: string | null;
+  emotions: string | null;
+  hypothesis_snippet: string | null;
+}
+
 interface BrokerTradeResponse {
   id: number;
   symbol: string;
@@ -230,6 +236,7 @@ interface BrokerTradeResponse {
   fees: number;
   executed_at: string;
   brokerage: string;
+  context_summary: BrokerContextSummary | null;
 }
 
 interface BrokerTradeListResponse {
@@ -285,6 +292,7 @@ export async function fetchTrades(params: {
     flag_count: 0,
     status: 'closed' as const,
     timeframe: '',
+    context_summary: t.context_summary,
   }));
 
   return { trades, total: res.total, page: res.page, limit: res.limit };

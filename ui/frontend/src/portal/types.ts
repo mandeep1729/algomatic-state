@@ -37,6 +37,13 @@ export type TradeSource = 'synced' | 'manual' | 'csv' | 'proposed';
 export type TradeStatus = 'open' | 'closed' | 'proposed';
 export type TradeDirection = 'long' | 'short';
 
+/** Summary of decision context for a trade fill */
+export interface ContextSummary {
+  strategy: string | null;
+  emotions: string | null;
+  hypothesis_snippet: string | null;
+}
+
 export interface TradeSummary {
   id: string;
   symbol: string;
@@ -52,6 +59,7 @@ export interface TradeSummary {
   flag_count: number;
   status: TradeStatus;
   timeframe: string;
+  context_summary: ContextSummary | null;
 }
 
 export interface TradeListResponse {
