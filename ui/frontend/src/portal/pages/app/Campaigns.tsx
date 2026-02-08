@@ -116,6 +116,20 @@ const columns: Column<CampaignSummary>[] = [
       </div>
     ),
   },
+  {
+    key: 'strategy',
+    header: 'Strategy',
+    render: (campaign) => {
+      if (!campaign.strategies || campaign.strategies.length === 0) {
+        return <span className="text-[var(--text-secondary)]">-</span>;
+      }
+      return (
+        <span className="text-[var(--text-secondary)]">
+          {campaign.strategies.join(', ')}
+        </span>
+      );
+    },
+  },
 ];
 
 export default function Campaigns() {

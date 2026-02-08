@@ -304,6 +304,8 @@ export interface CampaignSummary {
   legQuantities: number[];
   overallLabel: OverallLabel;
   keyFlags: string[];
+  /** Unique strategy tags used across all legs of this campaign */
+  strategies: string[];
 }
 
 export interface Campaign {

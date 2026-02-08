@@ -33,6 +33,7 @@ export const MOCK_CAMPAIGN_SUMMARIES: CampaignSummary[] = [
     legQuantities: [100, 50, -150],
     overallLabel: 'mixed',
     keyFlags: ['exit_early', 'add_late', 'vol_high'],
+    strategies: ['pullback', 'momentum'],
   },
   {
     campaignId: 'c2',
@@ -46,6 +47,7 @@ export const MOCK_CAMPAIGN_SUMMARIES: CampaignSummary[] = [
     legQuantities: [-50, 50],
     overallLabel: 'fragile',
     keyFlags: ['regime_mismatch', 'rushed_trade'],
+    strategies: ['mean-reversion', 'gap-fade'],
   },
 ];
 
