@@ -47,6 +47,10 @@ def parse_args(argv=None) -> argparse.Namespace:
         help="Seed strategy catalog to DB without running probes",
     )
     parser.add_argument(
+        "--persist-trades", action="store_true", default=False,
+        help="Persist individual trade records in addition to aggregated results",
+    )
+    parser.add_argument(
         "--log-level", type=str, default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level (default: INFO)",
@@ -108,6 +112,7 @@ def main(argv=None) -> int:
         strategy_ids=strategy_ids,
         start=start,
         end=end,
+        persist_trades=args.persist_trades,
     )
 
     runner = ProbeRunner(config)

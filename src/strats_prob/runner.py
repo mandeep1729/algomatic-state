@@ -33,10 +33,15 @@ class ProbeRunConfig:
     start: Optional[datetime] = None
     end: Optional[datetime] = None
     run_id: Optional[str] = None
+    persist_trades: bool = False  # Default: do not persist individual trades
 
     def __post_init__(self):
         if self.run_id is None:
             self.run_id = str(uuid.uuid4())[:8]
+        logger.info(
+            "ProbeRunConfig: symbols=%s, persist_trades=%s, run_id=%s",
+            self.symbols, self.persist_trades, self.run_id,
+        )
 
 
 class ProbeRunner:
@@ -134,15 +139,16 @@ class ProbeRunner:
                                     self._store_results(records)
                                     total_records += len(records)
 
-                                # Persist individual trade records
-                                self._store_trades(
-                                    trades=trades,
-                                    run_id=run_id,
-                                    strategy_id=strategy_db_id,
-                                    symbol=symbol,
-                                    timeframe=timeframe,
-                                    risk_profile=risk_name,
-                                )
+                                # Persist individual trade records if configured
+                                if self.config.persist_trades:
+                                    self._store_trades(
+                                        trades=trades,
+                                        run_id=run_id,
+                                        strategy_id=strategy_db_id,
+                                        symbol=symbol,
+                                        timeframe=timeframe,
+                                        risk_profile=risk_name,
+                                    )
 
                                 total_trades += len(trades)
 
