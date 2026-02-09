@@ -10,12 +10,14 @@ import pandas as pd
 
 from src.data.database.connection import get_db_manager
 from src.data.database.market_repository import OHLCVRepository
+from src.data.database.probe_models import StrategyProbeResult
 from src.data.database.probe_repository import ProbeRepository
+from src.features.talib_indicators import TALibIndicatorCalculator
 from src.strats_prob.aggregator import aggregate_trades
 from src.strats_prob.engine import ProbeEngine
 from src.strats_prob.exits import RISK_PROFILES
 from src.strats_prob.registry import get_all_strategies, get_strategy
-from src.strats_prob.strategy_def import StrategyDef
+from src.strats_prob.strategy_def import ProbeTradeResult, StrategyDef
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +58,11 @@ class ProbeRunner:
         """
         run_id = self.config.run_id
         strategies = self._get_strategies()
+
+        all_required: set[str] = set()
+        for strat in strategies:
+            all_required.update(strat.required_indicators)
+
         total_combos = (
             len(self.config.symbols)
             * len(self.config.timeframes)
@@ -91,6 +98,8 @@ class ProbeRunner:
                     df.index.min(), df.index.max(),
                 )
 
+                df = self._ensure_indicators(df, symbol, timeframe, all_required)
+
                 for strat in strategies:
                     for risk_name in self.config.risk_profiles:
                         combo_count += 1
@@ -124,6 +133,16 @@ class ProbeRunner:
                                 if records:
                                     self._store_results(records)
                                     total_records += len(records)
+
+                                # Persist individual trade records
+                                self._store_trades(
+                                    trades=trades,
+                                    run_id=run_id,
+                                    strategy_id=strategy_db_id,
+                                    symbol=symbol,
+                                    timeframe=timeframe,
+                                    risk_profile=risk_name,
+                                )
 
                                 total_trades += len(trades)
 
@@ -203,8 +222,206 @@ class ProbeRunner:
             db_strat = repo.get_strategy_by_name(strat.name)
             return db_strat.id if db_strat else None
 
+    def _ensure_indicators(
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+        required_indicators: set[str],
+    ) -> pd.DataFrame:
+        """Compute missing indicators if any required columns are absent.
+
+        Checks required_indicators against df.columns. If all present, returns
+        immediately. Otherwise, runs TALibIndicatorCalculator.compute() on the
+        OHLCV data, merges new columns into df, and persists features to DB
+        for future runs.
+
+        Args:
+            df: Combined OHLCV + features DataFrame.
+            symbol: Ticker symbol.
+            timeframe: Bar timeframe string.
+            required_indicators: Union of all strategy required_indicators.
+
+        Returns:
+            DataFrame with indicator columns added (if any were missing).
+        """
+        if not required_indicators:
+            return df
+
+        missing = required_indicators - set(df.columns)
+        if not missing:
+            logger.debug(
+                "All %d required indicators present for %s/%s",
+                len(required_indicators), symbol, timeframe,
+            )
+            return df
+
+        logger.warning(
+            "Missing %d indicators for %s/%s: %s — computing via TALib",
+            len(missing), symbol, timeframe, sorted(missing),
+        )
+
+        ohlcv_cols = ["open", "high", "low", "close", "volume"]
+        ohlcv_df = df[ohlcv_cols]
+
+        calculator = TALibIndicatorCalculator()
+        features_df = calculator.compute(ohlcv_df)
+
+        # Merge only NEW columns to avoid overwriting existing features
+        new_cols = [c for c in features_df.columns if c not in df.columns]
+        if new_cols:
+            df = df.join(features_df[new_cols])
+            logger.info(
+                "Added %d computed indicator columns for %s/%s",
+                len(new_cols), symbol, timeframe,
+            )
+
+        still_missing = required_indicators - set(df.columns)
+        if still_missing:
+            logger.warning(
+                "%d indicators still missing after computation for %s/%s: %s",
+                len(still_missing), symbol, timeframe, sorted(still_missing),
+            )
+
+        # Persist to DB for future runs (non-fatal if it fails)
+        self._save_features_to_db(features_df, symbol, timeframe)
+
+        return df
+
+    def _save_features_to_db(
+        self,
+        features_df: pd.DataFrame,
+        symbol: str,
+        timeframe: str,
+    ) -> None:
+        """Persist computed features to the database for future runs.
+
+        Uses OHLCVRepository.store_features() to upsert feature JSONB rows.
+        Failures are logged but do not interrupt the probe run.
+
+        Args:
+            features_df: DataFrame of computed indicator columns.
+            symbol: Ticker symbol.
+            timeframe: Bar timeframe string.
+        """
+        try:
+            with self.db_manager.get_session() as session:
+                repo = OHLCVRepository(session)
+                ticker = repo.get_ticker(symbol)
+                if ticker is None:
+                    logger.warning(
+                        "Ticker %s not found in DB, skipping feature persistence",
+                        symbol,
+                    )
+                    return
+
+                count = repo.store_features(features_df, ticker.id, timeframe)
+                logger.info(
+                    "Persisted %d feature rows for %s/%s to database",
+                    count, symbol, timeframe,
+                )
+        except Exception:
+            logger.exception(
+                "Failed to persist features for %s/%s — continuing with in-memory data",
+                symbol, timeframe,
+            )
+
     def _store_results(self, records: list[dict]) -> None:
         """Store aggregated results in the database."""
         with self.db_manager.get_session() as session:
             repo = ProbeRepository(session)
             repo.bulk_insert_results(records)
+
+    def _store_trades(
+        self,
+        trades: list[ProbeTradeResult],
+        run_id: str,
+        strategy_id: int,
+        symbol: str,
+        timeframe: str,
+        risk_profile: str,
+    ) -> None:
+        """Store individual trade records linked to their aggregated result rows.
+
+        Looks up the StrategyProbeResult rows for the given dimensions, then maps
+        each trade to the correct result row based on (open_day, open_hour, long_short).
+        Failures are logged but do not interrupt the probe run.
+
+        Args:
+            trades: List of ProbeTradeResult from the engine.
+            run_id: Run identifier.
+            strategy_id: FK to probe_strategies.
+            symbol: Ticker symbol.
+            timeframe: Bar timeframe string.
+            risk_profile: Risk profile name.
+        """
+        try:
+            with self.db_manager.get_session() as session:
+                # Query all result rows for this combination to get their IDs
+                result_rows = session.query(StrategyProbeResult).filter(
+                    StrategyProbeResult.run_id == run_id,
+                    StrategyProbeResult.strategy_id == strategy_id,
+                    StrategyProbeResult.symbol == symbol.upper(),
+                    StrategyProbeResult.timeframe == timeframe,
+                    StrategyProbeResult.risk_profile == risk_profile,
+                ).all()
+
+                if not result_rows:
+                    logger.warning(
+                        "No result rows found for trade persistence "
+                        "(run=%s, strategy=%d, %s/%s/%s)",
+                        run_id, strategy_id, symbol, timeframe, risk_profile,
+                    )
+                    return
+
+                # Build lookup: (open_day, open_hour, long_short) -> result_id
+                result_id_map: dict[tuple[int, int, str], int] = {}
+                for row in result_rows:
+                    key = (row.open_day, row.open_hour, row.long_short)
+                    result_id_map[key] = row.id
+
+                # Map trades to result rows
+                trade_dicts = []
+                for trade in trades:
+                    open_day = trade.entry_time.weekday()
+                    open_hour = trade.entry_time.hour
+                    direction = trade.direction[:5]
+                    key = (open_day, open_hour, direction)
+
+                    result_id = result_id_map.get(key)
+                    if result_id is None:
+                        logger.debug(
+                            "No result row for trade group key %s, skipping trade",
+                            key,
+                        )
+                        continue
+
+                    pnl_currency = trade.pnl_pct * trade.entry_price
+
+                    trade_dicts.append({
+                        "strategy_probe_result_id": result_id,
+                        "ticker": symbol.upper(),
+                        "open_timestamp": trade.entry_time,
+                        "close_timestamp": trade.exit_time,
+                        "direction": direction,
+                        "open_justification": trade.entry_justification,
+                        "close_justification": trade.exit_justification,
+                        "pnl": pnl_currency,
+                        "pnl_pct": trade.pnl_pct,
+                        "bars_held": trade.bars_held,
+                    })
+
+                if trade_dicts:
+                    repo = ProbeRepository(session)
+                    repo.bulk_insert_trades(trade_dicts)
+                    logger.info(
+                        "Persisted %d trade records for %s/%s/%s/%s",
+                        len(trade_dicts), symbol, timeframe, risk_profile,
+                        run_id,
+                    )
+
+        except Exception:
+            logger.exception(
+                "Failed to persist trades for %s/%s/%s — continuing",
+                symbol, timeframe, risk_profile,
+            )

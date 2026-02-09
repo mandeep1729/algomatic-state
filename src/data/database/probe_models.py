@@ -1,6 +1,7 @@
 """SQLAlchemy ORM models for strategy probe system.
 
-Stores strategy definitions (catalog) and aggregated probe results.
+Stores strategy definitions (catalog), aggregated probe results,
+and detailed per-trade records with entry/exit justifications.
 """
 
 from datetime import datetime
@@ -14,6 +15,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -95,6 +97,9 @@ class StrategyProbeResult(Base):
 
     # Relationships
     strategy: Mapped["ProbeStrategy"] = relationship("ProbeStrategy", back_populates="probe_results")
+    trades: Mapped[list["ProbeStrategyTrade"]] = relationship(
+        "ProbeStrategyTrade", back_populates="probe_result", cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         UniqueConstraint(
@@ -110,4 +115,51 @@ class StrategyProbeResult(Base):
         return (
             f"<StrategyProbeResult(run_id='{self.run_id}', strategy_id={self.strategy_id}, "
             f"tf='{self.timeframe}', risk='{self.risk_profile}', trades={self.num_trades})>"
+        )
+
+
+class ProbeStrategyTrade(Base):
+    """Individual trade record from a probe run.
+
+    Each row represents one trade (entry + exit) with full context including
+    human-readable justifications for why the trade was opened and closed.
+    Links back to the aggregated result via strategy_probe_result_id FK.
+    """
+
+    __tablename__ = "strategy_probe_trades"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    strategy_probe_result_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("strategy_probe_results.id", ondelete="CASCADE"), nullable=False,
+    )
+    ticker: Mapped[str] = mapped_column(String(20), nullable=False)
+    open_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    close_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    direction: Mapped[str] = mapped_column(String(5), nullable=False)  # "long" or "short"
+    open_justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    close_justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pnl: Mapped[float] = mapped_column(Float, nullable=False)
+    pnl_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    bars_held: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False,
+    )
+
+    # Relationships
+    probe_result: Mapped["StrategyProbeResult"] = relationship(
+        "StrategyProbeResult", back_populates="trades",
+    )
+
+    __table_args__ = (
+        Index("ix_probe_trades_result_id", "strategy_probe_result_id"),
+        Index("ix_probe_trades_ticker", "ticker"),
+        Index("ix_probe_trades_direction", "direction"),
+        Index("ix_probe_trades_open_ts", "open_timestamp"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<ProbeStrategyTrade(id={self.id}, ticker='{self.ticker}', "
+            f"direction='{self.direction}', pnl_pct={self.pnl_pct:.4f})>"
         )

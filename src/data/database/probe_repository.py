@@ -7,7 +7,7 @@ import pandas as pd
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from src.data.database.probe_models import ProbeStrategy, StrategyProbeResult
+from src.data.database.probe_models import ProbeStrategy, ProbeStrategyTrade, StrategyProbeResult
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +195,8 @@ class ProbeRepository:
     def delete_run(self, run_id: str) -> int:
         """Delete all results for a given run_id.
 
+        Cascading deletes will also remove associated trade records.
+
         Args:
             run_id: Run identifier.
 
@@ -206,3 +208,82 @@ class ProbeRepository:
         ).delete(synchronize_session=False)
         logger.info("Deleted %d probe results for run_id=%s", count, run_id)
         return count
+
+    # -------------------------------------------------------------------------
+    # Trade-level operations
+    # -------------------------------------------------------------------------
+
+    def bulk_insert_trades(self, trades: list[dict]) -> int:
+        """Bulk insert individual trade records.
+
+        Args:
+            trades: List of dicts matching ProbeStrategyTrade columns.
+                    Each dict must include strategy_probe_result_id, ticker,
+                    open_timestamp, close_timestamp, direction, pnl, pnl_pct,
+                    and bars_held. open_justification and close_justification
+                    are optional.
+
+        Returns:
+            Number of rows inserted.
+        """
+        if not trades:
+            return 0
+
+        self.session.bulk_insert_mappings(ProbeStrategyTrade, trades)
+        self.session.flush()
+        logger.info("Inserted %d probe trade records", len(trades))
+        return len(trades)
+
+    def get_trades(
+        self,
+        result_id: Optional[int] = None,
+        ticker: Optional[str] = None,
+        direction: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """Query individual trade records with optional filters.
+
+        Args:
+            result_id: Filter by strategy_probe_result_id FK.
+            ticker: Filter by ticker symbol.
+            direction: Filter by direction (long/short).
+            run_id: Filter by run_id via join to strategy_probe_results.
+
+        Returns:
+            DataFrame with trade rows.
+        """
+        query = self.session.query(ProbeStrategyTrade)
+
+        if result_id is not None:
+            query = query.filter(ProbeStrategyTrade.strategy_probe_result_id == result_id)
+        if ticker:
+            query = query.filter(ProbeStrategyTrade.ticker == ticker.upper())
+        if direction:
+            query = query.filter(ProbeStrategyTrade.direction == direction)
+        if run_id:
+            query = query.join(StrategyProbeResult).filter(
+                StrategyProbeResult.run_id == run_id,
+            )
+
+        query = query.order_by(ProbeStrategyTrade.open_timestamp)
+        results = query.all()
+
+        if not results:
+            return pd.DataFrame()
+
+        rows = []
+        for t in results:
+            rows.append({
+                "id": t.id,
+                "strategy_probe_result_id": t.strategy_probe_result_id,
+                "ticker": t.ticker,
+                "open_timestamp": t.open_timestamp,
+                "close_timestamp": t.close_timestamp,
+                "direction": t.direction,
+                "open_justification": t.open_justification,
+                "close_justification": t.close_justification,
+                "pnl": t.pnl,
+                "pnl_pct": t.pnl_pct,
+                "bars_held": t.bars_held,
+            })
+        return pd.DataFrame(rows)

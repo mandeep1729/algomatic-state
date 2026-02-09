@@ -57,6 +57,7 @@ class ProbeEngine:
         exit_manager: Optional[ExitManager] = None
         entry_bar_idx: Optional[int] = None
         entry_price: Optional[float] = None
+        entry_justification: Optional[str] = None
         pending_signal: Optional[str] = None  # "long" or "short" signal waiting for next bar
 
         for i in range(n_bars):
@@ -81,6 +82,9 @@ class ProbeEngine:
                         trailing_atr_mult=self.strategy.trailing_atr_mult,
                         time_stop_bars=self.strategy.time_stop_bars,
                         risk_profile=self.risk_profile,
+                    )
+                    entry_justification = self._build_entry_justification(
+                        position, entry_price, atr_val, df, i,
                     )
                     logger.debug(
                         "Entered %s at bar %d, price=%.4f, atr=%.4f",
@@ -115,6 +119,10 @@ class ProbeEngine:
                         open_i, high_i, low_i, close_i,
                     )
                     pnl_pct = self._calc_pnl_pct(entry_price, exit_price, position)
+                    exit_justification = self._build_exit_justification(
+                        exit_reason, position, entry_price, exit_price,
+                        exit_manager, close_i,
+                    )
 
                     trades.append(ProbeTradeResult(
                         entry_time=df.index[entry_bar_idx],
@@ -127,6 +135,8 @@ class ProbeEngine:
                         max_drawdown_pct=exit_manager.max_drawdown_pct,
                         max_profit_pct=exit_manager.max_profit_pct,
                         exit_reason=exit_reason,
+                        entry_justification=entry_justification,
+                        exit_justification=exit_justification,
                     ))
                     logger.debug(
                         "Exited %s at bar %d, pnl=%.4f%%, reason=%s",
@@ -138,6 +148,7 @@ class ProbeEngine:
                     exit_manager = None
                     entry_bar_idx = None
                     entry_price = None
+                    entry_justification = None
 
             # If flat, check entry signals (signal fires here, entry on next bar)
             if position is None and i < n_bars - 1:
@@ -190,6 +201,98 @@ class ProbeEngine:
             return (exit_price - entry_price) / entry_price
         else:
             return (entry_price - exit_price) / entry_price
+
+    def _build_entry_justification(
+        self,
+        direction: str,
+        entry_price: float,
+        atr_val: float,
+        df: pd.DataFrame,
+        idx: int,
+    ) -> str:
+        """Build a human-readable justification string for a trade entry.
+
+        Includes the strategy name, direction, entry price, ATR at entry,
+        and risk profile details.
+
+        Args:
+            direction: Trade direction ("long" or "short").
+            entry_price: Fill price on entry bar.
+            atr_val: ATR(14) value at entry.
+            df: Features DataFrame (for indicator snapshots).
+            idx: Bar index of the entry.
+
+        Returns:
+            Descriptive justification string.
+        """
+        parts = [
+            f"Strategy '{self.strategy.display_name}' {direction} entry",
+            f"at {entry_price:.4f}",
+            f"(ATR={atr_val:.4f}, risk={self.risk_profile.name})",
+        ]
+
+        # Append key indicator values if available
+        indicator_snapshots = []
+        for col in self.strategy.required_indicators:
+            try:
+                val = float(df[col].iloc[idx])
+                if not (np.isnan(val) or np.isinf(val)):
+                    indicator_snapshots.append(f"{col}={val:.4f}")
+            except (KeyError, IndexError, ValueError):
+                continue
+
+        if indicator_snapshots:
+            parts.append(f"[{', '.join(indicator_snapshots[:6])}]")
+
+        return " ".join(parts)
+
+    @staticmethod
+    def _build_exit_justification(
+        exit_reason: str,
+        direction: str,
+        entry_price: float,
+        exit_price: float,
+        exit_manager: ExitManager,
+        close: float,
+    ) -> str:
+        """Build a human-readable justification string for a trade exit.
+
+        Args:
+            exit_reason: Reason code (stop_loss, target, trailing_stop, etc.).
+            direction: Trade direction.
+            entry_price: Original entry price.
+            exit_price: Resolved exit price.
+            exit_manager: ExitManager with stop/target distances.
+            close: Bar close price.
+
+        Returns:
+            Descriptive justification string.
+        """
+        pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+        if direction == "short":
+            pnl_pct = ((entry_price - exit_price) / entry_price) * 100
+
+        parts = [f"Exit reason: {exit_reason}"]
+
+        if exit_reason == "stop_loss" and exit_manager.stop_dist is not None:
+            parts.append(
+                f"stop distance={exit_manager.stop_dist:.4f} "
+                f"({exit_manager.stop_dist / exit_manager.atr:.1f}x ATR)"
+            )
+        elif exit_reason == "target" and exit_manager.target_dist is not None:
+            parts.append(
+                f"target distance={exit_manager.target_dist:.4f} "
+                f"({exit_manager.target_dist / exit_manager.atr:.1f}x ATR)"
+            )
+        elif exit_reason == "trailing_stop" and exit_manager._trailing_stop is not None:
+            parts.append(f"trailing stop at {exit_manager._trailing_stop:.4f}")
+        elif exit_reason == "time_stop":
+            parts.append(f"after {exit_manager.bars_held} bars (limit={exit_manager.time_limit})")
+        elif exit_reason == "signal_exit":
+            parts.append(f"signal-based exit at close={close:.4f}")
+
+        parts.append(f"exit_price={exit_price:.4f}, pnl={pnl_pct:+.2f}%")
+        return "; ".join(parts)
 
     @staticmethod
     def _get_exit_price(

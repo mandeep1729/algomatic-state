@@ -25,6 +25,8 @@ class ProbeTradeResult:
     max_drawdown_pct: float
     max_profit_pct: float
     exit_reason: str
+    entry_justification: Optional[str] = None
+    exit_justification: Optional[str] = None
 
 
 @dataclass
