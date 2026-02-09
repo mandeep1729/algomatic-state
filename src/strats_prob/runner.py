@@ -12,6 +12,7 @@ from src.data.database.connection import get_db_manager
 from src.data.database.market_repository import OHLCVRepository
 from src.data.database.probe_models import StrategyProbeResult
 from src.data.database.probe_repository import ProbeRepository
+from src.data.timeframe_aggregator import TimeframeAggregator, INTRADAY_AGGREGATABLE
 from src.features.talib_indicators import TALibIndicatorCalculator
 from src.strats_prob.aggregator import aggregate_trades
 from src.strats_prob.engine import ProbeEngine
@@ -84,6 +85,9 @@ class ProbeRunner:
             len(self.config.risk_profiles),
             total_combos,
         )
+
+        # Pre-populate missing timeframes before running strategies
+        self._ensure_timeframes_populated()
 
         combo_count = 0
         total_trades = 0
@@ -182,6 +186,47 @@ class ProbeRunner:
                     logger.warning("Strategy ID %d not found in registry", sid)
             return strategies
         return get_all_strategies()
+
+    def _ensure_timeframes_populated(self) -> None:
+        """Aggregate missing higher-timeframe bars before running strategies.
+
+        For each symbol in the config, calls TimeframeAggregator to fill any
+        missing intraday timeframes (e.g. 15Min, 1Hour from 1Min data).
+        Only processes timeframes that are both requested in the config AND
+        aggregatable from 1Min data.
+
+        This step is non-fatal: aggregation failures are logged as warnings
+        and the probe run continues with whatever data already exists.
+        """
+        aggregatable = [
+            tf for tf in self.config.timeframes
+            if tf in INTRADAY_AGGREGATABLE
+        ]
+        if not aggregatable:
+            logger.debug(
+                "No aggregatable timeframes in config (%s), skipping pre-population",
+                self.config.timeframes,
+            )
+            return
+
+        aggregator = TimeframeAggregator(db_manager=self.db_manager)
+
+        for symbol in self.config.symbols:
+            try:
+                summary = aggregator.aggregate_missing_timeframes(
+                    ticker=symbol,
+                    target_timeframes=aggregatable,
+                )
+                logger.info(
+                    "Ensured timeframes %s populated for %s: %s",
+                    aggregatable, symbol, summary,
+                )
+            except Exception:
+                logger.warning(
+                    "Timeframe aggregation failed for %s — continuing with existing data",
+                    symbol,
+                    exc_info=True,
+                )
 
     def _load_data(self, symbol: str, timeframe: str) -> Optional[pd.DataFrame]:
         """Load OHLCV bars and merge with pre-computed features."""
