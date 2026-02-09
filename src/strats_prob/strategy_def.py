@@ -24,6 +24,7 @@ class ProbeTradeResult:
     bars_held: int
     max_drawdown_pct: float
     max_profit_pct: float
+    pnl_std: float
     exit_reason: str
     entry_justification: Optional[str] = None
     exit_justification: Optional[str] = None

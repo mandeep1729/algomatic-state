@@ -8,6 +8,8 @@ import logging
 from dataclasses import dataclass
 from typing import Optional
 
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,6 +66,7 @@ class ExitManager:
         self.best_price = entry_price
         self.worst_price = entry_price
         self._trailing_stop: Optional[float] = None
+        self._bar_pnls: list[float] = []  # bar-by-bar P&L % vs entry
 
         if self.trail_dist:
             if direction == "long":
@@ -91,6 +94,13 @@ class ExitManager:
         else:
             self.best_price = min(self.best_price, low)
             self.worst_price = max(self.worst_price, high)
+
+        # Track bar-by-bar P&L % vs entry for pnl_std computation
+        if self.direction == "long":
+            bar_pnl = (close - self.entry_price) / self.entry_price
+        else:
+            bar_pnl = (self.entry_price - close) / self.entry_price
+        self._bar_pnls.append(bar_pnl)
 
         # 1. Fixed stop loss
         if self.stop_dist is not None:
@@ -148,3 +158,14 @@ class ExitManager:
             return (self.best_price - self.entry_price) / self.entry_price
         else:
             return (self.entry_price - self.best_price) / self.entry_price
+
+    @property
+    def pnl_std(self) -> float:
+        """Standard deviation of bar-by-bar P&L % during the hold period.
+
+        Returns 0.0 if fewer than 2 bars were held (std is undefined for
+        a single observation).
+        """
+        if len(self._bar_pnls) < 2:
+            return 0.0
+        return float(np.std(self._bar_pnls, ddof=0))

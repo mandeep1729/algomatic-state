@@ -480,6 +480,7 @@ class TestProbeTradeResult:
             bars_held=4,
             max_drawdown_pct=0.005,
             max_profit_pct=0.025,
+            pnl_std=0.003,
             exit_reason="signal_exit",
         )
 

@@ -33,6 +33,7 @@ def _make_trade(
         bars_held=bars_held,
         max_drawdown_pct=0.005,
         max_profit_pct=0.015,
+        pnl_std=0.002,
         exit_reason="signal_exit",
         entry_justification=entry_justification,
         exit_justification=exit_justification,
@@ -54,6 +55,7 @@ class TestProbeTradeResultJustification:
             bars_held=5,
             max_drawdown_pct=0.005,
             max_profit_pct=0.015,
+            pnl_std=0.0,
             exit_reason="signal_exit",
         )
         assert trade.entry_justification is None
@@ -317,6 +319,9 @@ class TestTradeToDbMapping:
             "pnl": pnl_currency,
             "pnl_pct": trade.pnl_pct,
             "bars_held": trade.bars_held,
+            "max_drawdown": trade.max_drawdown_pct,
+            "max_profit": trade.max_profit_pct,
+            "pnl_std": trade.pnl_std,
         }
 
         assert trade_dict["strategy_probe_result_id"] == 42
@@ -327,6 +332,9 @@ class TestTradeToDbMapping:
         assert trade_dict["bars_held"] == 8
         assert trade_dict["open_justification"] == "EMA cross entry at 100.0"
         assert trade_dict["close_justification"] == "Stop loss at 98.0"
+        assert trade_dict["max_drawdown"] == pytest.approx(0.005)
+        assert trade_dict["max_profit"] == pytest.approx(0.015)
+        assert trade_dict["pnl_std"] == pytest.approx(0.002)
 
     def test_trade_group_key_matches_aggregation(self):
         """Trade group key (open_day, open_hour, direction) matches aggregation logic."""
@@ -368,6 +376,155 @@ class TestTradeToDbMapping:
         assert pnl_currency == pytest.approx(4.5)
 
 
+class TestExitManagerPnlStd:
+    """Tests for ExitManager.pnl_std property (bar-by-bar P&L std dev)."""
+
+    def _make_exit_manager(
+        self,
+        entry_price: float = 100.0,
+        direction: str = "long",
+        atr: float = 1.0,
+    ) -> ExitManager:
+        """Create an ExitManager with no mechanical exits for pnl_std testing."""
+        return ExitManager(
+            entry_price=entry_price,
+            direction=direction,
+            atr_at_entry=atr,
+            atr_stop_mult=None,
+            atr_target_mult=None,
+            trailing_atr_mult=None,
+            time_stop_bars=None,
+            risk_profile=RISK_PROFILES["medium"],
+        )
+
+    def test_pnl_std_zero_for_no_bars(self):
+        """pnl_std is 0 when no bars have been processed."""
+        em = self._make_exit_manager()
+        assert em.pnl_std == 0.0
+
+    def test_pnl_std_zero_for_single_bar(self):
+        """pnl_std is 0 for a single bar (std undefined)."""
+        em = self._make_exit_manager(entry_price=100.0, direction="long")
+        em.check(high=101.0, low=99.0, close=100.5)
+        assert em.pnl_std == 0.0
+
+    def test_pnl_std_constant_close(self):
+        """pnl_std is 0 when close is constant (all bar P&Ls identical)."""
+        em = self._make_exit_manager(entry_price=100.0, direction="long")
+        for _ in range(5):
+            em.check(high=101.0, low=99.0, close=100.5)
+        assert em.pnl_std == pytest.approx(0.0)
+
+    def test_pnl_std_varying_close_long(self):
+        """pnl_std reflects variation in bar-by-bar P&L for long trade."""
+        em = self._make_exit_manager(entry_price=100.0, direction="long")
+        closes = [101.0, 102.0, 100.0, 103.0]
+        for c in closes:
+            em.check(high=c + 1, low=c - 1, close=c)
+
+        # Expected bar P&Ls: (101-100)/100=0.01, (102-100)/100=0.02,
+        # (100-100)/100=0.0, (103-100)/100=0.03
+        expected_pnls = [0.01, 0.02, 0.0, 0.03]
+        expected_std = float(np.std(expected_pnls, ddof=0))
+        assert em.pnl_std == pytest.approx(expected_std, abs=1e-10)
+
+    def test_pnl_std_varying_close_short(self):
+        """pnl_std reflects variation in bar-by-bar P&L for short trade."""
+        em = self._make_exit_manager(entry_price=100.0, direction="short")
+        closes = [99.0, 98.0, 100.0, 97.0]
+        for c in closes:
+            em.check(high=c + 1, low=c - 1, close=c)
+
+        # Short P&L: (entry-close)/entry
+        expected_pnls = [0.01, 0.02, 0.0, 0.03]
+        expected_std = float(np.std(expected_pnls, ddof=0))
+        assert em.pnl_std == pytest.approx(expected_std, abs=1e-10)
+
+
+class TestEnginePnlStdIntegration:
+    """Integration tests: engine produces trades with pnl_std populated."""
+
+    def test_engine_populates_pnl_std(self):
+        """ProbeEngine.run() populates pnl_std on trade results."""
+        n_bars = 20
+        base_date = pd.Timestamp("2024-06-03 09:30:00")
+        index = pd.date_range(start=base_date, periods=n_bars, freq="1h")
+
+        closes = [100.0] * 3 + [101.0, 102.0, 100.5, 103.0, 101.0] + [100.0] * 12
+        df = pd.DataFrame({
+            "open": closes,
+            "high": [c + 0.5 for c in closes],
+            "low": [c - 0.5 for c in closes],
+            "close": closes,
+            "volume": np.full(n_bars, 10000),
+            "atr_14": np.full(n_bars, 0.5),
+        }, index=index)
+
+        strat = StrategyDef(
+            id=99,
+            name="test_pnl_std",
+            display_name="PnL Std Test",
+            philosophy="Test",
+            category="trend",
+            tags=["test"],
+            direction="long_only",
+            entry_long=[lambda df, i: i == 2],
+            entry_short=[],
+            atr_stop_mult=None,
+            atr_target_mult=None,
+            trailing_atr_mult=None,
+            time_stop_bars=5,
+        )
+
+        engine = ProbeEngine(strat, RISK_PROFILES["medium"])
+        trades = engine.run(df)
+
+        assert len(trades) >= 1
+        trade = trades[0]
+        # pnl_std should be a non-negative float
+        assert isinstance(trade.pnl_std, float)
+        assert trade.pnl_std >= 0.0
+        # With varying closes, pnl_std should be > 0
+        assert trade.pnl_std > 0.0
+
+    def test_engine_pnl_std_is_zero_for_flat_prices(self):
+        """pnl_std is 0 when all bar closes are equal."""
+        n_bars = 15
+        base_date = pd.Timestamp("2024-06-03 09:30:00")
+        index = pd.date_range(start=base_date, periods=n_bars, freq="1h")
+
+        df = pd.DataFrame({
+            "open": np.full(n_bars, 100.0),
+            "high": np.full(n_bars, 101.0),
+            "low": np.full(n_bars, 99.0),
+            "close": np.full(n_bars, 100.0),
+            "volume": np.full(n_bars, 10000),
+            "atr_14": np.full(n_bars, 0.5),
+        }, index=index)
+
+        strat = StrategyDef(
+            id=99,
+            name="test_flat_pnl_std",
+            display_name="Flat PnL Std Test",
+            philosophy="Test",
+            category="trend",
+            tags=["test"],
+            direction="long_only",
+            entry_long=[lambda df, i: i == 0],
+            entry_short=[],
+            atr_stop_mult=None,
+            atr_target_mult=None,
+            trailing_atr_mult=None,
+            time_stop_bars=5,
+        )
+
+        engine = ProbeEngine(strat, RISK_PROFILES["medium"])
+        trades = engine.run(df)
+
+        assert len(trades) >= 1
+        assert trades[0].pnl_std == pytest.approx(0.0)
+
+
 class TestProbeStrategyTradeModel:
     """Tests for the ProbeStrategyTrade SQLAlchemy model structure."""
 
@@ -384,7 +541,9 @@ class TestProbeStrategyTradeModel:
             "id", "strategy_probe_result_id", "ticker",
             "open_timestamp", "close_timestamp", "direction",
             "open_justification", "close_justification",
-            "pnl", "pnl_pct", "bars_held", "created_at",
+            "pnl", "pnl_pct", "bars_held",
+            "max_drawdown", "max_profit", "pnl_std",
+            "created_at",
         }
         assert expected.issubset(columns)
 

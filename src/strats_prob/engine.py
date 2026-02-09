@@ -134,6 +134,7 @@ class ProbeEngine:
                         bars_held=exit_manager.bars_held,
                         max_drawdown_pct=exit_manager.max_drawdown_pct,
                         max_profit_pct=exit_manager.max_profit_pct,
+                        pnl_std=exit_manager.pnl_std,
                         exit_reason=exit_reason,
                         entry_justification=entry_justification,
                         exit_justification=exit_justification,

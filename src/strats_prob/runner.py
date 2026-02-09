@@ -415,6 +415,9 @@ class ProbeRunner:
                         "pnl": pnl_currency,
                         "pnl_pct": trade.pnl_pct,
                         "bars_held": trade.bars_held,
+                        "max_drawdown": trade.max_drawdown_pct,
+                        "max_profit": trade.max_profit_pct,
+                        "pnl_std": trade.pnl_std,
                     })
 
                 if trade_dicts:

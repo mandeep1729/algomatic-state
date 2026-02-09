@@ -141,6 +141,9 @@ class ProbeStrategyTrade(Base):
     pnl: Mapped[float] = mapped_column(Float, nullable=False)
     pnl_pct: Mapped[float] = mapped_column(Float, nullable=False)
     bars_held: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_drawdown: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    max_profit: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    pnl_std: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False,

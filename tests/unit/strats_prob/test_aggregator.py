@@ -28,6 +28,7 @@ def _make_trade(
         bars_held=bars_held,
         max_drawdown_pct=max_drawdown_pct,
         max_profit_pct=max_profit_pct,
+        pnl_std=0.0,
         exit_reason="signal_exit",
     )
 

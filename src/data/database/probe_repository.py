@@ -285,5 +285,8 @@ class ProbeRepository:
                 "pnl": t.pnl,
                 "pnl_pct": t.pnl_pct,
                 "bars_held": t.bars_held,
+                "max_drawdown": t.max_drawdown,
+                "max_profit": t.max_profit,
+                "pnl_std": t.pnl_std,
             })
         return pd.DataFrame(rows)
