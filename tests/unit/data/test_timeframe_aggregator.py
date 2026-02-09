@@ -462,6 +462,162 @@ class TestAggregateMissingTimeframes:
 
 
 # ---------------------------------------------------------------------------
+# Static aggregation helpers (aggregate_intraday_range / from_df)
+# ---------------------------------------------------------------------------
+
+
+class TestAggregateIntradayRange:
+    """Tests for the aggregate_intraday_range static method."""
+
+    def test_aggregates_bars_in_range(self, sample_1min_df):
+        """Reads 1Min bars from repo within range, aggregates, and inserts."""
+        mock_repo = MagicMock()
+        mock_repo.get_bars.return_value = sample_1min_df
+        mock_repo.bulk_insert_bars.return_value = 4
+        mock_ticker = MagicMock()
+        mock_ticker.id = 7
+
+        start = datetime(2024, 1, 2, 9, 30)
+        end = datetime(2024, 1, 2, 10, 30)
+
+        count = TimeframeAggregator.aggregate_intraday_range(
+            mock_repo, mock_ticker, "AAPL", "15Min", start, end,
+        )
+
+        assert count == 4
+        mock_repo.get_bars.assert_called_once_with("AAPL", "1Min", start, end)
+        mock_repo.bulk_insert_bars.assert_called_once()
+        assert mock_repo.bulk_insert_bars.call_args.kwargs["timeframe"] == "15Min"
+
+    def test_returns_zero_when_no_1min_data(self):
+        """Returns 0 when repo has no 1Min bars in the range."""
+        mock_repo = MagicMock()
+        mock_repo.get_bars.return_value = pd.DataFrame(
+            columns=["open", "high", "low", "close", "volume"]
+        )
+        mock_ticker = MagicMock()
+
+        count = TimeframeAggregator.aggregate_intraday_range(
+            mock_repo, mock_ticker, "AAPL", "15Min",
+        )
+
+        assert count == 0
+        mock_repo.bulk_insert_bars.assert_not_called()
+
+    def test_updates_sync_log_on_insert(self, sample_1min_df):
+        """Sync log is updated when rows are inserted."""
+        mock_repo = MagicMock()
+        mock_repo.get_bars.return_value = sample_1min_df
+        mock_repo.bulk_insert_bars.return_value = 4
+        mock_ticker = MagicMock()
+        mock_ticker.id = 42
+
+        TimeframeAggregator.aggregate_intraday_range(
+            mock_repo, mock_ticker, "AAPL", "15Min",
+        )
+
+        mock_repo.update_sync_log.assert_called_once()
+        log_kwargs = mock_repo.update_sync_log.call_args.kwargs
+        assert log_kwargs["ticker_id"] == 42
+        assert log_kwargs["timeframe"] == "15Min"
+        assert log_kwargs["bars_fetched"] == 4
+        assert log_kwargs["status"] == "success"
+
+
+class TestAggregateIntradayFromDf:
+    """Tests for the aggregate_intraday_from_df static method."""
+
+    def test_aggregates_in_memory_df(self, sample_1min_df):
+        """Aggregates a pre-loaded DataFrame and inserts results."""
+        mock_repo = MagicMock()
+        mock_repo.bulk_insert_bars.return_value = 4
+        mock_ticker = MagicMock()
+        mock_ticker.id = 5
+
+        count = TimeframeAggregator.aggregate_intraday_from_df(
+            mock_repo, mock_ticker, sample_1min_df, "15Min",
+        )
+
+        assert count == 4
+        mock_repo.bulk_insert_bars.assert_called_once()
+        call_kwargs = mock_repo.bulk_insert_bars.call_args.kwargs
+        assert call_kwargs["timeframe"] == "15Min"
+        assert call_kwargs["source"] == "aggregated"
+        assert call_kwargs["ticker_id"] == 5
+
+    def test_returns_zero_for_empty_df(self):
+        """Returns 0 when the source DataFrame is empty."""
+        mock_repo = MagicMock()
+        mock_ticker = MagicMock()
+
+        empty_df = pd.DataFrame(
+            columns=["open", "high", "low", "close", "volume"],
+            index=pd.DatetimeIndex([], freq="1min"),
+        )
+
+        count = TimeframeAggregator.aggregate_intraday_from_df(
+            mock_repo, mock_ticker, empty_df, "15Min",
+        )
+
+        assert count == 0
+        mock_repo.bulk_insert_bars.assert_not_called()
+
+    def test_does_not_update_sync_log_on_zero_inserts(self, sample_1min_df):
+        """Sync log is NOT updated when no rows are inserted."""
+        mock_repo = MagicMock()
+        mock_repo.bulk_insert_bars.return_value = 0
+        mock_ticker = MagicMock()
+        mock_ticker.id = 1
+
+        TimeframeAggregator.aggregate_intraday_from_df(
+            mock_repo, mock_ticker, sample_1min_df, "15Min",
+        )
+
+        mock_repo.update_sync_log.assert_not_called()
+
+    def test_strips_timezone_from_aggregated_df(self):
+        """Timezone-aware indices are stripped before insertion."""
+        dates = pd.date_range("2024-01-02 09:30", periods=60, freq="1min", tz="UTC")
+        df_tz = pd.DataFrame(
+            {
+                "open": [100.0] * 60,
+                "high": [101.0] * 60,
+                "low": [99.0] * 60,
+                "close": [100.5] * 60,
+                "volume": [1000] * 60,
+            },
+            index=dates,
+        )
+
+        mock_repo = MagicMock()
+        mock_repo.bulk_insert_bars.return_value = 4
+        mock_ticker = MagicMock()
+        mock_ticker.id = 1
+
+        TimeframeAggregator.aggregate_intraday_from_df(
+            mock_repo, mock_ticker, df_tz, "15Min",
+        )
+
+        inserted_df = mock_repo.bulk_insert_bars.call_args.kwargs["df"]
+        assert inserted_df.index.tz is None
+
+    def test_aggregates_to_1hour(self, sample_1min_df):
+        """Can aggregate to 1Hour timeframe."""
+        mock_repo = MagicMock()
+        mock_repo.bulk_insert_bars.return_value = 1
+        mock_ticker = MagicMock()
+        mock_ticker.id = 1
+
+        count = TimeframeAggregator.aggregate_intraday_from_df(
+            mock_repo, mock_ticker, sample_1min_df, "1Hour",
+        )
+
+        assert count == 1
+        call_kwargs = mock_repo.bulk_insert_bars.call_args.kwargs
+        assert call_kwargs["timeframe"] == "1Hour"
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

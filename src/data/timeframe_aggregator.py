@@ -290,6 +290,102 @@ class TimeframeAggregator:
         return rows_inserted
 
     # ------------------------------------------------------------------
+    # Shared aggregation helpers (used by DatabaseLoader / MarketDataService)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def aggregate_intraday_range(
+        repo: OHLCVRepository,
+        ticker,
+        symbol: str,
+        target_timeframe: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> int:
+        """Aggregate 1Min bars in a date range into a higher timeframe.
+
+        This is the canonical path for callers that already hold a repo
+        and ticker object and want to aggregate over a specific range.
+
+        Args:
+            repo: Repository bound to the current session.
+            ticker: Ticker database object (must have ``.id``).
+            symbol: Normalized stock symbol.
+            target_timeframe: ``"5Min"``, ``"15Min"``, or ``"1Hour"``.
+            start: Start of the 1Min range to read (inclusive).
+            end: End of the 1Min range to read (inclusive).
+
+        Returns:
+            Number of new bars inserted.
+        """
+        logger.info("Aggregating 1Min -> %s for %s (range %s..%s)",
+                     target_timeframe, symbol, start, end)
+
+        df_1min = repo.get_bars(symbol, "1Min", start, end)
+        if df_1min.empty:
+            logger.warning("No 1Min data to aggregate for %s/%s", symbol, target_timeframe)
+            return 0
+
+        return TimeframeAggregator.aggregate_intraday_from_df(
+            repo, ticker, df_1min, target_timeframe,
+        )
+
+    @staticmethod
+    def aggregate_intraday_from_df(
+        repo: OHLCVRepository,
+        ticker,
+        df_1min: pd.DataFrame,
+        target_timeframe: str,
+    ) -> int:
+        """Aggregate an in-memory 1Min DataFrame into a higher timeframe.
+
+        Useful when the caller already has the 1Min data loaded (e.g.
+        after fetching from a provider) and wants to avoid a redundant
+        database read.
+
+        Args:
+            repo: Repository bound to the current session.
+            ticker: Ticker database object (must have ``.id``).
+            df_1min: DataFrame with 1-minute OHLCV data and a datetime index.
+            target_timeframe: ``"5Min"``, ``"15Min"``, or ``"1Hour"``.
+
+        Returns:
+            Number of new bars inserted.
+        """
+        logger.info("Aggregating in-memory 1Min -> %s (%d source bars)",
+                     target_timeframe, len(df_1min))
+
+        df_agg = aggregate_ohlcv(df_1min, target_timeframe)
+
+        if df_agg.empty:
+            logger.warning("Aggregation produced no %s bars", target_timeframe)
+            return 0
+
+        # Ensure timezone-naive timestamps for DB storage
+        if df_agg.index.tz is not None:
+            df_agg.index = df_agg.index.tz_localize(None)
+
+        rows_inserted = repo.bulk_insert_bars(
+            df=df_agg,
+            ticker_id=ticker.id,
+            timeframe=target_timeframe,
+            source="aggregated",
+        )
+
+        if rows_inserted > 0:
+            repo.update_sync_log(
+                ticker_id=ticker.id,
+                timeframe=target_timeframe,
+                last_synced_timestamp=df_agg.index.max(),
+                first_synced_timestamp=df_agg.index.min(),
+                bars_fetched=rows_inserted,
+                status="success",
+            )
+
+        logger.info("Aggregated %d %s bars", rows_inserted, target_timeframe)
+        return rows_inserted
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 

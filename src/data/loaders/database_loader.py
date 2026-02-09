@@ -287,32 +287,14 @@ class DatabaseLoader(BaseDataLoader):
                 status="success",
             )
 
-            # Step 2: Aggregate to higher timeframes
+            # Step 2: Aggregate to higher timeframes via TimeframeAggregator
+            from src.data.timeframe_aggregator import TimeframeAggregator
+
             for target_tf in AGGREGATABLE_TIMEFRAMES:
                 try:
-                    logger.info(f"Aggregating 1Min to {target_tf} for {symbol}")
-                    df_agg = aggregate_ohlcv(df_1min, target_tf)
-
-                    if not df_agg.empty:
-                        rows_agg = repo.bulk_insert_bars(
-                            df=df_agg,
-                            ticker_id=ticker.id,
-                            timeframe=target_tf,
-                            source="aggregated",
-                        )
-                        logger.info(f"Inserted {rows_agg} {target_tf} bars for {symbol}")
-
-                        repo.update_sync_log(
-                            ticker_id=ticker.id,
-                            timeframe=target_tf,
-                            last_synced_timestamp=df_agg.index.max(),
-                            first_synced_timestamp=df_agg.index.min(),
-                            bars_fetched=rows_agg,
-                            status="success",
-                        )
-                    else:
-                        logger.warning(f"No {target_tf} bars generated for {symbol}")
-
+                    TimeframeAggregator.aggregate_intraday_from_df(
+                        repo, ticker, df_1min, target_tf,
+                    )
                 except Exception as e:
                     logger.error(f"Failed to aggregate {target_tf} for {symbol}: {e}")
 
@@ -543,6 +525,9 @@ class DatabaseLoader(BaseDataLoader):
     ) -> None:
         """Aggregate existing 1Min data to a higher timeframe.
 
+        Delegates to :class:`TimeframeAggregator` which is the canonical
+        aggregation path.
+
         Args:
             repo: OHLCV repository instance
             ticker: Ticker database object
@@ -551,40 +536,12 @@ class DatabaseLoader(BaseDataLoader):
             start: Start datetime
             end: End datetime
         """
+        from src.data.timeframe_aggregator import TimeframeAggregator
+
         try:
-            logger.info(f"Aggregating 1Min to {target_timeframe} for {symbol}")
-
-            # Get 1Min data from database
-            df_1min = repo.get_bars(symbol, "1Min", start, end)
-
-            if df_1min.empty:
-                logger.warning(f"No 1Min data available to aggregate for {symbol}")
-                return
-
-            # Aggregate
-            df_agg = aggregate_ohlcv(df_1min, target_timeframe)
-
-            if not df_agg.empty:
-                rows_inserted = repo.bulk_insert_bars(
-                    df=df_agg,
-                    ticker_id=ticker.id,
-                    timeframe=target_timeframe,
-                    source="aggregated",
-                )
-
-                repo.update_sync_log(
-                    ticker_id=ticker.id,
-                    timeframe=target_timeframe,
-                    last_synced_timestamp=df_agg.index.max(),
-                    first_synced_timestamp=df_agg.index.min(),
-                    bars_fetched=rows_inserted,
-                    status="success",
-                )
-
-                logger.info(f"Inserted {rows_inserted} {target_timeframe} bars for {symbol}")
-            else:
-                logger.warning(f"No {target_timeframe} bars generated for {symbol}")
-
+            TimeframeAggregator.aggregate_intraday_range(
+                repo, ticker, symbol, target_timeframe, start, end,
+            )
         except Exception as e:
             logger.error(f"Failed to aggregate {target_timeframe} for {symbol}: {e}")
 
