@@ -24,9 +24,19 @@ class ProbeEngine:
         risk_profile: Risk profile controlling stop/target/trail/time scaling.
     """
 
+    # Fixed 1-unit position sizing; no pyramiding allowed.
+    MAX_CONCURRENT_TRADES = 1
+
     def __init__(self, strategy: StrategyDef, risk_profile: RiskProfile):
         self.strategy = strategy
         self.risk_profile = risk_profile
+        logger.info(
+            "ProbeEngine initialised: strategy='%s', risk='%s', "
+            "max_concurrent_trades=%d (no pyramiding)",
+            strategy.display_name,
+            risk_profile.name,
+            self.MAX_CONCURRENT_TRADES,
+        )
 
     def run(self, df: pd.DataFrame) -> list[ProbeTradeResult]:
         """Execute the strategy bar-by-bar on the given data.
@@ -52,7 +62,8 @@ class ProbeEngine:
         trades: list[ProbeTradeResult] = []
         n_bars = len(df)
 
-        # State
+        # State -- only one trade open at a time (no pyramiding).
+        has_open_trade: bool = False
         position: Optional[str] = None  # None, "long", or "short"
         exit_manager: Optional[ExitManager] = None
         entry_bar_idx: Optional[int] = None
@@ -67,10 +78,11 @@ class ProbeEngine:
             open_i = float(df["open"].iloc[i])
 
             # Handle pending entry from previous bar's signal
-            if pending_signal is not None and position is None:
+            if pending_signal is not None and not has_open_trade:
                 atr_val = self._get_atr(df, i)
                 if atr_val is not None and atr_val > 0:
                     position = pending_signal
+                    has_open_trade = True
                     entry_price = open_i
                     entry_bar_idx = i
                     exit_manager = ExitManager(
@@ -136,6 +148,7 @@ class ProbeEngine:
                         max_profit_pct=exit_manager.max_profit_pct,
                         pnl_std=exit_manager.pnl_std,
                         exit_reason=exit_reason,
+                        quantity=1,
                         entry_justification=entry_justification,
                         exit_justification=exit_justification,
                     ))
@@ -144,7 +157,8 @@ class ProbeEngine:
                         position, i, pnl_pct * 100, exit_reason,
                     )
 
-                    # Reset state
+                    # Reset state -- flat, ready for next entry
+                    has_open_trade = False
                     position = None
                     exit_manager = None
                     entry_bar_idx = None
@@ -152,7 +166,7 @@ class ProbeEngine:
                     entry_justification = None
 
             # If flat, check entry signals (signal fires here, entry on next bar)
-            if position is None and i < n_bars - 1:
+            if not has_open_trade and i < n_bars - 1:
                 # Check long entry
                 if self.strategy.direction in ("long_short", "long_only"):
                     if self._check_conditions(self.strategy.entry_long, df, i):

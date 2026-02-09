@@ -464,6 +464,92 @@ class TestProbeEngineMultipleTrades:
         assert len(result) >= 2
 
 
+class TestSingleTradeEnforcement:
+    """Tests for single open trade per strategy (no pyramiding)."""
+
+    def test_no_duplicate_entry_while_in_position(self):
+        """Engine skips entry signals while a trade is already open."""
+        # Entry fires on every bar where close > 100
+        always_entry: ConditionFn = lambda df, idx: float(df["close"].iloc[idx]) > 100
+        # Exit only via time stop (10 bars) so trade stays open long enough
+        strat = _make_strategy(
+            entry_long=[always_entry],
+            direction="long_only",
+            atr_stop_mult=None,
+            atr_target_mult=None,
+            trailing_atr_mult=None,
+            time_stop_bars=5,
+        )
+
+        # Prices all above 100 -- entry fires every bar but only one trade
+        closes = [101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
+        n = len(closes)
+        index = pd.date_range("2024-06-03", periods=n, freq="1h")
+        df = pd.DataFrame(
+            {
+                "open": closes,
+                "high": [c + 0.5 for c in closes],
+                "low": [c - 0.5 for c in closes],
+                "close": closes,
+                "volume": [10000] * n,
+                "atr_14": [1.0] * n,
+            },
+            index=index,
+        )
+
+        engine = ProbeEngine(strat, RISK_PROFILES["medium"])
+        result = engine.run(df)
+
+        # First trade: signal at bar 0, entry at bar 1, time stop after 5 bars
+        # Second trade may start after the first closes, but never two at once.
+        # With 10 bars total, at most 1 complete trade (time stop 5 + re-entry
+        # needs another bar for signal + 1 for fill).
+        assert len(result) >= 1
+        # Verify no overlapping trade times
+        for i in range(1, len(result)):
+            assert result[i].entry_time >= result[i - 1].exit_time
+
+    def test_entry_resumes_after_exit(self):
+        """Engine can enter a new trade after the previous one closes."""
+        # Entry at specific bars only
+        entry_bars = {0, 6}
+        entry_cond: ConditionFn = lambda df, idx: idx in entry_bars
+        strat = _make_strategy(
+            entry_long=[entry_cond],
+            direction="long_only",
+            atr_stop_mult=None,
+            time_stop_bars=3,
+        )
+
+        closes = [100, 100.1, 100.2, 100.3, 100.4, 100.5, 100.6, 100.7, 100.8, 100.9, 101.0]
+        n = len(closes)
+        index = pd.date_range("2024-06-03", periods=n, freq="1h")
+        df = pd.DataFrame(
+            {
+                "open": closes,
+                "high": [c + 0.1 for c in closes],
+                "low": [c - 0.1 for c in closes],
+                "close": closes,
+                "volume": [10000] * n,
+                "atr_14": [1.0] * n,
+            },
+            index=index,
+        )
+
+        engine = ProbeEngine(strat, RISK_PROFILES["medium"])
+        result = engine.run(df)
+
+        # Trade 1: signal at bar 0, enter bar 1, time stop 3 bars => exit bar 4
+        # Trade 2: signal at bar 6, enter bar 7, time stop 3 bars => exit bar 10
+        assert len(result) == 2
+        assert result[0].exit_reason == "time_stop"
+        assert result[1].exit_reason == "time_stop"
+
+    def test_max_concurrent_trades_class_attribute(self):
+        """ProbeEngine.MAX_CONCURRENT_TRADES is 1."""
+        assert ProbeEngine.MAX_CONCURRENT_TRADES == 1
+
+
 class TestProbeTradeResult:
     """Tests for ProbeTradeResult dataclass."""
 
@@ -488,3 +574,52 @@ class TestProbeTradeResult:
         assert result.direction == "long"
         assert result.exit_reason == "signal_exit"
         assert result.bars_held == 4
+
+    def test_quantity_defaults_to_one(self):
+        """ProbeTradeResult.quantity defaults to 1."""
+        import datetime
+        result = ProbeTradeResult(
+            entry_time=datetime.datetime(2024, 1, 1, 10, 0),
+            exit_time=datetime.datetime(2024, 1, 1, 14, 0),
+            entry_price=100.0,
+            exit_price=102.0,
+            direction="long",
+            pnl_pct=0.02,
+            bars_held=4,
+            max_drawdown_pct=0.005,
+            max_profit_pct=0.025,
+            pnl_std=0.003,
+            exit_reason="signal_exit",
+        )
+        assert result.quantity == 1
+
+    def test_engine_sets_quantity_one(self):
+        """ProbeEngine produces trades with quantity=1."""
+        entry_cond: ConditionFn = lambda df, idx: idx == 0
+        strat = _make_strategy(
+            entry_long=[entry_cond],
+            direction="long_only",
+            atr_stop_mult=None,
+            time_stop_bars=2,
+        )
+
+        closes = [100, 100.1, 100.2, 100.3, 100.4]
+        n = len(closes)
+        index = pd.date_range("2024-06-03", periods=n, freq="1h")
+        df = pd.DataFrame(
+            {
+                "open": closes,
+                "high": [c + 0.1 for c in closes],
+                "low": [c - 0.1 for c in closes],
+                "close": closes,
+                "volume": [10000] * n,
+                "atr_14": [1.0] * n,
+            },
+            index=index,
+        )
+
+        engine = ProbeEngine(strat, RISK_PROFILES["medium"])
+        result = engine.run(df)
+
+        assert len(result) == 1
+        assert result[0].quantity == 1

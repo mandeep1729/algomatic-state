@@ -26,6 +26,7 @@ class ProbeTradeResult:
     max_profit_pct: float
     pnl_std: float
     exit_reason: str
+    quantity: int = 1  # Position size in units (fixed 1-unit for probe runs)
     entry_justification: Optional[str] = None
     exit_justification: Optional[str] = None
 
