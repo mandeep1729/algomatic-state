@@ -343,11 +343,11 @@ class TestTradeToDbMapping:
             direction="short",
         )
 
-        open_day = trade.entry_time.weekday()
+        open_day = trade.entry_time.date()
         open_hour = trade.entry_time.hour
         direction = trade.direction[:5]
 
-        assert open_day == 0  # Monday
+        assert open_day == datetime.date(2024, 6, 3)
         assert open_hour == 14
         assert direction == "short"
 

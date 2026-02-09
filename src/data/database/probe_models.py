@@ -4,11 +4,12 @@ Stores strategy definitions (catalog), aggregated probe results,
 and detailed per-trade records with entry/exit justifications.
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -78,7 +79,7 @@ class StrategyProbeResult(Base):
     # Dimensions
     timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
     risk_profile: Mapped[str] = mapped_column(String(10), nullable=False)
-    open_day: Mapped[int] = mapped_column(Integer, nullable=False)
+    open_day: Mapped[date] = mapped_column(Date, nullable=False)
     open_hour: Mapped[int] = mapped_column(Integer, nullable=False)
     long_short: Mapped[str] = mapped_column(String(5), nullable=False)
 

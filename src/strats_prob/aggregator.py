@@ -1,6 +1,6 @@
 """Trade result aggregation for probe system.
 
-Groups trades by (open_day, open_hour, long_short) and computes
+Groups trades by (open_day=date, open_hour, long_short) and computes
 aggregate statistics for each group.
 """
 
@@ -26,7 +26,7 @@ def aggregate_trades(
 ) -> list[dict]:
     """Aggregate trade results into probe records grouped by dimensions.
 
-    Groups by (open_day=weekday, open_hour, long_short) and computes:
+    Groups by (open_day=date, open_hour, long_short) and computes:
     - num_trades
     - pnl_mean
     - pnl_std
@@ -56,7 +56,7 @@ def aggregate_trades(
     # Group trades by dimensions
     groups: dict[tuple, list[ProbeTradeResult]] = {}
     for trade in trades:
-        open_day = trade.entry_time.weekday()  # 0=Monday, 6=Sunday
+        open_day = trade.entry_time.date()  # Full calendar date (YYYY-MM-DD)
         open_hour = trade.entry_time.hour
         long_short = trade.direction[:5]  # "long" or "short"
 

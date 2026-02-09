@@ -381,7 +381,7 @@ class ProbeRunner:
                     return
 
                 # Build lookup: (open_day, open_hour, long_short) -> result_id
-                result_id_map: dict[tuple[int, int, str], int] = {}
+                result_id_map: dict[tuple, int] = {}
                 for row in result_rows:
                     key = (row.open_day, row.open_hour, row.long_short)
                     result_id_map[key] = row.id
@@ -389,7 +389,7 @@ class ProbeRunner:
                 # Map trades to result rows
                 trade_dicts = []
                 for trade in trades:
-                    open_day = trade.entry_time.weekday()
+                    open_day = trade.entry_time.date()
                     open_hour = trade.entry_time.hour
                     direction = trade.direction[:5]
                     key = (open_day, open_hour, direction)

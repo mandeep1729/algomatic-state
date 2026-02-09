@@ -79,7 +79,7 @@ class TestAggregateTradesBasic:
         assert record["strategy_id"] == 1
         assert record["timeframe"] == "1Hour"
         assert record["risk_profile"] == "medium"
-        assert record["open_day"] == 0  # Monday
+        assert record["open_day"] == datetime.date(2024, 6, 3)  # Full calendar date
         assert record["open_hour"] == 10
         assert record["long_short"] == "long"
         assert record["num_trades"] == 1
@@ -112,7 +112,7 @@ class TestAggregateTradesGrouping:
 
         assert len(result) == 2
         days = {r["open_day"] for r in result}
-        assert days == {0, 1}  # Monday, Tuesday
+        assert days == {datetime.date(2024, 6, 3), datetime.date(2024, 6, 4)}
 
     def test_groups_by_hour(self):
         """Trades at different hours go into separate groups."""
@@ -159,7 +159,7 @@ class TestAggregateTradesGrouping:
         assert directions == {"long", "short"}
 
     def test_same_group_aggregated(self):
-        """Multiple trades in the same group are aggregated together."""
+        """Multiple trades on the same date/hour/direction are aggregated together."""
         trades = [
             _make_trade(
                 datetime.datetime(2024, 6, 3, 10, 0),
@@ -168,13 +168,13 @@ class TestAggregateTradesGrouping:
                 max_profit_pct=0.03,
             ),
             _make_trade(
-                datetime.datetime(2024, 6, 10, 10, 0),  # Also Monday 10am long
+                datetime.datetime(2024, 6, 3, 10, 30),  # Same date, same hour
                 pnl_pct=0.04,
                 max_drawdown_pct=0.02,
                 max_profit_pct=0.05,
             ),
             _make_trade(
-                datetime.datetime(2024, 6, 17, 10, 0),  # Also Monday 10am long
+                datetime.datetime(2024, 6, 3, 10, 45),  # Same date, same hour
                 pnl_pct=-0.01,
                 max_drawdown_pct=0.03,
                 max_profit_pct=0.01,
@@ -195,20 +195,21 @@ class TestAggregateTradesGrouping:
         assert len(result) == 1
         record = result[0]
         assert record["num_trades"] == 3
-        assert record["open_day"] == 0  # Monday
+        assert record["open_day"] == datetime.date(2024, 6, 3)
         assert record["open_hour"] == 10
         assert record["long_short"] == "long"
 
-
-class TestAggregateTradesStatistics:
-    """Tests for aggregate statistics computation."""
-
-    def test_pnl_mean(self):
-        """Mean P&L is correctly computed."""
+    def test_different_dates_same_weekday_separate_groups(self):
+        """Trades on different dates but same weekday go into separate groups."""
         trades = [
-            _make_trade(datetime.datetime(2024, 6, 3, 10, 0), pnl_pct=0.02),
-            _make_trade(datetime.datetime(2024, 6, 10, 10, 0), pnl_pct=0.04),
-            _make_trade(datetime.datetime(2024, 6, 17, 10, 0), pnl_pct=-0.01),
+            _make_trade(
+                datetime.datetime(2024, 6, 3, 10, 0),  # Monday June 3
+                pnl_pct=0.02,
+            ),
+            _make_trade(
+                datetime.datetime(2024, 6, 10, 10, 0),  # Monday June 10
+                pnl_pct=0.04,
+            ),
         ]
 
         result = aggregate_trades(
@@ -222,6 +223,34 @@ class TestAggregateTradesStatistics:
             period_end=datetime.datetime(2024, 6, 30),
         )
 
+        assert len(result) == 2
+        days = {r["open_day"] for r in result}
+        assert days == {datetime.date(2024, 6, 3), datetime.date(2024, 6, 10)}
+
+
+class TestAggregateTradesStatistics:
+    """Tests for aggregate statistics computation."""
+
+    def test_pnl_mean(self):
+        """Mean P&L is correctly computed."""
+        trades = [
+            _make_trade(datetime.datetime(2024, 6, 3, 10, 0), pnl_pct=0.02),
+            _make_trade(datetime.datetime(2024, 6, 3, 10, 15), pnl_pct=0.04),
+            _make_trade(datetime.datetime(2024, 6, 3, 10, 30), pnl_pct=-0.01),
+        ]
+
+        result = aggregate_trades(
+            trades=trades,
+            strategy_id=1,
+            symbol="AAPL",
+            timeframe="1Hour",
+            risk_profile="medium",
+            run_id="test",
+            period_start=datetime.datetime(2024, 1, 1),
+            period_end=datetime.datetime(2024, 6, 30),
+        )
+
+        assert len(result) == 1
         expected_mean = (0.02 + 0.04 + (-0.01)) / 3
         assert result[0]["pnl_mean"] == pytest.approx(expected_mean, abs=1e-10)
 
@@ -229,7 +258,7 @@ class TestAggregateTradesStatistics:
         """Std P&L is correctly computed (population std)."""
         pnls = [0.02, 0.04, -0.01]
         trades = [
-            _make_trade(datetime.datetime(2024, 6, 3 + 7 * i, 10, 0), pnl_pct=p)
+            _make_trade(datetime.datetime(2024, 6, 3, 10, i * 15), pnl_pct=p)
             for i, p in enumerate(pnls)
         ]
 
@@ -244,6 +273,7 @@ class TestAggregateTradesStatistics:
             period_end=datetime.datetime(2024, 6, 30),
         )
 
+        assert len(result) == 1
         expected_std = float(np.std(pnls))
         assert result[0]["pnl_std"] == pytest.approx(expected_std, abs=1e-10)
 
@@ -268,8 +298,8 @@ class TestAggregateTradesStatistics:
         """Max drawdown is the worst drawdown in the group."""
         trades = [
             _make_trade(datetime.datetime(2024, 6, 3, 10, 0), max_drawdown_pct=0.01),
-            _make_trade(datetime.datetime(2024, 6, 10, 10, 0), max_drawdown_pct=0.05),
-            _make_trade(datetime.datetime(2024, 6, 17, 10, 0), max_drawdown_pct=0.03),
+            _make_trade(datetime.datetime(2024, 6, 3, 10, 15), max_drawdown_pct=0.05),
+            _make_trade(datetime.datetime(2024, 6, 3, 10, 30), max_drawdown_pct=0.03),
         ]
 
         result = aggregate_trades(
@@ -289,8 +319,8 @@ class TestAggregateTradesStatistics:
         """Max profit is the best profit in the group."""
         trades = [
             _make_trade(datetime.datetime(2024, 6, 3, 10, 0), max_profit_pct=0.03),
-            _make_trade(datetime.datetime(2024, 6, 10, 10, 0), max_profit_pct=0.08),
-            _make_trade(datetime.datetime(2024, 6, 17, 10, 0), max_profit_pct=0.05),
+            _make_trade(datetime.datetime(2024, 6, 3, 10, 15), max_profit_pct=0.08),
+            _make_trade(datetime.datetime(2024, 6, 3, 10, 30), max_profit_pct=0.05),
         ]
 
         result = aggregate_trades(
@@ -370,11 +400,31 @@ class TestAggregateTradesMetadata:
         assert required_fields.issubset(set(result[0].keys()))
 
 
-class TestAggregateTradesWeekday:
-    """Tests for weekday dimension."""
+class TestAggregateTradesDateDimension:
+    """Tests for open_day date dimension."""
 
-    def test_weekday_values(self):
-        """Weekday values are 0-6 (Mon-Sun)."""
+    def test_open_day_is_date_object(self):
+        """open_day stores a datetime.date, not an integer."""
+        trades = [
+            _make_trade(datetime.datetime(2024, 6, 3, 10, 0)),
+        ]
+
+        result = aggregate_trades(
+            trades=trades,
+            strategy_id=1,
+            symbol="AAPL",
+            timeframe="1Hour",
+            risk_profile="medium",
+            run_id="test",
+            period_start=datetime.datetime(2024, 1, 1),
+            period_end=datetime.datetime(2024, 6, 30),
+        )
+
+        assert isinstance(result[0]["open_day"], datetime.date)
+        assert result[0]["open_day"] == datetime.date(2024, 6, 3)
+
+    def test_each_date_gets_separate_group(self):
+        """Trades on different dates produce separate groups."""
         # Monday through Friday
         trades = [
             _make_trade(datetime.datetime(2024, 6, 3, 10, 0)),   # Mon
@@ -396,4 +446,33 @@ class TestAggregateTradesWeekday:
         )
 
         days = sorted([r["open_day"] for r in result])
-        assert days == [0, 1, 2, 3, 4]
+        expected = [
+            datetime.date(2024, 6, 3),
+            datetime.date(2024, 6, 4),
+            datetime.date(2024, 6, 5),
+            datetime.date(2024, 6, 6),
+            datetime.date(2024, 6, 7),
+        ]
+        assert days == expected
+
+    def test_cross_month_dates_not_conflated(self):
+        """Trades on same day-of-month in different months are separate groups."""
+        trades = [
+            _make_trade(datetime.datetime(2024, 5, 15, 10, 0)),  # May 15
+            _make_trade(datetime.datetime(2024, 6, 15, 10, 0)),  # June 15
+        ]
+
+        result = aggregate_trades(
+            trades=trades,
+            strategy_id=1,
+            symbol="AAPL",
+            timeframe="1Hour",
+            risk_profile="medium",
+            run_id="test",
+            period_start=datetime.datetime(2024, 1, 1),
+            period_end=datetime.datetime(2024, 6, 30),
+        )
+
+        assert len(result) == 2
+        days = {r["open_day"] for r in result}
+        assert days == {datetime.date(2024, 5, 15), datetime.date(2024, 6, 15)}
