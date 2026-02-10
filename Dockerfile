@@ -22,21 +22,15 @@ COPY --from=builder /usr/local/lib/libta_lib* /usr/local/lib/
 COPY --from=builder /usr/local/include/ta-lib /usr/local/include/ta-lib
 RUN ldconfig
 
-# Create non-root user for security
-RUN groupadd --gid 1000 trader && \
-    useradd --uid 1000 --gid trader --shell /bin/bash --create-home trader
-
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY --chown=trader:trader . .
+COPY . .
 
-# Create logs directory with correct ownership
-RUN mkdir -p /app/logs && chown trader:trader /app/logs
+# Create logs directory (writable by runtime user)
+RUN mkdir -p /app/logs && chmod 777 /app/logs
 
-# Switch to non-root user
-USER trader
-
+# User is set at runtime via docker-compose (user: "${UID}:${GID}")
 CMD ["python", "-m", "src.agent.main"]

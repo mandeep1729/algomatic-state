@@ -11,6 +11,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: trader-momentum-agent
+    user: "${UID}:${GID}"
     environment:
       - AGENT_SYMBOL=${AGENT_SYMBOL:-AAPL}
       - AGENT_INTERVAL_MINUTES=${AGENT_INTERVAL_MINUTES:-15}
@@ -46,6 +47,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: trader-contrarian-agent
+    user: "${UID}:${GID}"
     environment:
       - CONTRARIAN_SYMBOL=${CONTRARIAN_SYMBOL:-TSLA}
       - CONTRARIAN_INTERVAL_MINUTES=${CONTRARIAN_INTERVAL_MINUTES:-5}
@@ -82,6 +84,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: trader-breakout-agent
+    user: "${UID}:${GID}"
     environment:
       - BREAKOUT_SYMBOL=${BREAKOUT_SYMBOL:-GOOG}
       - BREAKOUT_INTERVAL_MINUTES=${BREAKOUT_INTERVAL_MINUTES:-15}
@@ -118,6 +121,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: trader-vwap-agent
+    user: "${UID}:${GID}"
     environment:
       - VWAP_SYMBOL=${VWAP_SYMBOL:-AAPL}
       - VWAP_INTERVAL_MINUTES=${VWAP_INTERVAL_MINUTES:-15}

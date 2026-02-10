@@ -51,10 +51,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
-RUN groupadd --gid 1000 engine && \
-    useradd --uid 1000 --gid engine --shell /bin/bash --create-home engine
-
 # Copy TA-Lib shared library
 COPY --from=builder /usr/local/lib/libta_lib* /usr/local/lib/
 RUN ldconfig
@@ -65,8 +61,6 @@ COPY --from=builder /build/build/indicator-engine /usr/local/bin/indicator-engin
 # Default config (readable by all)
 COPY --chmod=644 config.json.example /etc/indicator-engine/config.json
 
-# Switch to non-root user
-USER engine
-
+# User is set at runtime via docker-compose (user: "${UID}:${GID}")
 ENTRYPOINT ["indicator-engine"]
 CMD ["--config", "/etc/indicator-engine/config.json", "--mode=both"]

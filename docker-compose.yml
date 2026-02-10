@@ -37,6 +37,7 @@ services:
       context: ./indicator-engine
       dockerfile: Dockerfile
     container_name: algomatic-indicator-engine
+    user: "${UID}:${GID}"
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
