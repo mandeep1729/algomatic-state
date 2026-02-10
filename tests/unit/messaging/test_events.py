@@ -20,7 +20,7 @@ class TestEventType:
         assert EventType.MARKET_DATA_FAILED.value == "market_data_failed"
 
     def test_all_members(self):
-        assert len(EventType) == 3
+        assert len(EventType) == 6
 
 
 class TestEvent:

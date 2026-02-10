@@ -95,12 +95,21 @@ def _startup_market_data_orchestrator():
 
 @app.on_event("shutdown")
 def _shutdown_market_data_orchestrator():
-    """Stop the MarketDataOrchestrator cleanly."""
+    """Stop the MarketDataOrchestrator and message bus cleanly."""
     global _market_data_orchestrator
     if _market_data_orchestrator is not None:
         _market_data_orchestrator.stop()
         _market_data_orchestrator = None
         logger.info("MarketDataOrchestrator stopped on app shutdown")
+
+    # Shut down the message bus (releases Redis connections if applicable)
+    try:
+        from src.messaging.bus import get_message_bus
+        bus = get_message_bus()
+        bus.shutdown()
+        logger.info("MessageBus shut down on app shutdown")
+    except Exception as e:
+        logger.warning("Failed to shut down MessageBus: %s", e)
 
 # Include routers
 app.include_router(auth_router)
@@ -1543,6 +1552,7 @@ async def health_check():
         "status": "healthy",
         "api": True,
         "database": False,
+        "redis": False,
         "alpaca": False,
     }
 
@@ -1552,6 +1562,14 @@ async def health_check():
         health["database"] = db_manager.health_check()
     except Exception as e:
         logger.warning(f"Database health check failed: {e}")
+
+    # Check Redis (via message bus)
+    try:
+        from src.messaging.bus import get_message_bus
+        bus = get_message_bus()
+        health["redis"] = bus.health_check()
+    except Exception as e:
+        logger.warning(f"Redis health check failed: {e}")
 
     # Check Alpaca
     if os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_SECRET_KEY"):

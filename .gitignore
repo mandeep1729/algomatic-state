@@ -226,3 +226,4 @@ models/
 # Claude
 .claude
 .llm
+CLAUDE.local.md

@@ -223,6 +223,39 @@ class DatabaseConfig(BaseSettings):
         return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
 
+class RedisConfig(BaseSettings):
+    """Redis configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="REDIS_")
+
+    host: str = Field(default="localhost", description="Redis host")
+    port: int = Field(default=6379, description="Redis port")
+    db: int = Field(default=0, description="Redis database number")
+    password: str = Field(default="", description="Redis password")
+    pool_size: int = Field(default=10, description="Connection pool size")
+    channel_prefix: str = Field(default="algomatic", description="Prefix for Redis pub/sub channels")
+    socket_timeout: float = Field(default=5.0, description="Socket timeout in seconds")
+    retry_on_timeout: bool = Field(default=True, description="Retry on timeout")
+
+    @property
+    def url(self) -> str:
+        """Build Redis connection URL."""
+        if self.password:
+            return f"redis://:{self.password}@{self.host}:{self.port}/{self.db}"
+        return f"redis://{self.host}:{self.port}/{self.db}"
+
+
+class MessagingConfig(BaseSettings):
+    """Messaging system configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="MESSAGING_")
+
+    backend: Literal["memory", "redis"] = Field(
+        default="memory",
+        description="Message bus backend: 'memory' for in-process, 'redis' for cross-process",
+    )
+
+
 class AuthConfig(BaseSettings):
     """Authentication configuration."""
 
@@ -267,6 +300,8 @@ class Settings(BaseSettings):
     backtest: BacktestConfig = Field(default_factory=BacktestConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
+    redis: RedisConfig = Field(default_factory=RedisConfig)
+    messaging: MessagingConfig = Field(default_factory=MessagingConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 

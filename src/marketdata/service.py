@@ -10,10 +10,7 @@ import pandas as pd
 
 from src.data.database.connection import DatabaseManager, get_db_manager
 from src.data.database.market_repository import OHLCVRepository
-from src.data.loaders.database_loader import (
-    AGGREGATABLE_TIMEFRAMES,
-    aggregate_ohlcv,
-)
+from src.data.loaders.database_loader import AGGREGATABLE_TIMEFRAMES
 from src.marketdata.base import MarketDataProvider
 
 logger = logging.getLogger(__name__)
@@ -85,7 +82,13 @@ class MarketDataService:
             Mapping of ``timeframe -> new_bars_inserted``.
         """
         symbol = symbol.upper()
-        end = end or datetime.now(timezone.utc).replace(tzinfo=None)
+        # Normalize to naive datetimes (UTC assumed) for consistent comparison with DB
+        if end is None:
+            end = datetime.now(timezone.utc)
+        if end.tzinfo is not None:
+            end = end.replace(tzinfo=None)
+        if start is not None and start.tzinfo is not None:
+            start = start.replace(tzinfo=None)
 
         # Request coalescing key: symbol is sufficient since we always fetch
         # all requested timeframes together
@@ -312,37 +315,18 @@ class MarketDataService:
         start: Optional[datetime],
         end: datetime,
     ) -> int:
-        """Aggregate 1Min data to a higher intraday timeframe and insert."""
+        """Aggregate 1Min data to a higher intraday timeframe and insert.
+
+        Delegates to :class:`TimeframeAggregator` which is the canonical
+        aggregation path.
+        """
+        from src.data.timeframe_aggregator import TimeframeAggregator
+
         logger.debug("Aggregating %s for %s from %s to %s", target_tf, symbol, start, end)
         try:
-            df_1min = repo.get_bars(symbol, "1Min", start, end)
-            if df_1min.empty:
-                logger.warning("No 1Min data to aggregate for %s/%s", symbol, target_tf)
-                return 0
-
-            df_agg = aggregate_ohlcv(df_1min, target_tf)
-            if df_agg.empty:
-                return 0
-
-            rows = repo.bulk_insert_bars(
-                df=df_agg,
-                ticker_id=ticker.id,
-                timeframe=target_tf,
-                source="aggregated",
+            return TimeframeAggregator.aggregate_intraday_range(
+                repo, ticker, symbol, target_tf, start, end,
             )
-
-            repo.update_sync_log(
-                ticker_id=ticker.id,
-                timeframe=target_tf,
-                last_synced_timestamp=df_agg.index.max(),
-                first_synced_timestamp=df_agg.index.min(),
-                bars_fetched=rows,
-                status="success",
-            )
-
-            logger.info("Aggregated %d %s bars for %s", rows, target_tf, symbol)
-            return rows
-
         except Exception as e:
             logger.error("Failed to aggregate %s for %s: %s", target_tf, symbol, e)
             return 0

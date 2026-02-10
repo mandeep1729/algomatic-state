@@ -494,8 +494,11 @@ class ContextPackBuilder:
         """Publish a ``MARKET_DATA_REQUEST`` so the orchestrator fetches
         any missing bars *before* the builder reads from the DB.
 
-        Uses a lazy import to avoid circular dependencies (messaging
-        does not depend on evaluators and vice-versa).
+        When the messaging backend is Redis, also publishes
+        ``INDICATOR_COMPUTE_REQUEST`` events so the C++ indicator engine
+        computes features for any new bars.
+
+        Uses lazy imports to avoid circular dependencies.
         """
         try:
             from src.messaging.events import Event, EventType
@@ -512,6 +515,10 @@ class ContextPackBuilder:
                 },
                 source="ContextPackBuilder",
             ))
+
+            # Request indicator computation from the C++ engine (if available)
+            self._request_indicator_computation(bus, symbol, timeframes)
+
         except Exception:
             logger.warning(
                 "Failed to request fresh data via messaging for %s; "
@@ -519,6 +526,48 @@ class ContextPackBuilder:
                 symbol,
                 exc_info=True,
             )
+
+    def _request_indicator_computation(
+        self, bus, symbol: str, timeframes: list[str]
+    ) -> None:
+        """Publish ``INDICATOR_COMPUTE_REQUEST`` and wait for completion.
+
+        Only runs when the messaging backend is Redis.  Failures are
+        logged but do not prevent the context builder from proceeding
+        with existing features in the DB.
+        """
+        try:
+            from config.settings import get_settings
+            if get_settings().messaging.backend != "redis":
+                return
+        except Exception:
+            return
+
+        from src.messaging.events import Event, EventType
+
+        for tf in timeframes:
+            try:
+                response = bus.publish_and_wait(
+                    Event(
+                        event_type=EventType.INDICATOR_COMPUTE_REQUEST,
+                        payload={"symbol": symbol, "timeframe": tf},
+                        source="ContextPackBuilder",
+                    ),
+                    EventType.INDICATOR_COMPUTE_COMPLETE,
+                    timeout=30.0,
+                )
+                if response:
+                    logger.debug(
+                        "Indicator engine computed %s/%s: %d bars",
+                        symbol, tf, response.payload.get("bars_computed", 0),
+                    )
+            except Exception:
+                logger.debug(
+                    "Indicator compute request failed for %s/%s, "
+                    "proceeding with existing features",
+                    symbol, tf,
+                    exc_info=True,
+                )
 
     def _compute_key_levels(self, daily_bars: pd.DataFrame) -> KeyLevels:
         """Compute key price levels from daily bars.

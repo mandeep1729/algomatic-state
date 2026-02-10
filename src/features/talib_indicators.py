@@ -167,6 +167,52 @@ class TALibIndicatorCalculator(BaseFeatureCalculator):
             FeatureSpec("pivot_r2", "Resistance 2", 1, "support_resistance"),
             FeatureSpec("pivot_s1", "Support 1", 1, "support_resistance"),
             FeatureSpec("pivot_s2", "Support 2", 1, "support_resistance"),
+            # Directional indicators
+            FeatureSpec("plus_di_14", "Plus Directional Indicator (14)", self.adx_period * 2, "directional"),
+            FeatureSpec("minus_di_14", "Minus Directional Indicator (14)", self.adx_period * 2, "directional"),
+            FeatureSpec("aroon_up_25", "Aroon Up (25)", 26, "directional"),
+            FeatureSpec("aroon_down_25", "Aroon Down (25)", 26, "directional"),
+            # Additional oscillators
+            FeatureSpec("apo", "Absolute Price Oscillator (12,26)", 26, "momentum"),
+            FeatureSpec("trix_15", "TRIX (15)", 16, "momentum"),
+            FeatureSpec("ppo", "Percentage Price Oscillator (12,26)", 26, "momentum"),
+            FeatureSpec("ppo_signal", "PPO Signal (9)", 35, "momentum"),
+            FeatureSpec("cmo_14", "Chande Momentum Oscillator (14)", 15, "momentum"),
+            FeatureSpec("rsi_2", "RSI (2) Quick", 3, "momentum"),
+            FeatureSpec("roc_10", "Rate of Change (10)", 11, "momentum"),
+            FeatureSpec("mom_10", "Momentum (10)", 11, "momentum"),
+            # Additional overlap/trend
+            FeatureSpec("kama_30", "Kaufman Adaptive MA (30)", 31, "trend"),
+            FeatureSpec("ht_trendline", "Hilbert Transform Trendline", 64, "trend"),
+            FeatureSpec("linearreg_slope_20", "Linear Regression Slope (20)", 20, "trend"),
+            # Statistics
+            FeatureSpec("stddev_20", "Standard Deviation (20)", 20, "statistics"),
+            # Volume flow
+            FeatureSpec("adosc", "Accumulation/Distribution Oscillator (3,10)", 11, "volume"),
+            # Derived composites
+            FeatureSpec("donchian_high_20", "Donchian High (20)", 20, "derived"),
+            FeatureSpec("donchian_low_20", "Donchian Low (20)", 20, "derived"),
+            FeatureSpec("donchian_mid_20", "Donchian Mid (20)", 20, "derived"),
+            FeatureSpec("donchian_high_10", "Donchian High (10)", 10, "derived"),
+            FeatureSpec("donchian_low_10", "Donchian Low (10)", 10, "derived"),
+            FeatureSpec("atr_sma_50", "ATR SMA (50)", 65, "derived"),
+            FeatureSpec("obv_sma_20", "OBV SMA (20)", 21, "derived"),
+            FeatureSpec("obv_high_20", "OBV 20-bar High", 20, "derived"),
+            FeatureSpec("obv_low_20", "OBV 20-bar Low", 20, "derived"),
+            FeatureSpec("typical_price_sma_20", "Typical Price SMA (20)", 20, "derived"),
+            FeatureSpec("volume_sma_20", "Volume SMA (20)", 20, "derived"),
+            FeatureSpec("bar_range", "Bar Range (high - low)", 1, "derived"),
+            # Candlestick patterns
+            FeatureSpec("cdl_engulfing", "Engulfing Pattern", 2, "pattern"),
+            FeatureSpec("cdl_hammer", "Hammer", 1, "pattern"),
+            FeatureSpec("cdl_shooting_star", "Shooting Star", 1, "pattern"),
+            FeatureSpec("cdl_morning_star", "Morning Star", 3, "pattern"),
+            FeatureSpec("cdl_evening_star", "Evening Star", 3, "pattern"),
+            FeatureSpec("cdl_doji", "Doji", 1, "pattern"),
+            FeatureSpec("cdl_3white_soldiers", "Three White Soldiers", 3, "pattern"),
+            FeatureSpec("cdl_3black_crows", "Three Black Crows", 3, "pattern"),
+            FeatureSpec("cdl_harami", "Harami", 2, "pattern"),
+            FeatureSpec("cdl_marubozu", "Marubozu", 1, "pattern"),
         ]
 
         # Add SMA specs
@@ -211,11 +257,23 @@ class TALibIndicatorCalculator(BaseFeatureCalculator):
         volume_df = self._compute_volume(df)
         ichimoku_df = self._compute_ichimoku(df)
         pivot_df = self._compute_pivot_points(df)
+        directional_df = self._compute_directional(df)
+        extra_osc_df = self._compute_additional_oscillators(df)
+        extra_trend_df = self._compute_additional_trend(df)
+        candle_df = self._compute_candle_patterns(df)
 
         # Combine all results
-        for features_df in [momentum_df, trend_df, volatility_df, volume_df, ichimoku_df, pivot_df]:
+        for features_df in [
+            momentum_df, trend_df, volatility_df, volume_df, ichimoku_df, pivot_df,
+            directional_df, extra_osc_df, extra_trend_df, candle_df,
+        ]:
             for col in features_df.columns:
                 result[col] = features_df[col]
+
+        # Derived composites (depend on primary indicators already in result)
+        derived_df = self._compute_derived(df, result)
+        for col in derived_df.columns:
+            result[col] = derived_df[col]
 
         return result
 
@@ -402,5 +460,123 @@ class TALibIndicatorCalculator(BaseFeatureCalculator):
         result["pivot_r2"] = pivot + (high - low)
         result["pivot_s1"] = 2 * pivot - high
         result["pivot_s2"] = pivot - (high - low)
+
+        return result
+
+    def _compute_directional(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Compute directional indicators (PLUS_DI, MINUS_DI, AROON)."""
+        result = pd.DataFrame(index=df.index)
+
+        high = df["high"].values.astype(float)
+        low = df["low"].values.astype(float)
+        close = df["close"].values.astype(float)
+
+        result["plus_di_14"] = talib.PLUS_DI(high, low, close, timeperiod=self.adx_period)
+        result["minus_di_14"] = talib.MINUS_DI(high, low, close, timeperiod=self.adx_period)
+
+        aroon_down, aroon_up = talib.AROON(high, low, timeperiod=25)
+        result["aroon_up_25"] = aroon_up
+        result["aroon_down_25"] = aroon_down
+
+        return result
+
+    def _compute_additional_oscillators(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Compute additional oscillators (APO, TRIX, PPO, CMO, RSI2, ROC, MOM)."""
+        result = pd.DataFrame(index=df.index)
+
+        close = df["close"].values.astype(float)
+
+        result["apo"] = talib.APO(close, fastperiod=12, slowperiod=26, matype=1)
+        result["trix_15"] = talib.TRIX(close, timeperiod=15)
+        result["ppo"] = talib.PPO(close, fastperiod=12, slowperiod=26, matype=1)
+        ppo_vals = result["ppo"].values.astype(float)
+        result["ppo_signal"] = talib.EMA(ppo_vals, timeperiod=9)
+        result["cmo_14"] = talib.CMO(close, timeperiod=14)
+        result["rsi_2"] = talib.RSI(close, timeperiod=2)
+        result["roc_10"] = talib.ROC(close, timeperiod=10)
+        result["mom_10"] = talib.MOM(close, timeperiod=10)
+
+        return result
+
+    def _compute_additional_trend(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Compute additional trend indicators (KAMA, HT_TRENDLINE, LINEARREG_SLOPE, STDDEV, ADOSC)."""
+        result = pd.DataFrame(index=df.index)
+
+        close = df["close"].values.astype(float)
+        high = df["high"].values.astype(float)
+        low = df["low"].values.astype(float)
+        volume = df["volume"].values.astype(float)
+
+        result["kama_30"] = talib.KAMA(close, timeperiod=30)
+        result["ht_trendline"] = talib.HT_TRENDLINE(close)
+        result["linearreg_slope_20"] = talib.LINEARREG_SLOPE(close, timeperiod=20)
+        result["stddev_20"] = talib.STDDEV(close, timeperiod=20, nbdev=1)
+        result["adosc"] = talib.ADOSC(high, low, close, volume, fastperiod=3, slowperiod=10)
+
+        return result
+
+    def _compute_candle_patterns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Compute candlestick pattern recognition indicators."""
+        result = pd.DataFrame(index=df.index)
+
+        o = df["open"].values.astype(float)
+        h = df["high"].values.astype(float)
+        l = df["low"].values.astype(float)
+        c = df["close"].values.astype(float)
+
+        result["cdl_engulfing"] = talib.CDLENGULFING(o, h, l, c)
+        result["cdl_hammer"] = talib.CDLHAMMER(o, h, l, c)
+        result["cdl_shooting_star"] = talib.CDLSHOOTINGSTAR(o, h, l, c)
+        result["cdl_morning_star"] = talib.CDLMORNINGSTAR(o, h, l, c)
+        result["cdl_evening_star"] = talib.CDLEVENINGSTAR(o, h, l, c)
+        result["cdl_doji"] = talib.CDLDOJI(o, h, l, c)
+        result["cdl_3white_soldiers"] = talib.CDL3WHITESOLDIERS(o, h, l, c)
+        result["cdl_3black_crows"] = talib.CDL3BLACKCROWS(o, h, l, c)
+        result["cdl_harami"] = talib.CDLHARAMI(o, h, l, c)
+        result["cdl_marubozu"] = talib.CDLMARUBOZU(o, h, l, c)
+
+        return result
+
+    def _compute_derived(self, df: pd.DataFrame, indicators: pd.DataFrame) -> pd.DataFrame:
+        """Compute derived/composite indicators that depend on primary indicators.
+
+        Args:
+            df: Original OHLCV DataFrame
+            indicators: DataFrame with already-computed primary indicators
+        """
+        result = pd.DataFrame(index=df.index)
+
+        high = df["high"]
+        low = df["low"]
+        close = df["close"]
+        volume = df["volume"].astype(float)
+
+        # Donchian channels
+        result["donchian_high_20"] = high.rolling(window=20).max()
+        result["donchian_low_20"] = low.rolling(window=20).min()
+        result["donchian_mid_20"] = (result["donchian_high_20"] + result["donchian_low_20"]) / 2
+        result["donchian_high_10"] = high.rolling(window=10).max()
+        result["donchian_low_10"] = low.rolling(window=10).min()
+
+        # ATR SMA(50) for volatility regime detection
+        if "atr_14" in indicators.columns:
+            result["atr_sma_50"] = indicators["atr_14"].rolling(window=50).mean()
+
+        # OBV derived
+        if "obv" in indicators.columns:
+            obv = indicators["obv"]
+            result["obv_sma_20"] = obv.rolling(window=20).mean()
+            result["obv_high_20"] = obv.rolling(window=20).max()
+            result["obv_low_20"] = obv.rolling(window=20).min()
+
+        # Typical price SMA (VWAP proxy)
+        typical_price = (high + low + close) / 3
+        result["typical_price_sma_20"] = typical_price.rolling(window=20).mean()
+
+        # Volume SMA for spike detection
+        result["volume_sma_20"] = volume.rolling(window=20).mean()
+
+        # Bar range
+        result["bar_range"] = high - low
 
         return result

@@ -6,10 +6,11 @@
 
 services:
   momentum-agent:
+    image: trader/momentum-agent:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: algomatic-momentum-agent
+    container_name: trader-momentum-agent
     environment:
       - AGENT_SYMBOL=${AGENT_SYMBOL:-AAPL}
       - AGENT_INTERVAL_MINUTES=${AGENT_INTERVAL_MINUTES:-15}
@@ -30,6 +31,9 @@ services:
       - DB_NAME=${DB_NAME:-algomatic}
       - DB_USER=${DB_USER:-algomatic}
       - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
     volumes:
       - /home/mandeep/projects/algomatic/momentum-agent-logs:/app/logs
     networks:
@@ -37,10 +41,11 @@ services:
     restart: unless-stopped
 
   contrarian-agent:
+    image: trader/contrarian-agent:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: algomatic-contrarian-agent
+    container_name: trader-contrarian-agent
     environment:
       - CONTRARIAN_SYMBOL=${CONTRARIAN_SYMBOL:-TSLA}
       - CONTRARIAN_INTERVAL_MINUTES=${CONTRARIAN_INTERVAL_MINUTES:-15}
@@ -61,6 +66,9 @@ services:
       - DB_NAME=${DB_NAME:-algomatic}
       - DB_USER=${DB_USER:-algomatic}
       - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
     volumes:
       - /home/mandeep/projects/algomatic/contrarian-agent-logs:/app/logs
     command: python -m src.agent.contrarian_main
@@ -69,10 +77,11 @@ services:
     restart: unless-stopped
 
   breakout-agent:
+    image: trader/breakout-agent:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: algomatic-breakout-agent
+    container_name: trader-breakout-agent
     environment:
       - BREAKOUT_SYMBOL=${BREAKOUT_SYMBOL:-GOOG}
       - BREAKOUT_INTERVAL_MINUTES=${BREAKOUT_INTERVAL_MINUTES:-15}
@@ -93,6 +102,9 @@ services:
       - DB_NAME=${DB_NAME:-algomatic}
       - DB_USER=${DB_USER:-algomatic}
       - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
     volumes:
       - /home/mandeep/projects/algomatic/breakout-agent-logs:/app/logs
     command: python -m src.agent.breakout_main
@@ -101,10 +113,11 @@ services:
     restart: unless-stopped
 
   vwap-agent:
+    image: trader/vwap-agent:latest
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: algomatic-vwap-agent
+    container_name: trader-vwap-agent
     environment:
       - VWAP_SYMBOL=${VWAP_SYMBOL:-AAPL}
       - VWAP_INTERVAL_MINUTES=${VWAP_INTERVAL_MINUTES:-15}
@@ -125,6 +138,9 @@ services:
       - DB_NAME=${DB_NAME:-algomatic}
       - DB_USER=${DB_USER:-algomatic}
       - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
     volumes:
       - /home/mandeep/projects/algomatic/vwap-agent-logs:/app/logs
     command: python -m src.agent.vwap_main
@@ -134,5 +150,5 @@ services:
 
 networks:
   algomatic:
-    name: tradewing-finnhub_default
+    name: algomatic-state_default
     external: true

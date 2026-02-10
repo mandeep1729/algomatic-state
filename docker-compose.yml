@@ -17,6 +17,44 @@ services:
       retries: 5
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    container_name: algomatic-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  indicator-engine:
+    build:
+      context: ./indicator-engine
+      dockerfile: Dockerfile
+    container_name: algomatic-indicator-engine
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-algomatic}
+      - DB_USER=${DB_USER:-algomatic}
+      - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ENGINE_MODE=${ENGINE_MODE:-both}
+      - ENGINE_LOG_LEVEL=${ENGINE_LOG_LEVEL:-info}
+      - ENGINE_INTERVAL_MINUTES=${ENGINE_INTERVAL_MINUTES:-15}
+      - FEATURE_VERSION=${FEATURE_VERSION:-v2.0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Optional: pgAdmin for database management (start with --profile tools)
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -39,5 +77,7 @@ services:
 volumes:
   postgres_data:
     name: algomatic_postgres_data
+  redis_data:
+    name: algomatic_redis_data
   pgadmin_data:
     name: algomatic_pgadmin_data
