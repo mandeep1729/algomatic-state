@@ -82,7 +82,13 @@ class MarketDataService:
             Mapping of ``timeframe -> new_bars_inserted``.
         """
         symbol = symbol.upper()
-        end = end or datetime.now(timezone.utc).replace(tzinfo=None)
+        # Normalize to naive datetimes (UTC assumed) for consistent comparison with DB
+        if end is None:
+            end = datetime.now(timezone.utc)
+        if end.tzinfo is not None:
+            end = end.replace(tzinfo=None)
+        if start is not None and start.tzinfo is not None:
+            start = start.replace(tzinfo=None)
 
         # Request coalescing key: symbol is sufficient since we always fetch
         # all requested timeframes together
