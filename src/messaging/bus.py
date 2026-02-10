@@ -5,15 +5,13 @@ import logging
 import threading
 from typing import Callable
 
+from src.messaging.base import MessageBusBase, Subscriber
 from src.messaging.events import Event, EventType
 
 logger = logging.getLogger(__name__)
 
-# Type alias for subscriber callbacks
-Subscriber = Callable[[Event], None]
 
-
-class MessageBus:
+class InMemoryMessageBus(MessageBusBase):
     """Thread-safe in-memory publish/subscribe message bus.
 
     Publish is synchronous: when ``publish()`` returns, all subscribers
@@ -108,23 +106,51 @@ class MessageBus:
                 )
 
 
+# Backward-compatible alias
+MessageBus = InMemoryMessageBus
+
+
 # ---------------------------------------------------------------------------
 # Singleton accessor
 # ---------------------------------------------------------------------------
 
-_message_bus: MessageBus | None = None
+_message_bus: MessageBusBase | None = None
 _singleton_lock = threading.Lock()
 
 
-def get_message_bus() -> MessageBus:
-    """Return the process-wide ``MessageBus`` singleton."""
+def get_message_bus() -> MessageBusBase:
+    """Return the process-wide ``MessageBus`` singleton.
+
+    The backend is determined by ``settings.messaging.backend``:
+    - ``"memory"`` (default): :class:`InMemoryMessageBus`
+    - ``"redis"``: :class:`~src.messaging.redis_bus.RedisMessageBus`
+    """
     global _message_bus
     if _message_bus is None:
         with _singleton_lock:
             if _message_bus is None:
-                _message_bus = MessageBus()
-                logger.info("Created MessageBus singleton")
+                _message_bus = _create_bus()
+                logger.info("Created MessageBus singleton (%s)", type(_message_bus).__name__)
     return _message_bus
+
+
+def _create_bus() -> MessageBusBase:
+    """Instantiate the configured message bus backend."""
+    try:
+        from config.settings import get_settings
+        backend = get_settings().messaging.backend
+    except Exception:
+        backend = "memory"
+
+    if backend == "redis":
+        try:
+            from src.messaging.redis_bus import RedisMessageBus
+            return RedisMessageBus()
+        except Exception:
+            logger.warning("Failed to create RedisMessageBus, falling back to InMemoryMessageBus", exc_info=True)
+            return InMemoryMessageBus()
+
+    return InMemoryMessageBus()
 
 
 def reset_message_bus() -> None:
@@ -134,5 +160,7 @@ def reset_message_bus() -> None:
     """
     global _message_bus
     with _singleton_lock:
+        if _message_bus is not None:
+            _message_bus.shutdown()
         _message_bus = None
     logger.debug("MessageBus singleton reset")

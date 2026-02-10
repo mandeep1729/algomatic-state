@@ -16,6 +16,10 @@ class EventType(Enum):
     MARKET_DATA_UPDATED = "market_data_updated"
     MARKET_DATA_FAILED = "market_data_failed"
 
+    INDICATOR_COMPUTE_REQUEST = "indicator_compute_request"
+    INDICATOR_COMPUTE_COMPLETE = "indicator_compute_complete"
+    INDICATOR_COMPUTE_FAILED = "indicator_compute_failed"
+
 
 @dataclass(frozen=True)
 class Event:
@@ -34,3 +38,14 @@ class Event:
     source: str
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    def to_dict(self) -> dict:
+        """Serialize to a JSON-compatible dictionary."""
+        from src.messaging.serialization import event_to_dict
+        return event_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Event":
+        """Deserialize from a dictionary."""
+        from src.messaging.serialization import event_from_dict
+        return event_from_dict(data)

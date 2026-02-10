@@ -5,7 +5,8 @@ from typing import Optional
 
 from src.marketdata.base import MarketDataProvider
 from src.marketdata.service import MarketDataService
-from src.messaging.bus import MessageBus, get_message_bus
+from src.messaging.base import MessageBusBase
+from src.messaging.bus import get_message_bus
 from src.messaging.events import Event, EventType
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ class MarketDataOrchestrator:
     def __init__(
         self,
         provider: MarketDataProvider,
-        message_bus: Optional[MessageBus] = None,
+        message_bus: Optional[MessageBusBase] = None,
     ) -> None:
         self.service = MarketDataService(provider)
         self._bus = message_bus or get_message_bus()

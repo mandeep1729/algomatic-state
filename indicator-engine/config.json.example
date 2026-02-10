@@ -1,0 +1,24 @@
+{
+  "database": {
+    "host": "postgres",
+    "port": 5432,
+    "dbname": "algomatic",
+    "user": "algomatic",
+    "password": "algomatic_dev"
+  },
+  "redis": {
+    "host": "redis",
+    "port": 6379,
+    "channel_prefix": "algomatic"
+  },
+  "service": {
+    "interval_minutes": 15,
+    "mode": "both",
+    "log_level": "info",
+    "feature_version": "v2.0"
+  },
+  "indicators": {
+    "timeframes": ["1Min", "5Min", "15Min", "1Hour", "1Day"],
+    "lookback_buffer": 250
+  }
+}

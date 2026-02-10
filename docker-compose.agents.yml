@@ -30,6 +30,9 @@ services:
       - DB_NAME=${DB_NAME:-algomatic}
       - DB_USER=${DB_USER:-algomatic}
       - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
     volumes:
       - /home/mandeep/projects/algomatic/momentum-agent-logs:/app/logs
     networks:
@@ -61,6 +64,9 @@ services:
       - DB_NAME=${DB_NAME:-algomatic}
       - DB_USER=${DB_USER:-algomatic}
       - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
     volumes:
       - /home/mandeep/projects/algomatic/contrarian-agent-logs:/app/logs
     command: python -m src.agent.contrarian_main
@@ -93,6 +99,9 @@ services:
       - DB_NAME=${DB_NAME:-algomatic}
       - DB_USER=${DB_USER:-algomatic}
       - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
     volumes:
       - /home/mandeep/projects/algomatic/breakout-agent-logs:/app/logs
     command: python -m src.agent.breakout_main
@@ -125,6 +134,9 @@ services:
       - DB_NAME=${DB_NAME:-algomatic}
       - DB_USER=${DB_USER:-algomatic}
       - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
     volumes:
       - /home/mandeep/projects/algomatic/vwap-agent-logs:/app/logs
     command: python -m src.agent.vwap_main

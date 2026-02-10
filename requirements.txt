@@ -34,3 +34,6 @@ google-auth>=2.25.0
 
 # Agent dependencies
 httpx>=0.25.0
+
+# Messaging dependencies
+redis>=5.0.0
