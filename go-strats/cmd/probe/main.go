@@ -1,13 +1,20 @@
 // Command probe runs strategy probes from the command line.
 //
-// Usage:
+// Usage (CSV mode -- existing):
 //
-//	go run ./cmd/probe --strategy 1 --risk-profile medium
+//	go run ./cmd/probe --strategy 1 --risk-profile medium --csv data.csv
+//
+// Usage (API mode -- new):
+//
+//	go run ./cmd/probe --strategy 1 --risk-profile medium \
+//	    --api-url http://localhost:8000 --symbol AAPL --timeframe 1Hour \
+//	    --start 2024-01-01 --end 2024-06-01
 //
 // Or use --all to run all 100 strategies.
 package main
 
 import (
+	"context"
 	"encoding/csv"
 	"flag"
 	"fmt"
@@ -18,18 +25,31 @@ import (
 	"sync"
 	"time"
 
+	"github.com/algomatic/strats100/go-strats/pkg/backend"
 	"github.com/algomatic/strats100/go-strats/pkg/engine"
 	"github.com/algomatic/strats100/go-strats/pkg/strategy"
 	"github.com/algomatic/strats100/go-strats/pkg/types"
 )
 
 func main() {
+	// Strategy selection flags
 	strategyID := flag.Int("strategy", 0, "Strategy ID to run (1-100)")
 	riskProfile := flag.String("risk-profile", "medium", "Risk profile: low, medium, high")
-	csvFile := flag.String("csv", "", "Path to CSV file with OHLCV + indicators data")
 	runAll := flag.Bool("all", false, "Run all 100 strategies")
 	listStrats := flag.Bool("list", false, "List all registered strategies")
 	outputFile := flag.String("output", "", "Path for output CSV (default: stdout)")
+
+	// Data source: CSV file (existing)
+	csvFile := flag.String("csv", "", "Path to CSV file with OHLCV + indicators data")
+
+	// Data source: Backend API (new)
+	apiURL := flag.String("api-url", envOrDefault("BACKEND_API_URL", ""), "Python backend API base URL (e.g. http://localhost:8000)")
+	symbol := flag.String("symbol", "", "Ticker symbol for API mode (e.g. AAPL)")
+	timeframe := flag.String("timeframe", "", "Bar timeframe for API mode (e.g. 1Min, 15Min, 1Hour, 1Day)")
+	startDate := flag.String("start", "", "Start date for API mode (ISO format, e.g. 2024-01-01)")
+	endDate := flag.String("end", "", "End date for API mode (ISO format, e.g. 2024-06-01)")
+	apiTimeout := flag.Duration("api-timeout", 30*time.Second, "Timeout per API request")
+
 	flag.Parse()
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -45,19 +65,39 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *csvFile == "" {
-		fmt.Fprintln(os.Stderr, "Error: must specify --csv path to data file")
+	// Load data from CSV or API
+	var bars []types.BarData
+	var err error
+
+	switch {
+	case *csvFile != "" && *apiURL != "":
+		fmt.Fprintln(os.Stderr, "Error: specify either --csv or --api-url, not both")
+		os.Exit(1)
+
+	case *csvFile != "":
+		bars, err = loadCSV(*csvFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading CSV: %v\n", err)
+			os.Exit(1)
+		}
+		logger.Info("Loaded bar data from CSV", "bars", len(bars), "file", *csvFile)
+
+	case *apiURL != "":
+		bars, err = loadFromAPI(logger, *apiURL, *symbol, *timeframe, *startDate, *endDate, *apiTimeout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading data from API: %v\n", err)
+			os.Exit(1)
+		}
+		logger.Info("Loaded bar data from API",
+			"bars", len(bars), "symbol", *symbol,
+			"timeframe", *timeframe, "api_url", *apiURL,
+		)
+
+	default:
+		fmt.Fprintln(os.Stderr, "Error: must specify --csv or --api-url for data source")
 		flag.Usage()
 		os.Exit(1)
 	}
-
-	// Load data
-	bars, err := loadCSV(*csvFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading CSV: %v\n", err)
-		os.Exit(1)
-	}
-	logger.Info("Loaded bar data", "bars", len(bars), "file", *csvFile)
 
 	rp := types.RiskProfileByName(*riskProfile)
 
@@ -152,6 +192,66 @@ func main() {
 			})
 		}
 	}
+}
+
+// loadFromAPI fetches bar data from the Python backend API.
+func loadFromAPI(
+	logger *slog.Logger,
+	apiURL, symbol, timeframe, startDate, endDate string,
+	timeout time.Duration,
+) ([]types.BarData, error) {
+	// Validate required API parameters
+	if symbol == "" {
+		return nil, fmt.Errorf("--symbol is required when using --api-url")
+	}
+	if timeframe == "" {
+		return nil, fmt.Errorf("--timeframe is required when using --api-url")
+	}
+	if startDate == "" {
+		return nil, fmt.Errorf("--start is required when using --api-url")
+	}
+	if endDate == "" {
+		return nil, fmt.Errorf("--end is required when using --api-url")
+	}
+
+	start, err := parseTimestamp(startDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --start: %w", err)
+	}
+	end, err := parseTimestamp(endDate)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --end: %w", err)
+	}
+
+	client := backend.NewClient(apiURL, &backend.Config{
+		Timeout:     timeout,
+		Logger:      logger,
+		EnableCache: true,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	barData, err := client.GetBarData(ctx, symbol, timeframe, start, end)
+	if err != nil {
+		return nil, fmt.Errorf("fetching bar data: %w", err)
+	}
+
+	if len(barData) == 0 {
+		return nil, fmt.Errorf("no data returned from API for %s/%s (%s to %s)",
+			symbol, timeframe, startDate, endDate)
+	}
+
+	return barData, nil
+}
+
+// envOrDefault returns the value of an environment variable,
+// or the given default if the variable is unset or empty.
+func envOrDefault(key, defaultVal string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return defaultVal
 }
 
 func listStrategies() {
