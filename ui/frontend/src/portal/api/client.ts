@@ -683,3 +683,29 @@ export async function fetchStrategyProbe(
     `/api/strategy-probe/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
   );
 }
+
+// =============================================================================
+// Theme Strategies — GET /api/strategy-probe/strategies/{strategy_type}
+// Returns all strategies belonging to a theme with their details
+// =============================================================================
+
+export interface ThemeStrategyDetail {
+  display_name: string;
+  name: string;
+  philosophy: string;
+  direction: string;
+  details: Record<string, unknown>;
+}
+
+export interface ThemeStrategiesResponse {
+  strategy_type: string;
+  strategies: ThemeStrategyDetail[];
+}
+
+export async function fetchThemeStrategies(
+  strategyType: string,
+): Promise<ThemeStrategiesResponse> {
+  return get<ThemeStrategiesResponse>(
+    `/api/strategy-probe/strategies/${encodeURIComponent(strategyType)}`,
+  );
+}

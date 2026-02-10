@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { fetchStrategyProbe, fetchOHLCVData } from '../../api';
-import type { StrategyProbeResponse, WeekPerformance, OHLCVData } from '../../api';
+import { fetchStrategyProbe, fetchOHLCVData, fetchThemeStrategies } from '../../api';
+import type { StrategyProbeResponse, WeekPerformance, OHLCVData, ThemeStrategiesResponse, ThemeStrategyDetail } from '../../api';
 
 function defaultStartDate(): string {
   const d = new Date();
@@ -267,15 +267,167 @@ function WeekCandles({
 }
 
 // ---------------------------------------------------------------------------
+// Theme detail modal
+// ---------------------------------------------------------------------------
+
+function ThemeDetailModal({
+  theme,
+  data,
+  loading,
+  error,
+  onClose,
+}: {
+  theme: string;
+  data: ThemeStrategiesResponse | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  const n = normalize(theme);
+  const color = getThemeColor(n);
+  const label = getThemeLabel(n);
+
+  // Close on Escape key
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        className="relative max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span
+              className="flex h-8 w-8 items-center justify-center rounded text-sm font-bold text-white"
+              style={{ backgroundColor: color }}
+            >
+              {getThemeLetter(n)}
+            </span>
+            <h2 className="text-lg font-semibold text-[var(--text-primary)]">{label} Strategies</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+            aria-label="Close"
+          >
+            X
+          </button>
+        </div>
+
+        {/* Content */}
+        {loading && (
+          <div className="flex items-center justify-center py-8">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--accent-blue)] border-t-transparent" />
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-md border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+            {error}
+          </div>
+        )}
+
+        {!loading && !error && data && data.strategies.length === 0 && (
+          <p className="py-4 text-center text-sm text-[var(--text-secondary)]">
+            No strategies found for this theme.
+          </p>
+        )}
+
+        {!loading && !error && data && data.strategies.length > 0 && (
+          <div className="space-y-4">
+            {data.strategies.map((strategy) => (
+              <StrategyCard key={strategy.name} strategy={strategy} themeColor={color} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StrategyCard({
+  strategy,
+  themeColor,
+}: {
+  strategy: ThemeStrategyDetail;
+  themeColor: string;
+}) {
+  const entryConditions = (strategy.details?.entry_conditions ?? []) as string[];
+  const exitConditions = (strategy.details?.exit_conditions ?? []) as string[];
+
+  return (
+    <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{strategy.display_name}</h3>
+        <span
+          className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+          style={{ backgroundColor: themeColor }}
+        >
+          {strategy.direction}
+        </span>
+      </div>
+
+      <p className="mb-3 text-xs text-[var(--text-secondary)]">{strategy.philosophy}</p>
+
+      {entryConditions.length > 0 && (
+        <div className="mb-2">
+          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Entry Conditions
+          </h4>
+          <ul className="space-y-0.5">
+            {entryConditions.map((condition, i) => (
+              <li key={i} className="flex items-start gap-1.5 text-xs text-[var(--text-primary)]">
+                <span className="mt-0.5 text-[var(--accent-green)]">&#8226;</span>
+                {condition}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {exitConditions.length > 0 && (
+        <div>
+          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
+            Exit Conditions
+          </h4>
+          <ul className="space-y-0.5">
+            {exitConditions.map((condition, i) => (
+              <li key={i} className="flex items-start gap-1.5 text-xs text-[var(--text-primary)]">
+                <span className="mt-0.5 text-[var(--accent-red)]">&#8226;</span>
+                {condition}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Theme bands
 // ---------------------------------------------------------------------------
 
 function ThemeBand({
   theme,
   showThemeNames,
+  onClick,
 }: {
   theme: { theme: string; rank: number; weighted_avg_pnl: number; num_trades: number; avg_pnl_per_trade: number };
   showThemeNames: boolean;
+  onClick: (theme: string) => void;
 }) {
   const n = normalize(theme.theme);
   const color = getThemeColor(n);
@@ -283,13 +435,14 @@ function ThemeBand({
 
   return (
     <div
-      className="flex items-center justify-center overflow-hidden"
+      className="flex cursor-pointer items-center justify-center overflow-hidden transition-opacity hover:opacity-80"
       style={{
         flex: 1,
         backgroundColor: `${color}${isPositive ? '33' : '18'}`,
         borderLeft: `3px solid ${color}`,
       }}
-      title={`${getThemeLetter(n)} - ${getThemeLabel(n)}\nRank: #${theme.rank}\nProfit: ${formatDollars(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}`}
+      title={`${getThemeLetter(n)} - ${getThemeLabel(n)}\nRank: #${theme.rank}\nProfit: ${formatDollars(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}\nClick for strategy details`}
+      onClick={() => onClick(n)}
     >
       <span
         className="text-[12px] font-bold truncate px-1"
@@ -313,6 +466,33 @@ function StackedTimeline({
   ohlcv: OHLCVData | null;
 }) {
   const [showThemeNames, setShowThemeNames] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
+  const [themeData, setThemeData] = useState<ThemeStrategiesResponse | null>(null);
+  const [themeLoading, setThemeLoading] = useState(false);
+  const [themeError, setThemeError] = useState<string | null>(null);
+
+  const handleThemeClick = useCallback(async (theme: string) => {
+    setSelectedTheme(theme);
+    setThemeData(null);
+    setThemeError(null);
+    setThemeLoading(true);
+    try {
+      const result = await fetchThemeStrategies(theme);
+      setThemeData(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load strategy details';
+      setThemeError(message);
+    } finally {
+      setThemeLoading(false);
+    }
+  }, []);
+
+  const handleModalClose = useCallback(() => {
+    setSelectedTheme(null);
+    setThemeData(null);
+    setThemeError(null);
+  }, []);
+
   const themes = useMemo(() => collectThemes(data.weeks), [data.weeks]);
   const maxThemeCount = useMemo(
     () => Math.max(...data.weeks.map((w) => w.themes.length), 1),
@@ -401,12 +581,23 @@ function StackedTimeline({
                   key={`${week.week_start}-${theme.theme}`}
                   theme={theme}
                   showThemeNames={showThemeNames}
+                  onClick={handleThemeClick}
                 />
               ))}
             </div>
           ))}
         </div>
       </div>
+
+      {selectedTheme && (
+        <ThemeDetailModal
+          theme={selectedTheme}
+          data={themeData}
+          loading={themeLoading}
+          error={themeError}
+          onClose={handleModalClose}
+        />
+      )}
     </div>
   );
 }

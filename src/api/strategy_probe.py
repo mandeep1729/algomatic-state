@@ -2,6 +2,7 @@
 
 Provides endpoints for:
 - Weekly strategy theme performance rankings by ticker symbol
+- Strategy details by theme (strategy_type)
 
 Data source: strategy_probe_results table (simulated strategies),
 joined with probe_strategies for strategy_type (theme).
@@ -10,7 +11,7 @@ Groups by strategy_type, NOT individual strategies.
 
 import logging
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -63,9 +64,88 @@ class StrategyProbeResponse(BaseModel):
     available_timeframes: list[str] = []
 
 
+class ThemeStrategyDetail(BaseModel):
+    """Details of a single strategy within a theme."""
+    display_name: str
+    name: str
+    philosophy: str
+    direction: str
+    details: dict[str, Any]
+
+
+class ThemeStrategiesResponse(BaseModel):
+    """All strategies belonging to a theme (strategy_type)."""
+    strategy_type: str
+    strategies: list[ThemeStrategyDetail]
+
+
 # -----------------------------------------------------------------------------
-# Endpoint
+# Endpoints
 # -----------------------------------------------------------------------------
+
+@router.get("/strategies/{strategy_type}", response_model=ThemeStrategiesResponse)
+async def get_theme_strategies(
+    strategy_type: str,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get all strategies for a given theme (strategy_type).
+
+    Returns strategy details including display name, philosophy, direction,
+    and entry/exit conditions from the details JSON column.
+
+    Args:
+        strategy_type: The theme/strategy_type to look up (e.g. trend, breakout).
+
+    Returns:
+        List of strategies with their full details for the given theme.
+    """
+    logger.info(
+        "Theme strategies request: strategy_type=%s, user_id=%d",
+        strategy_type, user_id,
+    )
+
+    strategies = (
+        db.query(ProbeStrategy)
+        .filter(
+            ProbeStrategy.strategy_type == strategy_type,
+            ProbeStrategy.is_active == True,
+        )
+        .order_by(ProbeStrategy.display_name.asc())
+        .all()
+    )
+
+    logger.debug(
+        "Found %d strategies for theme=%s", len(strategies), strategy_type,
+    )
+
+    if not strategies:
+        logger.info("No strategies found for strategy_type=%s", strategy_type)
+        raise HTTPException(
+            status_code=404,
+            detail=f"No strategies found for theme '{strategy_type}'",
+        )
+
+    result = [
+        ThemeStrategyDetail(
+            display_name=s.display_name,
+            name=s.name,
+            philosophy=s.philosophy,
+            direction=s.direction,
+            details=s.details or {},
+        )
+        for s in strategies
+    ]
+
+    logger.info(
+        "Theme strategies complete: strategy_type=%s, count=%d",
+        strategy_type, len(result),
+    )
+
+    return ThemeStrategiesResponse(
+        strategy_type=strategy_type,
+        strategies=result,
+    )
 
 @router.get("/{symbol}", response_model=StrategyProbeResponse)
 async def get_strategy_probe(
