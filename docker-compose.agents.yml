@@ -35,7 +35,7 @@ services:
       - REDIS_PORT=6379
       - MESSAGING_BACKEND=redis
     volumes:
-      - /home/mandeep/projects/algomatic/momentum-agent-logs:/app/logs
+      - /home/mandeep/projects/algomatic/logs/momentum-agent-logs:/app/logs
     networks:
       - algomatic
     restart: unless-stopped
@@ -70,7 +70,7 @@ services:
       - REDIS_PORT=6379
       - MESSAGING_BACKEND=redis
     volumes:
-      - /home/mandeep/projects/algomatic/contrarian-agent-logs:/app/logs
+      - /home/mandeep/projects/algomatic/logs/contrarian-agent-logs:/app/logs
     command: python -m src.agent.contrarian_main
     networks:
       - algomatic
@@ -106,7 +106,7 @@ services:
       - REDIS_PORT=6379
       - MESSAGING_BACKEND=redis
     volumes:
-      - /home/mandeep/projects/algomatic/breakout-agent-logs:/app/logs
+      - /home/mandeep/projects/algomatic/logs/breakout-agent-logs:/app/logs
     command: python -m src.agent.breakout_main
     networks:
       - algomatic
@@ -142,7 +142,7 @@ services:
       - REDIS_PORT=6379
       - MESSAGING_BACKEND=redis
     volumes:
-      - /home/mandeep/projects/algomatic/vwap-agent-logs:/app/logs
+      - /home/mandeep/projects/algomatic/logs/vwap-agent-logs:/app/logs
     command: python -m src.agent.vwap_main
     networks:
       - algomatic
