@@ -505,7 +505,7 @@ function ThemeBand({
 
   return (
     <div
-      className="flex cursor-pointer items-center justify-center overflow-hidden transition-opacity hover:opacity-80"
+      className="flex cursor-pointer flex-col items-center justify-center overflow-hidden text-center transition-opacity hover:opacity-80"
       style={{
         flex: 1,
         backgroundColor: `${color}${isPositive ? '33' : '18'}`,
@@ -515,7 +515,7 @@ function ThemeBand({
       onClick={() => onClick(n, weekStart, weekEnd)}
     >
       <span
-        className="text-[12px] font-bold truncate px-1"
+        className="text-[12px] font-bold leading-tight px-1"
         style={{ color }}
       >
         {showThemeNames ? getThemeLabel(n) : getThemeLetter(n)}
@@ -606,7 +606,7 @@ function StackedTimeline({
   }, [ohlcv]);
 
   const colTemplate = `repeat(${data.weeks.length}, minmax(48px, 1fr))`;
-  const BAND_HEIGHT = 28;
+  const BAND_HEIGHT = 42;
   const stackHeight = maxThemeCount * BAND_HEIGHT;
   const hasCandles = weekBuckets !== null;
 
