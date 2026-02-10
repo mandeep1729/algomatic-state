@@ -67,6 +67,11 @@ function getThemeLetter(theme: string): string {
   return THEME_LETTERS[n] ?? n.charAt(0).toUpperCase();
 }
 
+function toTitleCase(str: string): string {
+  if (!str) return str;
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 function formatPct(val: number, decimals = 2): string {
   const sign = val >= 0 ? '+' : '';
   return `${sign}${(val * 100).toFixed(decimals)}%`;
@@ -650,7 +655,7 @@ function ThemeBand({
   if (displayMode === 'strategy') {
     displayContent = (
       <span className="text-[11px] font-bold leading-tight px-1" style={{ color }}>
-        {theme.top_strategy_name || getThemeLabel(n)}
+        {toTitleCase(theme.top_strategy_name) || getThemeLabel(n)}
       </span>
     );
   } else if (displayMode === 'performance') {
