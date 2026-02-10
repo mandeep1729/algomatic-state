@@ -15,6 +15,11 @@
 // Use --serve to start an HTTP monitoring API alongside the probe run:
 //
 //	go run ./cmd/probe --all --serve --serve-addr :8080 --csv data.csv
+//
+// Use --persist-results and --db-url to persist results to PostgreSQL:
+//
+//	go run ./cmd/probe --all --persist-results --persist-trades \
+//	    --db-url "postgresql://user:pass@localhost/db" --csv data.csv
 package main
 
 import (
@@ -33,6 +38,7 @@ import (
 	"github.com/algomatic/strats100/go-strats/pkg/api"
 	"github.com/algomatic/strats100/go-strats/pkg/backend"
 	"github.com/algomatic/strats100/go-strats/pkg/engine"
+	"github.com/algomatic/strats100/go-strats/pkg/persistence"
 	"github.com/algomatic/strats100/go-strats/pkg/runtracker"
 	"github.com/algomatic/strats100/go-strats/pkg/strategy"
 	"github.com/algomatic/strats100/go-strats/pkg/types"
@@ -40,6 +46,13 @@ import (
 
 // version is set at build time via -ldflags.
 var version = "dev"
+
+// result holds the output of running a single strategy.
+type result struct {
+	strategyID   int
+	strategyName string
+	trades       []types.Trade
+}
 
 func main() {
 	// Strategy selection flags
@@ -63,6 +76,11 @@ func main() {
 	// Monitoring API server flags
 	serve := flag.Bool("serve", false, "Start HTTP monitoring API server alongside probe run")
 	serveAddr := flag.String("serve-addr", ":8080", "Address for the monitoring API server (e.g. :8080)")
+
+	// Database persistence flags
+	persistResults := flag.Bool("persist-results", false, "Persist aggregated results to PostgreSQL")
+	persistTrades := flag.Bool("persist-trades", false, "Persist individual trades to PostgreSQL (requires --persist-results)")
+	dbURL := flag.String("db-url", envOrDefault("STRATEGY_DB_URL", ""), "PostgreSQL connection URL")
 
 	flag.Parse()
 
@@ -115,6 +133,28 @@ func main() {
 
 	rp := types.RiskProfileByName(*riskProfile)
 
+	// Initialise database client if persistence is enabled
+	var dbClient *persistence.Client
+	if *persistResults {
+		if *dbURL == "" {
+			fmt.Fprintln(os.Stderr, "Error: --db-url (or STRATEGY_DB_URL env) is required when --persist-results is set")
+			os.Exit(1)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		var dbErr error
+		dbClient, dbErr = persistence.NewClient(ctx, *dbURL, logger)
+		cancel()
+		if dbErr != nil {
+			fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", dbErr)
+			os.Exit(1)
+		}
+		defer dbClient.Close()
+		logger.Info("Database persistence enabled",
+			"persist_results", true,
+			"persist_trades", *persistTrades,
+		)
+	}
+
 	// Determine which strategies to run
 	var strategies []*types.StrategyDef
 	if *runAll {
@@ -163,12 +203,6 @@ func main() {
 	runID := tracker.StartRun(symbolName, timeframeName, []string{rp.Name}, stratInfos)
 
 	// Run strategies
-	type result struct {
-		strategyID   int
-		strategyName string
-		trades       []types.Trade
-	}
-
 	results := make([]result, len(strategies))
 	var wg sync.WaitGroup
 	start := time.Now()
@@ -204,6 +238,12 @@ func main() {
 		"total_trades", totalTrades,
 		"elapsed", elapsed,
 	)
+
+	// Persist results to database if enabled
+	if dbClient != nil {
+		persistToDatabase(logger, dbClient, results, strategies, runID,
+			symbolName, timeframeName, rp, bars, *persistTrades)
+	}
 
 	// Output results
 	var w *csv.Writer
@@ -397,6 +437,96 @@ func loadCSV(path string) ([]types.BarData, error) {
 	}
 
 	return bars, nil
+}
+
+// persistToDatabase saves aggregated results and optionally individual trades
+// to PostgreSQL for each strategy's results.
+func persistToDatabase(
+	logger *slog.Logger,
+	dbClient *persistence.Client,
+	results []result,
+	strategies []*types.StrategyDef,
+	runID, symbol, timeframe string,
+	riskProfile types.RiskProfile,
+	bars []types.BarData,
+	persistTrades bool,
+) {
+	if len(bars) == 0 {
+		logger.Warn("No bars available, skipping persistence")
+		return
+	}
+
+	periodStart := bars[0].Bar.Timestamp
+	periodEnd := bars[len(bars)-1].Bar.Timestamp
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// Build strategy name -> ID mapping
+	stratIDMap := make(map[string]int)
+	for _, s := range strategies {
+		dbID, err := dbClient.LookupStrategyID(ctx, s.Name)
+		if err != nil {
+			logger.Error("Failed to look up strategy ID",
+				"strategy", s.Name, "error", err)
+			continue
+		}
+		if dbID == 0 {
+			logger.Warn("Strategy not found in database, skipping persistence",
+				"strategy", s.Name)
+			continue
+		}
+		stratIDMap[s.Name] = dbID
+	}
+
+	totalResultRows := 0
+	totalTradeRows := 0
+
+	for _, r := range results {
+		if len(r.trades) == 0 {
+			continue
+		}
+
+		dbID, ok := stratIDMap[r.strategyName]
+		if !ok {
+			continue
+		}
+
+		// Aggregate trades into groups
+		aggResults := persistence.AggregateTrades(
+			r.trades, dbID, symbol, timeframe,
+			riskProfile.Name, runID, periodStart, periodEnd,
+		)
+
+		if len(aggResults) == 0 {
+			continue
+		}
+
+		// Build trade records
+		tradeRecords := persistence.BuildTradeRecords(r.trades, symbol)
+
+		// Persist to DB
+		resultCount, tradeCount, err := dbClient.Persist(
+			ctx, tradeRecords, r.trades, aggResults, persistTrades,
+		)
+		if err != nil {
+			logger.Error("Failed to persist results for strategy",
+				"strategy", r.strategyName,
+				"strategy_id", dbID,
+				"error", err,
+			)
+			continue
+		}
+
+		totalResultRows += resultCount
+		totalTradeRows += tradeCount
+	}
+
+	logger.Info("Database persistence complete",
+		"run_id", runID,
+		"result_rows", totalResultRows,
+		"trade_rows", totalTradeRows,
+	)
 }
 
 // parseTimestamp tries multiple timestamp formats.
