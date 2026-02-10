@@ -665,16 +665,19 @@ export interface WeekPerformance {
 export interface StrategyProbeResponse {
   symbol: string;
   weeks: WeekPerformance[];
+  available_timeframes: string[];
 }
 
 export async function fetchStrategyProbe(
   symbol: string,
   startDate?: string,
   endDate?: string,
+  timeframe?: string,
 ): Promise<StrategyProbeResponse> {
   const params = new URLSearchParams();
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
+  if (timeframe) params.set('timeframe', timeframe);
   const qs = params.toString();
   return get<StrategyProbeResponse>(
     `/api/strategy-probe/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,

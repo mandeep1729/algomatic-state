@@ -60,6 +60,7 @@ class StrategyProbeResponse(BaseModel):
     """Full strategy probe response for a symbol."""
     symbol: str
     weeks: list[WeekPerformance]
+    available_timeframes: list[str] = []
 
 
 # -----------------------------------------------------------------------------
@@ -71,6 +72,7 @@ async def get_strategy_probe(
     symbol: str,
     start_date: Optional[date] = Query(None, description="Start date (inclusive)"),
     end_date: Optional[date] = Query(None, description="End date (inclusive)"),
+    timeframe: Optional[str] = Query(None, description="Filter by timeframe (e.g. 1Min, 5Min, 1Hour)"),
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -84,15 +86,32 @@ async def get_strategy_probe(
         symbol: Ticker symbol to analyze.
         start_date: Start date for the analysis period (inclusive).
         end_date: End date for the analysis period (inclusive).
+        timeframe: Optional timeframe filter (e.g. 1Min, 5Min, 1Hour).
 
     Returns:
-        Weekly theme rankings with performance metrics.
+        Weekly theme rankings with performance metrics and available timeframes.
     """
     symbol = symbol.upper()
     logger.info(
-        "Strategy probe request: symbol=%s, start=%s, end=%s, user_id=%d",
-        symbol, start_date, end_date, user_id,
+        "Strategy probe request: symbol=%s, start=%s, end=%s, timeframe=%s, user_id=%d",
+        symbol, start_date, end_date, timeframe, user_id,
     )
+
+    # Query distinct available timeframes for this symbol and date range.
+    tf_query = db.query(
+        StrategyProbeResult.timeframe,
+    ).filter(
+        StrategyProbeResult.symbol == symbol,
+    )
+    if start_date:
+        tf_query = tf_query.filter(StrategyProbeResult.open_day >= start_date)
+    if end_date:
+        tf_query = tf_query.filter(StrategyProbeResult.open_day <= end_date)
+
+    available_timeframes = sorted(
+        row.timeframe for row in tf_query.distinct().all()
+    )
+    logger.debug("Available timeframes for %s: %s", symbol, available_timeframes)
 
     # Query grouped by ISO week and strategy_type (theme).
     base_query = db.query(
@@ -111,6 +130,9 @@ async def get_strategy_probe(
         base_query = base_query.filter(StrategyProbeResult.open_day >= start_date)
     if end_date:
         base_query = base_query.filter(StrategyProbeResult.open_day <= end_date)
+    if timeframe:
+        base_query = base_query.filter(StrategyProbeResult.timeframe == timeframe)
+        logger.debug("Filtering by timeframe=%s", timeframe)
 
     results = (
         base_query
@@ -130,7 +152,9 @@ async def get_strategy_probe(
 
     if not results:
         logger.info("No probe results found for symbol=%s in date range", symbol)
-        return StrategyProbeResponse(symbol=symbol, weeks=[])
+        return StrategyProbeResponse(
+            symbol=symbol, weeks=[], available_timeframes=available_timeframes,
+        )
 
     # Group results by (iso_year, iso_week)
     weeks_data: dict[tuple[int, int], list[dict]] = {}
@@ -187,4 +211,6 @@ async def get_strategy_probe(
         symbol, len(weeks_response), len(results),
     )
 
-    return StrategyProbeResponse(symbol=symbol, weeks=weeks_response)
+    return StrategyProbeResponse(
+        symbol=symbol, weeks=weeks_response, available_timeframes=available_timeframes,
+    )

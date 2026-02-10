@@ -420,6 +420,8 @@ export default function StrategyProbe() {
   const [symbolInput, setSymbolInput] = useState('');
   const [startDate, setStartDate] = useState(defaultStartDate);
   const [endDate, setEndDate] = useState(todayStr);
+  const [timeframe, setTimeframe] = useState('');
+  const [availableTimeframes, setAvailableTimeframes] = useState<string[]>([]);
   const [data, setData] = useState<StrategyProbeResponse | null>(null);
   const [ohlcv, setOhlcv] = useState<OHLCVData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -431,11 +433,15 @@ export default function StrategyProbe() {
     setError(null);
     try {
       const [probeResult, ohlcvResult] = await Promise.all([
-        fetchStrategyProbe(symbol, startDate, endDate),
+        fetchStrategyProbe(symbol, startDate, endDate, timeframe || undefined),
         fetchOHLCVData(symbol, '1Hour', startDate, endDate).catch(() => null),
       ]);
       setData(probeResult);
       setOhlcv(ohlcvResult);
+      // Update available timeframes from response
+      if (probeResult.available_timeframes) {
+        setAvailableTimeframes(probeResult.available_timeframes);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load strategy probe data';
       setError(message);
@@ -444,18 +450,23 @@ export default function StrategyProbe() {
     } finally {
       setLoading(false);
     }
-  }, [symbol, startDate, endDate]);
+  }, [symbol, startDate, endDate, timeframe]);
 
   useEffect(() => {
     if (symbol) {
       loadData();
     }
-  }, [symbol, startDate, endDate, loadData]);
+  }, [symbol, startDate, endDate, timeframe, loadData]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = symbolInput.trim().toUpperCase();
     if (trimmed) {
+      // Reset timeframe when symbol changes to avoid stale filter
+      if (trimmed !== symbol) {
+        setTimeframe('');
+        setAvailableTimeframes([]);
+      }
       setSymbol(trimmed);
     }
   }
@@ -496,6 +507,21 @@ export default function StrategyProbe() {
             className="h-9 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-blue)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-blue)]"
           />
         </div>
+        {availableTimeframes.length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Timeframe</label>
+            <select
+              value={timeframe}
+              onChange={(e) => setTimeframe(e.target.value)}
+              className="h-9 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-blue)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-blue)]"
+            >
+              <option value="">All Timeframes</option>
+              {availableTimeframes.map((tf) => (
+                <option key={tf} value={tf}>{tf}</option>
+              ))}
+            </select>
+          </div>
+        )}
         <button
           type="submit"
           disabled={!symbolInput.trim() || loading}
