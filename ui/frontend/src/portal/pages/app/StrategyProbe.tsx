@@ -40,7 +40,6 @@ const THEME_LETTERS: Record<string, string> = {
   volatility: 'V',
 };
 
-// Fallback colors for unknown themes
 const FALLBACK_COLORS = ['#FF9DA7', '#9C755F', '#BAB0AC', '#76B7B2', '#EDC948'];
 
 function normalize(theme: string): string {
@@ -50,7 +49,6 @@ function normalize(theme: string): string {
 function getThemeColor(theme: string): string {
   const n = normalize(theme);
   if (THEME_COLORS[n]) return THEME_COLORS[n];
-  // Deterministic fallback based on string hash
   let hash = 0;
   for (let i = 0; i < n.length; i++) {
     hash = n.charCodeAt(i) + ((hash << 5) - hash);
@@ -100,11 +98,53 @@ function collectThemes(weeks: WeekPerformance[]): string[] {
   return [...known, ...unknown];
 }
 
+/** Bucket OHLCV bars into per-week arrays aligned to probe week boundaries. */
+interface WeekBars {
+  timestamps: string[];
+  open: number[];
+  high: number[];
+  low: number[];
+  close: number[];
+  volume: number[];
+}
+
+function bucketByWeek(
+  ohlcv: OHLCVData,
+  weeks: WeekPerformance[],
+): Map<string, WeekBars> {
+  const result = new Map<string, WeekBars>();
+  for (const week of weeks) {
+    result.set(week.week_start, {
+      timestamps: [], open: [], high: [], low: [], close: [], volume: [],
+    });
+  }
+
+  for (let i = 0; i < ohlcv.timestamps.length; i++) {
+    const t = new Date(ohlcv.timestamps[i]).getTime();
+    // Find which week this bar belongs to
+    for (const week of weeks) {
+      const ws = new Date(week.week_start + 'T00:00:00').getTime();
+      const we = new Date(week.week_end + 'T23:59:59').getTime();
+      if (t >= ws && t <= we) {
+        const bucket = result.get(week.week_start)!;
+        bucket.timestamps.push(ohlcv.timestamps[i]);
+        bucket.open.push(ohlcv.open[i]);
+        bucket.high.push(ohlcv.high[i]);
+        bucket.low.push(ohlcv.low[i]);
+        bucket.close.push(ohlcv.close[i]);
+        bucket.volume.push(ohlcv.volume[i]);
+        break;
+      }
+    }
+  }
+
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Components
 // ---------------------------------------------------------------------------
 
-/** Legend: color badge + letter + full name per theme. */
 function ThemeLegend({ themes }: { themes: string[] }) {
   if (themes.length === 0) return null;
   return (
@@ -126,192 +166,103 @@ function ThemeLegend({ themes }: { themes: string[] }) {
 }
 
 // ---------------------------------------------------------------------------
-// Candlestick chart with volume
+// Per-week candlestick cell (fits inside one grid column)
 // ---------------------------------------------------------------------------
 
-const CANDLE_H = 180;
-const VOLUME_H = 50;
-const CHART_PAD_TOP = 8;
-const CHART_PAD_BOTTOM = 4;
+const CANDLE_H = 160;
+const VOLUME_H = 40;
 const BULL_COLOR = '#26a69a';
 const BEAR_COLOR = '#ef5350';
 
-function CandlestickChart({ ohlcv, symbol }: { ohlcv: OHLCVData; symbol: string }) {
-  const n = ohlcv.timestamps.length;
-  if (n === 0) return null;
-
-  const svgW = Math.max(n * 8, 600);
-  const totalH = CANDLE_H + VOLUME_H;
-  const colW = svgW / n;
-  const bodyW = Math.max(colW * 0.6, 2);
-
-  // Price range
-  const allHigh = ohlcv.high;
-  const allLow = ohlcv.low;
-  const minPrice = Math.min(...allLow);
-  const maxPrice = Math.max(...allHigh);
-  const priceRange = maxPrice - minPrice || 1;
-  const pPad = priceRange * 0.01;
-  const pLo = minPrice - pPad;
-  const pHi = maxPrice + pPad;
-
-  // Volume range
-  const maxVol = Math.max(...ohlcv.volume, 1);
-
-  const toY = (price: number) =>
-    CHART_PAD_TOP + ((pHi - price) / (pHi - pLo)) * (CANDLE_H - CHART_PAD_TOP - CHART_PAD_BOTTOM);
-  const toVolY = (vol: number) =>
-    CANDLE_H + VOLUME_H - (vol / maxVol) * (VOLUME_H - 4);
-
-  // Price gridlines (4 levels)
-  const priceGridlines = Array.from({ length: 4 }, (_, i) => {
-    const frac = (i + 1) / 5;
-    const price = pLo + (pHi - pLo) * (1 - frac);
-    return { y: toY(price), price };
-  });
-
-  // Format hourly x-axis labels — show day boundaries
-  const dayLabels: { x: number; label: string }[] = [];
-  let lastDay = '';
-  for (let i = 0; i < n; i++) {
-    const d = new Date(ohlcv.timestamps[i]);
-    const dayStr = d.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      timeZone: 'America/New_York',
-    });
-    if (dayStr !== lastDay) {
-      dayLabels.push({ x: colW * i + colW / 2, label: dayStr });
-      lastDay = dayStr;
-    }
+function WeekCandles({
+  bars,
+  pLo,
+  pHi,
+  maxVol,
+}: {
+  bars: WeekBars;
+  pLo: number;
+  pHi: number;
+  maxVol: number;
+}) {
+  const n = bars.timestamps.length;
+  if (n === 0) {
+    return <div style={{ height: CANDLE_H + VOLUME_H }} />;
   }
 
+  const totalH = CANDLE_H + VOLUME_H;
+  // Use a fixed viewBox width; SVG stretches to fill the grid column
+  const vbW = Math.max(n * 10, 20);
+  const colW = vbW / n;
+  const bodyW = Math.max(colW * 0.6, 1.5);
+
+  const toY = (price: number) =>
+    ((pHi - price) / (pHi - pLo)) * CANDLE_H;
+  const toVolY = (vol: number) =>
+    CANDLE_H + VOLUME_H - (vol / maxVol) * (VOLUME_H - 2);
+
   return (
-    <div className="overflow-x-auto">
-      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-          {symbol} Hourly OHLCV
-        </span>
-      </div>
-      <svg
-        viewBox={`0 0 ${svgW} ${totalH}`}
-        preserveAspectRatio="none"
-        className="w-full"
-        style={{ height: totalH, minWidth: Math.max(n * 4, 400) }}
-      >
-        {/* Price gridlines */}
-        {priceGridlines.map((g, i) => (
-          <g key={i}>
+    <svg
+      viewBox={`0 0 ${vbW} ${totalH}`}
+      preserveAspectRatio="none"
+      className="block w-full"
+      style={{ height: totalH }}
+    >
+      {/* Volume bars */}
+      {bars.timestamps.map((_, i) => {
+        const bullish = bars.close[i] >= bars.open[i];
+        const cx = colW * i + colW / 2;
+        const vy = toVolY(bars.volume[i]);
+        const vh = CANDLE_H + VOLUME_H - vy;
+        return (
+          <rect
+            key={`v${i}`}
+            x={cx - bodyW / 2}
+            y={vy}
+            width={bodyW}
+            height={Math.max(vh, 0.5)}
+            fill={bullish ? BULL_COLOR : BEAR_COLOR}
+            opacity={0.25}
+          />
+        );
+      })}
+
+      {/* Separator */}
+      <line
+        x1={0} y1={CANDLE_H} x2={vbW} y2={CANDLE_H}
+        stroke="var(--border-color)" strokeWidth={0.3}
+      />
+
+      {/* Candlesticks */}
+      {bars.timestamps.map((ts, i) => {
+        const o = bars.open[i];
+        const c = bars.close[i];
+        const h = bars.high[i];
+        const l = bars.low[i];
+        const bullish = c >= o;
+        const color = bullish ? BULL_COLOR : BEAR_COLOR;
+        const cx = colW * i + colW / 2;
+        const bodyTop = toY(Math.max(o, c));
+        const bodyBot = toY(Math.min(o, c));
+        const bodyH = Math.max(bodyBot - bodyTop, 0.5);
+
+        return (
+          <g key={`c${i}`}>
             <line
-              x1={0} y1={g.y} x2={svgW} y2={g.y}
-              stroke="var(--border-color)" strokeWidth={0.5} strokeDasharray="4,4"
+              x1={cx} y1={toY(h)} x2={cx} y2={toY(l)}
+              stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke"
             />
-            <text
-              x={svgW - 4} y={g.y - 3}
-              textAnchor="end"
-              fontSize={9}
-              fill="var(--text-secondary)"
-              style={{ vectorEffect: 'non-scaling-stroke' }}
-            >
-              ${g.price.toFixed(2)}
-            </text>
-          </g>
-        ))}
-
-        {/* Separator between candle and volume */}
-        <line
-          x1={0} y1={CANDLE_H} x2={svgW} y2={CANDLE_H}
-          stroke="var(--border-color)" strokeWidth={0.5}
-        />
-
-        {/* Day boundary labels */}
-        {dayLabels.map((dl, i) => (
-          <g key={i}>
-            <line
-              x1={dl.x - colW / 2} y1={0}
-              x2={dl.x - colW / 2} y2={totalH}
-              stroke="var(--border-color)" strokeWidth={0.3} strokeDasharray="2,6"
-            />
-          </g>
-        ))}
-
-        {/* Volume bars */}
-        {ohlcv.timestamps.map((_, i) => {
-          const bullish = ohlcv.close[i] >= ohlcv.open[i];
-          const cx = colW * i + colW / 2;
-          const vy = toVolY(ohlcv.volume[i]);
-          const vh = CANDLE_H + VOLUME_H - vy;
-          return (
             <rect
-              key={`vol-${i}`}
-              x={cx - bodyW / 2}
-              y={vy}
-              width={bodyW}
-              height={Math.max(vh, 0.5)}
-              fill={bullish ? BULL_COLOR : BEAR_COLOR}
-              opacity={0.3}
+              x={cx - bodyW / 2} y={bodyTop}
+              width={bodyW} height={bodyH}
+              fill={bullish ? 'transparent' : color}
+              stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke"
             />
-          );
-        })}
-
-        {/* Candlesticks */}
-        {ohlcv.timestamps.map((ts, i) => {
-          const o = ohlcv.open[i];
-          const c = ohlcv.close[i];
-          const h = ohlcv.high[i];
-          const l = ohlcv.low[i];
-          const bullish = c >= o;
-          const color = bullish ? BULL_COLOR : BEAR_COLOR;
-          const cx = colW * i + colW / 2;
-          const bodyTop = toY(Math.max(o, c));
-          const bodyBot = toY(Math.min(o, c));
-          const bodyH = Math.max(bodyBot - bodyTop, 0.5);
-
-          return (
-            <g key={`candle-${i}`}>
-              {/* Wick */}
-              <line
-                x1={cx} y1={toY(h)}
-                x2={cx} y2={toY(l)}
-                stroke={color}
-                strokeWidth={1}
-                vectorEffect="non-scaling-stroke"
-              />
-              {/* Body */}
-              <rect
-                x={cx - bodyW / 2}
-                y={bodyTop}
-                width={bodyW}
-                height={bodyH}
-                fill={bullish ? 'transparent' : color}
-                stroke={color}
-                strokeWidth={1}
-                vectorEffect="non-scaling-stroke"
-              />
-              <title>{`${new Date(ts).toLocaleString('en-US', { timeZone: 'America/New_York' })}\nO: $${o.toFixed(2)}  H: $${h.toFixed(2)}  L: $${l.toFixed(2)}  C: $${c.toFixed(2)}\nVol: ${ohlcv.volume[i].toLocaleString()}`}</title>
-            </g>
-          );
-        })}
-      </svg>
-
-      {/* Day labels below the chart */}
-      <div className="relative w-full overflow-hidden" style={{ minWidth: Math.max(n * 4, 400), height: 18 }}>
-        <svg viewBox={`0 0 ${svgW} 18`} preserveAspectRatio="none" className="w-full h-full">
-          {dayLabels.map((dl, i) => (
-            <text
-              key={i}
-              x={dl.x}
-              y={12}
-              textAnchor="middle"
-              fontSize={9}
-              fill="var(--text-secondary)"
-            >
-              {dl.label}
-            </text>
-          ))}
-        </svg>
-      </div>
-    </div>
+            <title>{`${new Date(ts).toLocaleString('en-US', { timeZone: 'America/New_York' })}\nO: $${o.toFixed(2)}  H: $${h.toFixed(2)}  L: $${l.toFixed(2)}  C: $${c.toFixed(2)}\nVol: ${bars.volume[i].toLocaleString()}`}</title>
+          </g>
+        );
+      })}
+    </svg>
   );
 }
 
@@ -319,11 +270,12 @@ function CandlestickChart({ ohlcv, symbol }: { ohlcv: OHLCVData; symbol: string 
 // Theme bands
 // ---------------------------------------------------------------------------
 
-/** Full-width theme band for a single theme in a week column. */
 function ThemeBand({
   theme,
+  showThemeNames,
 }: {
   theme: { theme: string; rank: number; weighted_avg_pnl: number; num_trades: number; avg_pnl_per_trade: number };
+  showThemeNames: boolean;
 }) {
   const n = normalize(theme.theme);
   const color = getThemeColor(n);
@@ -331,25 +283,28 @@ function ThemeBand({
 
   return (
     <div
-      className="flex items-center justify-center"
+      className="flex items-center justify-center overflow-hidden"
       style={{
         flex: 1,
-        backgroundColor: `${color}${isPositive ? '33' : '18'}`, // 20% or 9% opacity via hex alpha
+        backgroundColor: `${color}${isPositive ? '33' : '18'}`,
         borderLeft: `3px solid ${color}`,
       }}
       title={`${getThemeLetter(n)} - ${getThemeLabel(n)}\nRank: #${theme.rank}\nProfit: ${formatDollars(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}`}
     >
       <span
-        className="text-[12px] font-bold"
+        className="text-[12px] font-bold truncate px-1"
         style={{ color }}
       >
-        {getThemeLetter(n)}
+        {showThemeNames ? getThemeLabel(n) : getThemeLetter(n)}
       </span>
     </div>
   );
 }
 
-/** Combined chart: candlestick on top, theme stack below. */
+// ---------------------------------------------------------------------------
+// Combined grid: candlestick row + week headers + theme stacks — all aligned
+// ---------------------------------------------------------------------------
+
 function StackedTimeline({
   data,
   ohlcv,
@@ -357,15 +312,36 @@ function StackedTimeline({
   data: StrategyProbeResponse;
   ohlcv: OHLCVData | null;
 }) {
+  const [showThemeNames, setShowThemeNames] = useState(false);
   const themes = useMemo(() => collectThemes(data.weeks), [data.weeks]);
   const maxThemeCount = useMemo(
     () => Math.max(...data.weeks.map((w) => w.themes.length), 1),
     [data.weeks],
   );
 
+  // Bucket OHLCV bars by week and compute global ranges
+  const weekBuckets = useMemo(
+    () => (ohlcv ? bucketByWeek(ohlcv, data.weeks) : null),
+    [ohlcv, data.weeks],
+  );
+
+  const { pLo, pHi, maxVol } = useMemo(() => {
+    if (!ohlcv || ohlcv.timestamps.length === 0) {
+      return { pLo: 0, pHi: 1, maxVol: 1 };
+    }
+    const lo = Math.min(...ohlcv.low);
+    const hi = Math.max(...ohlcv.high);
+    return {
+      pLo: lo,
+      pHi: hi === lo ? hi + 1 : hi,
+      maxVol: Math.max(...ohlcv.volume, 1),
+    };
+  }, [ohlcv]);
+
   const colTemplate = `repeat(${data.weeks.length}, minmax(48px, 1fr))`;
   const BAND_HEIGHT = 28;
   const stackHeight = maxThemeCount * BAND_HEIGHT;
+  const hasCandles = weekBuckets !== null;
 
   return (
     <div className="space-y-3">
@@ -374,20 +350,34 @@ function StackedTimeline({
           Showing <span className="font-medium text-[var(--text-primary)]">{data.weeks.length}</span> weeks
           for <span className="font-medium text-[var(--text-primary)]">{data.symbol}</span>
         </div>
+        <button
+          type="button"
+          onClick={() => setShowThemeNames((prev) => !prev)}
+          className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)]"
+        >
+          {showThemeNames ? 'Show Letters' : 'Show Names'}
+        </button>
       </div>
       <ThemeLegend themes={themes} />
 
-      <div className="overflow-x-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]">
-        {/* Candlestick chart */}
-        {ohlcv && ohlcv.timestamps.length > 0 && (
-          <div className="border-b border-[var(--border-color)]">
-            <CandlestickChart ohlcv={ohlcv} symbol={data.symbol} />
-          </div>
-        )}
-
-        {/* Grid: week headers + theme stacks */}
+      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]">
         <div className="grid gap-0" style={{ gridTemplateColumns: colTemplate }}>
-          {/* Week headers */}
+          {/* Row 1: Candlestick + volume per week (aligned columns) */}
+          {hasCandles && data.weeks.map((week) => (
+            <div
+              key={`candle-${week.week_start}`}
+              className="border-b border-r border-[var(--border-color)] last:border-r-0"
+            >
+              <WeekCandles
+                bars={weekBuckets.get(week.week_start) ?? { timestamps: [], open: [], high: [], low: [], close: [], volume: [] }}
+                pLo={pLo}
+                pHi={pHi}
+                maxVol={maxVol}
+              />
+            </div>
+          ))}
+
+          {/* Row 2: Week headers */}
           {data.weeks.map((week) => (
             <div
               key={week.week_start}
@@ -399,7 +389,7 @@ function StackedTimeline({
             </div>
           ))}
 
-          {/* Theme stack: full-width bands per week */}
+          {/* Row 3: Theme stack per week */}
           {data.weeks.map((week) => (
             <div
               key={`stack-${week.week_start}`}
@@ -410,6 +400,7 @@ function StackedTimeline({
                 <ThemeBand
                   key={`${week.week_start}-${theme.theme}`}
                   theme={theme}
+                  showThemeNames={showThemeNames}
                 />
               ))}
             </div>
