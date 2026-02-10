@@ -642,3 +642,42 @@ export async function saveFillContext(
 ): Promise<FillContextDetail> {
   return put<FillContextDetail>(`/api/broker/fills/${encodeURIComponent(fillId)}/context`, context);
 }
+
+// =============================================================================
+// Strategy Probe — GET /api/strategy-probe/{symbol}
+// Returns weekly strategy performance rankings for a given symbol
+// =============================================================================
+
+export interface StrategyRanking {
+  category: string;
+  theme: string;
+  num_trades: number;
+  avg_pnl_per_trade: number;
+  weighted_avg_pnl: number;
+  rank: number;
+}
+
+export interface WeekPerformance {
+  week_start: string;
+  week_end: string;
+  strategies: StrategyRanking[];
+}
+
+export interface StrategyProbeResponse {
+  symbol: string;
+  weeks: WeekPerformance[];
+}
+
+export async function fetchStrategyProbe(
+  symbol: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<StrategyProbeResponse> {
+  const params = new URLSearchParams();
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  const qs = params.toString();
+  return get<StrategyProbeResponse>(
+    `/api/strategy-probe/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
+  );
+}

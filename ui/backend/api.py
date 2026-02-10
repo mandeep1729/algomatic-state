@@ -56,6 +56,7 @@ from src.api.alpaca import router as alpaca_router
 from src.api.campaigns import router as campaigns_router
 from src.api.strategies import router as strategies_router
 from src.api.journal import router as journal_router
+from src.api.strategy_probe import router as strategy_probe_router
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,7 @@ app.include_router(alpaca_router)
 app.include_router(campaigns_router)
 app.include_router(strategies_router)
 app.include_router(journal_router)
+app.include_router(strategy_probe_router)
 
 # Enable CORS for React frontend
 app.add_middleware(

@@ -21,6 +21,7 @@ import CampaignDetail from '../pages/app/CampaignDetail';
 import EvaluateIdea from '../pages/app/EvaluateIdea';
 import Insights from '../pages/app/Insights';
 import Journal from '../pages/app/Journal';
+import StrategyProbe from '../pages/app/StrategyProbe';
 
 // Settings pages
 import SettingsProfile from '../pages/app/settings/Profile';
@@ -120,6 +121,7 @@ export const router = createBrowserRouter([
           { path: 'transactions', element: <Transactions /> },
           { path: 'insights', element: <Insights /> },
           { path: 'journal', element: <Journal /> },
+          { path: 'strategy-probe', element: <StrategyProbe /> },
           { path: 'settings/profile', element: <SettingsProfile /> },
           { path: 'settings/risk', element: <SettingsRisk /> },
           { path: 'settings/strategies', element: <SettingsStrategies /> },
