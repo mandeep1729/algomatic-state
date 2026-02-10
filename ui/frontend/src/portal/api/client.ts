@@ -651,6 +651,10 @@ export async function saveFillContext(
 export interface ThemeRanking {
   theme: string;
   num_trades: number;
+  num_profitable: number;
+  num_unprofitable: number;
+  num_long: number;
+  num_short: number;
   avg_pnl_per_trade: number;
   weighted_avg_pnl: number;
   rank: number;
@@ -674,11 +678,13 @@ export async function fetchStrategyProbe(
   startDate?: string,
   endDate?: string,
   timeframe?: string,
+  direction?: string,
 ): Promise<StrategyProbeResponse> {
   const params = new URLSearchParams();
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
   if (timeframe) params.set('timeframe', timeframe);
+  if (direction) params.set('direction', direction);
   const qs = params.toString();
   return get<StrategyProbeResponse>(
     `/api/strategy-probe/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,

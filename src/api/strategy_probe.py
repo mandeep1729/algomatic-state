@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, extract
+from sqlalchemy import case, func, extract
 from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
@@ -45,6 +45,10 @@ class ThemeRanking(BaseModel):
     """A strategy theme's performance within a week."""
     theme: str
     num_trades: int
+    num_profitable: int = 0
+    num_unprofitable: int = 0
+    num_long: int = 0
+    num_short: int = 0
     avg_pnl_per_trade: float
     weighted_avg_pnl: float
     rank: int
@@ -272,6 +276,7 @@ async def get_strategy_probe(
     start_date: Optional[date] = Query(None, description="Start date (inclusive)"),
     end_date: Optional[date] = Query(None, description="End date (inclusive)"),
     timeframe: Optional[str] = Query(None, description="Filter by timeframe (e.g. 1Min, 5Min, 1Hour)"),
+    direction: Optional[str] = Query(None, description="Filter by trade direction (long, short)"),
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -286,14 +291,15 @@ async def get_strategy_probe(
         start_date: Start date for the analysis period (inclusive).
         end_date: End date for the analysis period (inclusive).
         timeframe: Optional timeframe filter (e.g. 1Min, 5Min, 1Hour).
+        direction: Optional direction filter (long, short).
 
     Returns:
         Weekly theme rankings with performance metrics and available timeframes.
     """
     symbol = symbol.upper()
     logger.info(
-        "Strategy probe request: symbol=%s, start=%s, end=%s, timeframe=%s, user_id=%d",
-        symbol, start_date, end_date, timeframe, user_id,
+        "Strategy probe request: symbol=%s, start=%s, end=%s, timeframe=%s, direction=%s, user_id=%d",
+        symbol, start_date, end_date, timeframe, direction, user_id,
     )
 
     # Query distinct available timeframes for this symbol and date range.
@@ -306,6 +312,8 @@ async def get_strategy_probe(
         tf_query = tf_query.filter(StrategyProbeResult.open_day >= start_date)
     if end_date:
         tf_query = tf_query.filter(StrategyProbeResult.open_day <= end_date)
+    if direction:
+        tf_query = tf_query.filter(StrategyProbeResult.long_short == direction)
 
     available_timeframes = sorted(
         row.timeframe for row in tf_query.distinct().all()
@@ -318,6 +326,30 @@ async def get_strategy_probe(
         extract("week", StrategyProbeResult.open_day).label("iso_week"),
         ProbeStrategy.strategy_type.label("theme"),
         func.sum(StrategyProbeResult.num_trades).label("total_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.pnl_mean > 0, StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("profitable_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.pnl_mean <= 0, StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("unprofitable_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.long_short == "long", StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("long_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.long_short == "short", StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("short_trades"),
         func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).label("sum_pnl"),
     ).join(
         ProbeStrategy, StrategyProbeResult.strategy_id == ProbeStrategy.id,
@@ -332,6 +364,9 @@ async def get_strategy_probe(
     if timeframe:
         base_query = base_query.filter(StrategyProbeResult.timeframe == timeframe)
         logger.debug("Filtering by timeframe=%s", timeframe)
+    if direction:
+        base_query = base_query.filter(StrategyProbeResult.long_short == direction)
+        logger.debug("Filtering by direction=%s", direction)
 
     results = (
         base_query
@@ -374,6 +409,8 @@ async def get_strategy_probe(
         top_strat_query = top_strat_query.filter(StrategyProbeResult.open_day <= end_date)
     if timeframe:
         top_strat_query = top_strat_query.filter(StrategyProbeResult.timeframe == timeframe)
+    if direction:
+        top_strat_query = top_strat_query.filter(StrategyProbeResult.long_short == direction)
 
     top_strat_rows = (
         top_strat_query
@@ -410,12 +447,20 @@ async def get_strategy_probe(
         theme = row.theme or "unknown"
 
         total_trades = int(row.total_trades)
+        profitable_trades = int(row.profitable_trades)
+        unprofitable_trades = int(row.unprofitable_trades)
+        long_trades = int(row.long_trades)
+        short_trades = int(row.short_trades)
         sum_pnl = float(row.sum_pnl)
         avg_pnl = sum_pnl / total_trades if total_trades > 0 else 0.0
 
         entry = {
             "theme": theme,
             "num_trades": total_trades,
+            "num_profitable": profitable_trades,
+            "num_unprofitable": unprofitable_trades,
+            "num_long": long_trades,
+            "num_short": short_trades,
             "avg_pnl_per_trade": round(avg_pnl, 2),
             "weighted_avg_pnl": round(sum_pnl, 2),
             "top_strategy_name": top_strategy_names.get((iso_year, iso_week, theme), ""),
@@ -439,6 +484,10 @@ async def get_strategy_probe(
             ranked_entries.append(ThemeRanking(
                 theme=entry["theme"],
                 num_trades=entry["num_trades"],
+                num_profitable=entry.get("num_profitable", 0),
+                num_unprofitable=entry.get("num_unprofitable", 0),
+                num_long=entry.get("num_long", 0),
+                num_short=entry.get("num_short", 0),
                 avg_pnl_per_trade=entry["avg_pnl_per_trade"],
                 weighted_avg_pnl=entry["weighted_avg_pnl"],
                 rank=current_rank,

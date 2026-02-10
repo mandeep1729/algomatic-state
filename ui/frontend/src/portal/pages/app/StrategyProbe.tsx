@@ -17,11 +17,14 @@ function todayStr(): string {
 // ---------------------------------------------------------------------------
 
 const THEME_COLORS: Record<string, string> = {
-  trend: '#4E79A7',
-  mean_reversion: '#F28E2B',
-  breakout: '#E15759',
-  momentum: '#59A14F',
-  volatility: '#B07AA1',
+  trend: '#2D7DD2',
+  mean_reversion: '#F5A623',
+  breakout: '#E84855',
+  momentum: '#3BB273',
+  volatility: '#9B59B6',
+  pattern: '#17BECF',
+  regime: '#E377C2',
+  volume_flow: '#8C564B',
 };
 
 const THEME_LABELS: Record<string, string> = {
@@ -30,6 +33,9 @@ const THEME_LABELS: Record<string, string> = {
   breakout: 'Breakout',
   momentum: 'Momentum',
   volatility: 'Volatility',
+  pattern: 'Pattern',
+  regime: 'Regime',
+  volume_flow: 'Volume Flow',
 };
 
 const THEME_LETTERS: Record<string, string> = {
@@ -38,6 +44,9 @@ const THEME_LETTERS: Record<string, string> = {
   breakout: 'B',
   momentum: 'M',
   volatility: 'V',
+  pattern: 'P',
+  regime: 'G',
+  volume_flow: 'F',
 };
 
 const FALLBACK_COLORS = ['#FF9DA7', '#9C755F', '#BAB0AC', '#76B7B2', '#EDC948'];
@@ -59,7 +68,7 @@ function getThemeColor(theme: string): string {
 
 function getThemeLabel(theme: string): string {
   const n = normalize(theme);
-  return THEME_LABELS[n] ?? theme.replace(/_/g, ' ');
+  return THEME_LABELS[n] ?? toTitleCase(theme.replace(/_/g, ' '));
 }
 
 function getThemeLetter(theme: string): string {
@@ -69,7 +78,7 @@ function getThemeLetter(theme: string): string {
 
 function toTitleCase(str: string): string {
   if (!str) return str;
-  return str.charAt(0).toUpperCase() + str.slice(1);
+  return str.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function formatPct(val: number, decimals = 2): string {
@@ -640,7 +649,7 @@ function ThemeBand({
   displayMode,
   onClick,
 }: {
-  theme: { theme: string; rank: number; weighted_avg_pnl: number; num_trades: number; avg_pnl_per_trade: number; top_strategy_name: string };
+  theme: { theme: string; rank: number; weighted_avg_pnl: number; num_trades: number; num_profitable: number; num_unprofitable: number; num_long: number; num_short: number; avg_pnl_per_trade: number; top_strategy_name: string };
   weekStart: string;
   weekEnd: string;
   displayMode: 'theme' | 'strategy' | 'performance';
@@ -661,12 +670,13 @@ function ThemeBand({
   } else if (displayMode === 'performance') {
     // Two-line layout: AVG/PNL on top, trade count on bottom
     displayContent = (
-      <div className="flex flex-col items-center justify-center gap-0 w-full px-1">
-        <div className="text-[10px] font-bold leading-none" style={{ color: pnlColor }}>
+      <div className="flex flex-col items-center justify-center gap-0.5 w-full px-1">
+        <div className="text-[12px] font-bold leading-tight" style={{ color: pnlColor }}>
           {formatPct(theme.weighted_avg_pnl)}
         </div>
-        <div className="text-[9px] font-medium leading-none text-[var(--text-secondary)]">
-          {theme.num_trades} trades
+        <div className="text-[10px] font-medium leading-tight text-[var(--text-secondary)]">
+          <span className="text-[#26a69a]">W:{theme.num_profitable}</span>{' '}
+          <span className="text-[#ef5350]">L:{theme.num_unprofitable}</span>
         </div>
       </div>
     );
@@ -683,10 +693,10 @@ function ThemeBand({
       className="flex cursor-pointer flex-col items-center justify-center overflow-hidden text-center transition-opacity hover:opacity-80"
       style={{
         flex: 1,
-        backgroundColor: `${color}${isPositive ? '33' : '18'}`,
+        backgroundColor: `${color}${isPositive ? '55' : '30'}`,
         borderLeft: `3px solid ${color}`,
       }}
-      title={`${getThemeLabel(n)}\nRank: #${theme.rank}\nP&L: ${formatPct(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}\nTop: ${theme.top_strategy_name || '—'}\nClick for top strategies`}
+      title={`${getThemeLabel(n)}\nRank: #${theme.rank}\nP&L: ${formatPct(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades} (W:${theme.num_profitable} / L:${theme.num_unprofitable})\nDirection: Long ${theme.num_long} / Short ${theme.num_short}\nTop: ${theme.top_strategy_name || '—'}\nClick for top strategies`}
       onClick={() => onClick(n, weekStart, weekEnd)}
     >
       {displayContent}
@@ -701,9 +711,19 @@ function ThemeBand({
 function StackedTimeline({
   data,
   ohlcv,
+  timeframe,
+  onTimeframeChange,
+  availableTimeframes,
+  direction,
+  onDirectionChange,
 }: {
   data: StrategyProbeResponse;
   ohlcv: OHLCVData | null;
+  timeframe: string;
+  onTimeframeChange: (tf: string) => void;
+  availableTimeframes: string[];
+  direction: string;
+  onDirectionChange: (d: string) => void;
 }) {
   const [displayMode, setDisplayMode] = useState<'theme' | 'strategy' | 'performance'>('theme');
   const [modalContext, setModalContext] = useState<ModalContext | null>(null);
@@ -776,7 +796,7 @@ function StackedTimeline({
   }, [ohlcv]);
 
   const colTemplate = `repeat(${data.weeks.length}, minmax(48px, 1fr))`;
-  const BAND_HEIGHT = 42;
+  const BAND_HEIGHT = 56;
   const stackHeight = maxThemeCount * BAND_HEIGHT;
   const hasCandles = weekBuckets !== null;
 
@@ -787,15 +807,38 @@ function StackedTimeline({
           Showing <span className="font-medium text-[var(--text-primary)]">{data.weeks.length}</span> weeks
           for <span className="font-medium text-[var(--text-primary)]">{data.symbol}</span>
         </div>
-        <select
-          value={displayMode}
-          onChange={(e) => setDisplayMode(e.target.value as 'theme' | 'strategy' | 'performance')}
-          className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] cursor-pointer"
-        >
-          <option value="theme">Display Theme</option>
-          <option value="strategy">Display Strategy</option>
-          <option value="performance">Display Rank</option>
-        </select>
+        <div className="flex items-center gap-2">
+          {availableTimeframes.length > 0 && (
+            <select
+              value={timeframe}
+              onChange={(e) => onTimeframeChange(e.target.value)}
+              className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] cursor-pointer"
+            >
+              <option value="">All Timeframes</option>
+              {availableTimeframes.map((tf) => (
+                <option key={tf} value={tf}>{tf}</option>
+              ))}
+            </select>
+          )}
+          <select
+            value={direction}
+            onChange={(e) => onDirectionChange(e.target.value)}
+            className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] cursor-pointer"
+          >
+            <option value="">Both</option>
+            <option value="long">Long</option>
+            <option value="short">Short</option>
+          </select>
+          <select
+            value={displayMode}
+            onChange={(e) => setDisplayMode(e.target.value as 'theme' | 'strategy' | 'performance')}
+            className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] cursor-pointer"
+          >
+            <option value="theme">Display Theme</option>
+            <option value="strategy">Display Strategy</option>
+            <option value="performance">Performance</option>
+          </select>
+        </div>
       </div>
       <ThemeLegend themes={themes} />
 
@@ -873,6 +916,7 @@ export default function StrategyProbe() {
   const [startDate, setStartDate] = useState(defaultStartDate);
   const [endDate, setEndDate] = useState(todayStr);
   const [timeframe, setTimeframe] = useState('');
+  const [direction, setDirection] = useState('');
   const [availableTimeframes, setAvailableTimeframes] = useState<string[]>([]);
   const [data, setData] = useState<StrategyProbeResponse | null>(null);
   const [ohlcv, setOhlcv] = useState<OHLCVData | null>(null);
@@ -885,7 +929,7 @@ export default function StrategyProbe() {
     setError(null);
     try {
       const [probeResult, ohlcvResult] = await Promise.all([
-        fetchStrategyProbe(symbol, startDate, endDate, timeframe || undefined),
+        fetchStrategyProbe(symbol, startDate, endDate, timeframe || undefined, direction || undefined),
         fetchOHLCVData(symbol, '1Hour', startDate, endDate).catch(() => null),
       ]);
       setData(probeResult);
@@ -902,13 +946,13 @@ export default function StrategyProbe() {
     } finally {
       setLoading(false);
     }
-  }, [symbol, startDate, endDate, timeframe]);
+  }, [symbol, startDate, endDate, timeframe, direction]);
 
   useEffect(() => {
     if (symbol) {
       loadData();
     }
-  }, [symbol, startDate, endDate, timeframe, loadData]);
+  }, [symbol, startDate, endDate, timeframe, direction, loadData]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -959,21 +1003,6 @@ export default function StrategyProbe() {
             className="h-9 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-blue)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-blue)]"
           />
         </div>
-        {availableTimeframes.length > 0 && (
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Timeframe</label>
-            <select
-              value={timeframe}
-              onChange={(e) => setTimeframe(e.target.value)}
-              className="h-9 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 text-sm text-[var(--text-primary)] focus:border-[var(--accent-blue)] focus:outline-none focus:ring-1 focus:ring-[var(--accent-blue)]"
-            >
-              <option value="">All Timeframes</option>
-              {availableTimeframes.map((tf) => (
-                <option key={tf} value={tf}>{tf}</option>
-              ))}
-            </select>
-          </div>
-        )}
         <button
           type="submit"
           disabled={!symbolInput.trim() || loading}
@@ -1004,7 +1033,15 @@ export default function StrategyProbe() {
       )}
 
       {!loading && data && data.weeks.length > 0 && (
-        <StackedTimeline data={data} ohlcv={ohlcv} />
+        <StackedTimeline
+          data={data}
+          ohlcv={ohlcv}
+          timeframe={timeframe}
+          onTimeframeChange={setTimeframe}
+          availableTimeframes={availableTimeframes}
+          direction={direction}
+          onDirectionChange={setDirection}
+        />
       )}
 
       {!loading && !data && !error && (
