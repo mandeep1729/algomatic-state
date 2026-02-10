@@ -4,7 +4,7 @@ NOTE: This module requires reimplementation of the strategy module.
 The strategy classes (BaseStrategy, Signal, SignalDirection) have been
 removed as part of the HMM regime tracking system redesign.
 
-See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+See: docs/archive/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
 """
 
 import logging

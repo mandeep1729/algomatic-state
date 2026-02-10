@@ -241,6 +241,17 @@ algomatic-state/
 │   │   ├── runner.py           # Trading runner
 │   │   └── snaptrade_client.py # SnapTrade broker client
 │   │
+│   ├── strats_prob/            # Strategy probability engine
+│   │   ├── aggregator.py       # Signal aggregation
+│   │   ├── cli.py              # Command-line interface
+│   │   ├── conditions.py       # Entry/exit conditions
+│   │   ├── engine.py           # Strategy execution engine
+│   │   ├── exits.py            # Exit logic
+│   │   ├── registry.py         # Strategy registry
+│   │   ├── runner.py           # Strategy runner
+│   │   ├── strategy_def.py     # Strategy definition
+│   │   └── strategies/         # Individual strategy implementations
+│   │
 │   └── utils/                  # Utilities
 │       ├── __init__.py
 │       └── logging.py          # Centralized logging setup with file logging
@@ -307,6 +318,17 @@ algomatic-state/
 ├── docker-compose.yml          # PostgreSQL + pgAdmin services
 ├── docker-compose.agents.yml   # Trading agent services (momentum, breakout, contrarian, vwap)
 │
+├── go-strats/                  # Go strategy backtesting framework
+│   ├── cmd/                    # CLI entry points
+│   └── pkg/                    # Core packages (api, backend, conditions, engine, etc.)
+│
+├── indicator-engine/           # High-performance C++ indicator computation engine
+│   ├── src/                    # Source files (indicators, pipeline, service)
+│   └── tests/                  # Unit tests
+│
+├── proposed-ui/                # Proposed React UI for Position Campaigns
+│   └── src/                    # React components with mock data
+│
 └── docs/                       # Documentation
     ├── ARCHITECTURE.md         # System design and data flow
     ├── APIs.md                 # REST API reference
@@ -314,12 +336,14 @@ algomatic-state/
     ├── FEATURE.md              # Feature engineering specification
     ├── PRD.md                  # Product requirements document
     ├── PITFALLS.md             # ML and trading pitfalls research
-    ├── UI_REQUIREMENTS.md      # UI requirements and design
-    ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md  # HMM implementation plan
-    ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md  # Evaluation platform architecture
-    ├── Trading_Buddy_Detailed_TODOs.md  # Detailed implementation status
-    ├── tradingbuddy_trade_schema.md   # Trade schema documentation
-    └── position_campaigns_ui_schema_plan.md  # Position campaigns UI plan
+    ├── STRATEGIES_REPO.md      # 100 TA-Lib based trading strategies
+    └── archive/                # Historical design documents
+        ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+        ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md
+        ├── Trading_Buddy_Detailed_TODOs.md
+        ├── tradingbuddy_trade_schema.md
+        ├── position_campaigns_ui_schema_plan.md
+        └── strategy_service_design.md
 ```
 
 ## Core Components

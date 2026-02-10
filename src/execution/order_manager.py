@@ -1,7 +1,7 @@
 """Order manager for submitting and managing orders.
 
 NOTE: Signal conversion functionality requires reimplementation of the strategy module.
-See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+See: docs/archive/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
 """
 
 import uuid

@@ -1,7 +1,7 @@
 """Walk-forward validation for robust backtesting.
 
 NOTE: This module requires reimplementation of the strategy module.
-See: docs/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
+See: docs/archive/STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
 """
 
 import logging
