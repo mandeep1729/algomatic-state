@@ -48,6 +48,7 @@ class ThemeRanking(BaseModel):
     avg_pnl_per_trade: float
     weighted_avg_pnl: float
     rank: int
+    top_strategy_name: str = ""
 
 
 class WeekPerformance(BaseModel):
@@ -354,22 +355,70 @@ async def get_strategy_probe(
             symbol=symbol, weeks=[], available_timeframes=available_timeframes,
         )
 
+    # Find top strategy per (week, theme) — grouped by individual strategy
+    top_strat_query = db.query(
+        extract("isoyear", StrategyProbeResult.open_day).label("iso_year"),
+        extract("week", StrategyProbeResult.open_day).label("iso_week"),
+        ProbeStrategy.strategy_type.label("theme"),
+        ProbeStrategy.display_name,
+        func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).label("strat_pnl"),
+    ).join(
+        ProbeStrategy, StrategyProbeResult.strategy_id == ProbeStrategy.id,
+    ).filter(
+        StrategyProbeResult.symbol == symbol,
+    )
+
+    if start_date:
+        top_strat_query = top_strat_query.filter(StrategyProbeResult.open_day >= start_date)
+    if end_date:
+        top_strat_query = top_strat_query.filter(StrategyProbeResult.open_day <= end_date)
+    if timeframe:
+        top_strat_query = top_strat_query.filter(StrategyProbeResult.timeframe == timeframe)
+
+    top_strat_rows = (
+        top_strat_query
+        .group_by(
+            extract("isoyear", StrategyProbeResult.open_day),
+            extract("week", StrategyProbeResult.open_day),
+            ProbeStrategy.strategy_type,
+            ProbeStrategy.id,
+            ProbeStrategy.display_name,
+        )
+        .order_by(
+            extract("isoyear", StrategyProbeResult.open_day).asc(),
+            extract("week", StrategyProbeResult.open_day).asc(),
+            func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).desc(),
+        )
+        .all()
+    )
+
+    # Pick best strategy per (week, theme) — first seen per group wins (ordered by PnL desc)
+    top_strategy_names: dict[tuple[int, int, str], str] = {}
+    for row in top_strat_rows:
+        key = (int(row.iso_year), int(row.iso_week), row.theme or "unknown")
+        if key not in top_strategy_names:
+            top_strategy_names[key] = row.display_name
+
+    logger.debug("Found top strategies for %d week-theme groups", len(top_strategy_names))
+
     # Group results by (iso_year, iso_week)
     weeks_data: dict[tuple[int, int], list[dict]] = {}
     for row in results:
         iso_year = int(row.iso_year)
         iso_week = int(row.iso_week)
         key = (iso_year, iso_week)
+        theme = row.theme or "unknown"
 
         total_trades = int(row.total_trades)
         sum_pnl = float(row.sum_pnl)
         avg_pnl = sum_pnl / total_trades if total_trades > 0 else 0.0
 
         entry = {
-            "theme": row.theme or "unknown",
+            "theme": theme,
             "num_trades": total_trades,
             "avg_pnl_per_trade": round(avg_pnl, 2),
             "weighted_avg_pnl": round(sum_pnl, 2),
+            "top_strategy_name": top_strategy_names.get((iso_year, iso_week, theme), ""),
         }
 
         if key not in weeks_data:
@@ -393,6 +442,7 @@ async def get_strategy_probe(
                 avg_pnl_per_trade=entry["avg_pnl_per_trade"],
                 weighted_avg_pnl=entry["weighted_avg_pnl"],
                 rank=current_rank,
+                top_strategy_name=entry.get("top_strategy_name", ""),
             ))
 
         week_start = datetime.strptime(f"{iso_year}-W{iso_week:02d}-1", "%G-W%V-%u").date()

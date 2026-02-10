@@ -654,6 +654,7 @@ export interface ThemeRanking {
   avg_pnl_per_trade: number;
   weighted_avg_pnl: number;
   rank: number;
+  top_strategy_name: string;
 }
 
 export interface WeekPerformance {

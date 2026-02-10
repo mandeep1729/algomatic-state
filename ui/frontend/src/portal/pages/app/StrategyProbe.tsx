@@ -632,18 +632,26 @@ function ThemeBand({
   theme,
   weekStart,
   weekEnd,
-  showThemeNames,
+  displayMode,
   onClick,
 }: {
-  theme: { theme: string; rank: number; weighted_avg_pnl: number; num_trades: number; avg_pnl_per_trade: number };
+  theme: { theme: string; rank: number; weighted_avg_pnl: number; num_trades: number; avg_pnl_per_trade: number; top_strategy_name: string };
   weekStart: string;
   weekEnd: string;
-  showThemeNames: boolean;
+  displayMode: 'theme' | 'strategy' | 'performance';
   onClick: (theme: string, weekStart: string, weekEnd: string) => void;
 }) {
   const n = normalize(theme.theme);
   const color = getThemeColor(n);
   const isPositive = theme.weighted_avg_pnl >= 0;
+  let displayText: string;
+  if (displayMode === 'strategy') {
+    displayText = theme.top_strategy_name || getThemeLabel(n);
+  } else if (displayMode === 'performance') {
+    displayText = `#${theme.rank}`;
+  } else {
+    displayText = getThemeLabel(n);
+  }
 
   return (
     <div
@@ -653,14 +661,14 @@ function ThemeBand({
         backgroundColor: `${color}${isPositive ? '33' : '18'}`,
         borderLeft: `3px solid ${color}`,
       }}
-      title={`${getThemeLetter(n)} - ${getThemeLabel(n)}\nRank: #${theme.rank}\nP&L: ${formatPct(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}\nClick for top strategies`}
+      title={`${getThemeLabel(n)}\nRank: #${theme.rank}\nP&L: ${formatPct(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}\nTop: ${theme.top_strategy_name || '—'}\nClick for top strategies`}
       onClick={() => onClick(n, weekStart, weekEnd)}
     >
       <span
-        className="text-[12px] font-bold leading-tight px-1"
+        className="text-[11px] font-bold leading-tight px-1"
         style={{ color }}
       >
-        {showThemeNames ? getThemeLabel(n) : getThemeLetter(n)}
+        {displayText}
       </span>
     </div>
   );
@@ -677,7 +685,7 @@ function StackedTimeline({
   data: StrategyProbeResponse;
   ohlcv: OHLCVData | null;
 }) {
-  const [showThemeNames, setShowThemeNames] = useState(false);
+  const [displayMode, setDisplayMode] = useState<'theme' | 'strategy' | 'performance'>('theme');
   const [modalContext, setModalContext] = useState<ModalContext | null>(null);
   const [topData, setTopData] = useState<TopStrategiesResponse | null>(null);
   const [topLoading, setTopLoading] = useState(false);
@@ -759,13 +767,15 @@ function StackedTimeline({
           Showing <span className="font-medium text-[var(--text-primary)]">{data.weeks.length}</span> weeks
           for <span className="font-medium text-[var(--text-primary)]">{data.symbol}</span>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowThemeNames((prev) => !prev)}
-          className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)]"
+        <select
+          value={displayMode}
+          onChange={(e) => setDisplayMode(e.target.value as 'theme' | 'strategy' | 'performance')}
+          className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] cursor-pointer"
         >
-          {showThemeNames ? 'Show Letters' : 'Show Names'}
-        </button>
+          <option value="theme">Display Theme</option>
+          <option value="strategy">Display Strategy</option>
+          <option value="performance">Display Rank</option>
+        </select>
       </div>
       <ThemeLegend themes={themes} />
 
@@ -811,7 +821,7 @@ function StackedTimeline({
                   theme={theme}
                   weekStart={week.week_start}
                   weekEnd={week.week_end}
-                  showThemeNames={showThemeNames}
+                  displayMode={displayMode}
                   onClick={handleThemeClick}
                 />
               ))}
