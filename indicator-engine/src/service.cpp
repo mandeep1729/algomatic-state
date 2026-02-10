@@ -10,6 +10,10 @@ using json = nlohmann::json;
 
 namespace ie {
 
+// Batch size for writing features to database.
+// Smaller batches reduce PostgreSQL memory pressure and allow incremental commits.
+constexpr size_t WRITE_BATCH_SIZE = 5000;
+
 Service::Service(const Config& config, Database& db, RedisBus& redis)
     : config_(config), db_(db), redis_(redis) {}
 
@@ -117,9 +121,22 @@ Service::ComputeStats Service::compute_for_ticker(int64_t ticker_id, const std::
         }
     }
 
-    // Batch upsert
-    int written = db_.batch_upsert_features(to_write, ticker_id, timeframe, config_.service.feature_version);
-    stats.bars_computed = written;
+    // Write in batches to reduce PostgreSQL memory pressure
+    int total_written = 0;
+    for (size_t i = 0; i < to_write.size(); i += WRITE_BATCH_SIZE) {
+        size_t end = std::min(i + WRITE_BATCH_SIZE, to_write.size());
+        std::vector<IndicatorResult> batch(
+            std::make_move_iterator(to_write.begin() + i),
+            std::make_move_iterator(to_write.begin() + end)
+        );
+
+        int written = db_.batch_upsert_features(batch, ticker_id, timeframe, config_.service.feature_version);
+        total_written += written;
+
+        spdlog::debug("ticker_id={} {}: wrote batch {}-{} ({} rows)",
+                      ticker_id, timeframe, i, end, written);
+    }
+    stats.bars_computed = total_written;
 
     return stats;
 }

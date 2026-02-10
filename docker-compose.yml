@@ -2,6 +2,7 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: algomatic-postgres
+    command: postgres -c jit=off  # Disable JIT - not beneficial for bulk inserts, saves memory
     environment:
       POSTGRES_DB: ${DB_NAME:-algomatic}
       POSTGRES_USER: ${DB_USER:-algomatic}
