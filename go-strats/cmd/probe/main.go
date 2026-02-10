@@ -11,6 +11,10 @@
 //	    --start 2024-01-01 --end 2024-06-01
 //
 // Or use --all to run all 100 strategies.
+//
+// Use --serve to start an HTTP monitoring API alongside the probe run:
+//
+//	go run ./cmd/probe --all --serve --serve-addr :8080 --csv data.csv
 package main
 
 import (
@@ -19,17 +23,23 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/algomatic/strats100/go-strats/pkg/api"
 	"github.com/algomatic/strats100/go-strats/pkg/backend"
 	"github.com/algomatic/strats100/go-strats/pkg/engine"
+	"github.com/algomatic/strats100/go-strats/pkg/runtracker"
 	"github.com/algomatic/strats100/go-strats/pkg/strategy"
 	"github.com/algomatic/strats100/go-strats/pkg/types"
 )
+
+// version is set at build time via -ldflags.
+var version = "dev"
 
 func main() {
 	// Strategy selection flags
@@ -49,6 +59,10 @@ func main() {
 	startDate := flag.String("start", "", "Start date for API mode (ISO format, e.g. 2024-01-01)")
 	endDate := flag.String("end", "", "End date for API mode (ISO format, e.g. 2024-06-01)")
 	apiTimeout := flag.Duration("api-timeout", 30*time.Second, "Timeout per API request")
+
+	// Monitoring API server flags
+	serve := flag.Bool("serve", false, "Start HTTP monitoring API server alongside probe run")
+	serveAddr := flag.String("serve-addr", ":8080", "Address for the monitoring API server (e.g. :8080)")
 
 	flag.Parse()
 
@@ -114,6 +128,40 @@ func main() {
 		strategies = []*types.StrategyDef{s}
 	}
 
+	// Initialise run tracker
+	tracker := runtracker.NewTracker(logger, version)
+
+	// Optionally start the monitoring API server
+	if *serve {
+		apiServer := api.NewServer(tracker, logger)
+		apiServer.BackendConnected = *apiURL != ""
+		mux := http.NewServeMux()
+		apiServer.RegisterRoutes(mux)
+
+		go func() {
+			logger.Info("Starting monitoring API server", "addr", *serveAddr)
+			if err := http.ListenAndServe(*serveAddr, mux); err != nil && err != http.ErrServerClosed {
+				logger.Error("Monitoring API server error", "error", err)
+			}
+		}()
+	}
+
+	// Build strategy info for the tracker
+	symbolName := *symbol
+	if symbolName == "" {
+		symbolName = "csv"
+	}
+	timeframeName := *timeframe
+	if timeframeName == "" {
+		timeframeName = "unknown"
+	}
+
+	stratInfos := make([]runtracker.StrategyInfo, len(strategies))
+	for i, s := range strategies {
+		stratInfos[i] = runtracker.StrategyInfo{ID: s.ID, Name: s.DisplayName}
+	}
+	runID := tracker.StartRun(symbolName, timeframeName, []string{rp.Name}, stratInfos)
+
 	// Run strategies
 	type result struct {
 		strategyID   int
@@ -129,6 +177,9 @@ func main() {
 		wg.Add(1)
 		go func(idx int, s *types.StrategyDef) {
 			defer wg.Done()
+
+			tracker.MarkStrategyRunning(runID, s.ID)
+
 			eng := engine.NewProbeEngine(s, rp, logger)
 			trades := eng.Run(bars)
 			results[idx] = result{
@@ -136,6 +187,8 @@ func main() {
 				strategyName: s.Name,
 				trades:       trades,
 			}
+
+			tracker.MarkStrategyCompleted(runID, s.ID, len(trades))
 		}(i, strat)
 	}
 	wg.Wait()
@@ -146,6 +199,7 @@ func main() {
 		totalTrades += len(r.trades)
 	}
 	logger.Info("Completed strategy run",
+		"run_id", runID,
 		"strategies", len(strategies),
 		"total_trades", totalTrades,
 		"elapsed", elapsed,
