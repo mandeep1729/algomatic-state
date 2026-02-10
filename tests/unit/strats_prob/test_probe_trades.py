@@ -177,7 +177,8 @@ class TestExitJustification:
         )
         assert "stop_loss" in result
         assert "stop distance" in result
-        assert "2.0x ATR" in result
+        # Medium risk scales stop by 1.5x: 2.0 * 1.5 = 3.0x effective ATR
+        assert "3.0x ATR" in result
 
     def test_target_justification(self):
         """Target exit includes target distance and ATR multiplier."""
@@ -187,7 +188,8 @@ class TestExitJustification:
         )
         assert "target" in result
         assert "target distance" in result
-        assert "3.0x ATR" in result
+        # Medium risk scales target by 1.5x: 3.0 * 1.5 = 4.5x effective ATR
+        assert "4.5x ATR" in result
 
     def test_trailing_stop_justification(self):
         """Trailing stop exit includes the trailing stop level."""

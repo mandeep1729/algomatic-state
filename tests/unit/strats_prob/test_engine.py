@@ -195,9 +195,10 @@ class TestProbeEngineExits:
 
         assert len(result) == 1
         assert result[0].exit_reason == "stop_loss"
-        # Entry at bar 1 open = 100.5, stop at entry - 1*ATR = 99.5
+        # Entry at bar 1 open=100.5, medium risk (1.5x): stop_dist=1.0*1.5*1.0=1.5
+        # exit_price = 100.5 - 1.5 = 99.0
         assert result[0].entry_price == 100.5
-        assert result[0].exit_price == pytest.approx(99.5, abs=0.01)
+        assert result[0].exit_price == pytest.approx(99.0, abs=0.01)
 
     def test_target_exit(self):
         """Target fires when price reaches entry + target_dist."""
@@ -233,8 +234,9 @@ class TestProbeEngineExits:
 
         assert len(result) == 1
         assert result[0].exit_reason == "target"
-        # Entry at bar 1 open=100.2, target = 100.2 + 2*1.0 = 102.2
-        assert result[0].exit_price == pytest.approx(102.2, abs=0.01)
+        # Entry at bar 1 open=100.2, medium risk (1.5x): target_dist=2.0*1.5*1.0=3.0
+        # exit_price = 100.2 + 3.0 = 103.2
+        assert result[0].exit_price == pytest.approx(103.2, abs=0.01)
 
     def test_time_stop_exit(self):
         """Time stop fires after N bars held."""
@@ -343,9 +345,10 @@ class TestProbeEngineShort:
         assert len(result) == 1
         assert result[0].direction == "short"
         assert result[0].exit_reason == "stop_loss"
-        # Short entry at bar 1 open=99.8, stop at 99.8 + 1*1.0 = 100.8
+        # Short entry at bar 1 open=99.8, medium risk (1.5x): stop_dist=1.0*1.5*1.0=1.5
+        # exit_price = 99.8 + 1.5 = 101.3
         assert result[0].entry_price == 99.8
-        assert result[0].exit_price == pytest.approx(100.8, abs=0.01)
+        assert result[0].exit_price == pytest.approx(101.3, abs=0.01)
 
     def test_short_pnl_calculation(self):
         """Short P&L is (entry - exit) / entry."""
@@ -387,7 +390,7 @@ class TestProbeEngineRiskProfiles:
     """Tests for risk profile scaling."""
 
     def test_low_risk_tighter_stop(self):
-        """Low risk profile has tighter stop (0.75x)."""
+        """Low risk profile has tighter stop (1.0x vs high 2.0x)."""
         entry_cond: ConditionFn = lambda df, idx: idx == 0
         strat = _make_strategy(
             entry_long=[entry_cond],
@@ -395,11 +398,14 @@ class TestProbeEngineRiskProfiles:
             atr_stop_mult=2.0,
         )
 
-        # Price drops gradually
-        closes = [100, 100, 99.5, 99, 98.5, 98, 97.5, 97]
-        opens = [100, 100, 99.8, 99.3, 98.8, 98.3, 97.8, 97.3]
-        lows = [99.5, 99.5, 99, 98.5, 98, 97.5, 97, 96.5]
-        highs = [101, 101, 100, 99.5, 99, 98.5, 98, 97.5]
+        # Price drops gradually; enough bars for both low and high to trigger.
+        # Entry at bar 1 open=100, ATR=1.0.
+        # Low (1.0x): stop_dist=2.0*1.0*1.0=2.0, stop at 98.0 -> triggers bar 4 (low=98)
+        # High (2.0x): stop_dist=2.0*2.0*1.0=4.0, stop at 96.0 -> triggers bar 8 (low=96)
+        closes = [100, 100, 99.5, 99, 98.5, 98, 97.5, 97, 96.5, 96]
+        opens = [100, 100, 99.8, 99.3, 98.8, 98.3, 97.8, 97.3, 96.8, 96.3]
+        lows = [99.5, 99.5, 99, 98.5, 98, 97.5, 97, 96.5, 96, 95.5]
+        highs = [101, 101, 100, 99.5, 99, 98.5, 98, 97.5, 97, 96.5]
         n = len(closes)
         index = pd.date_range("2024-06-03", periods=n, freq="1h")
         df = pd.DataFrame(
@@ -420,11 +426,11 @@ class TestProbeEngineRiskProfiles:
         result_low = engine_low.run(df)
         result_high = engine_high.run(df)
 
-        # Low risk should stop out sooner (tighter stop)
+        # Both profiles should trigger a trade
         assert len(result_low) >= 1
-        if len(result_high) >= 1:
-            # Low risk exits earlier
-            assert result_low[0].bars_held <= result_high[0].bars_held
+        assert len(result_high) >= 1
+        # Low risk exits earlier (tighter stop)
+        assert result_low[0].bars_held < result_high[0].bars_held
 
 
 class TestProbeEngineMultipleTrades:

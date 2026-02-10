@@ -25,9 +25,9 @@ class RiskProfile:
 
 
 RISK_PROFILES: dict[str, RiskProfile] = {
-    "low": RiskProfile(name="low", stop_scale=0.75, target_scale=0.75, trail_scale=0.75, time_scale=0.6),
-    "medium": RiskProfile(name="medium", stop_scale=1.0, target_scale=1.0, trail_scale=1.0, time_scale=1.0),
-    "high": RiskProfile(name="high", stop_scale=1.5, target_scale=1.5, trail_scale=1.5, time_scale=1.5),
+    "low": RiskProfile(name="low", stop_scale=1.0, target_scale=1.0, trail_scale=1.0, time_scale=0.6),
+    "medium": RiskProfile(name="medium", stop_scale=1.5, target_scale=1.5, trail_scale=1.5, time_scale=1.0),
+    "high": RiskProfile(name="high", stop_scale=2.0, target_scale=2.0, trail_scale=2.0, time_scale=1.5),
 }
 
 
