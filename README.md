@@ -204,9 +204,31 @@ See [docs/APIs.md](docs/APIs.md) for the full API reference.
 
 The momentum agent runs a configurable loop that fetches market data, computes features, generates momentum signals, and places paper trades via Alpaca. It includes an internal FastAPI endpoint for health checks and market data retrieval.
 
-#### Option A: Docker Compose (recommended)
+#### Option A: Using the startup script (recommended)
 
-This starts PostgreSQL, builds the agent image, and runs the momentum agent container.
+The `start-agents.sh` script handles log directory creation with proper permissions and starts agents via Docker Compose:
+
+```bash
+# 1. Copy and configure your environment
+cp .env.example .env
+# Edit .env to set ALPACA_API_KEY, ALPACA_SECRET_KEY, and optionally FINNHUB_API_KEY
+
+# 2. Start the database first
+docker compose up -d postgres
+
+# 3. Start all agents in the background
+./start-agents.sh -d
+
+# Or start a specific agent
+./start-agents.sh -d momentum-agent
+
+# View agent logs
+docker logs -f trader-momentum-agent
+```
+
+#### Option B: Docker Compose (manual)
+
+If you prefer to run Docker Compose directly without the helper script:
 
 ```bash
 # 1. Copy and configure your environment
@@ -214,7 +236,7 @@ cp .env.example .env
 # Edit .env to set ALPACA_API_KEY, ALPACA_SECRET_KEY, and optionally FINNHUB_API_KEY
 
 # 2. Start the database
-docker compose up -d
+docker compose up -d postgres
 
 # 3. Start the momentum agent
 docker compose -f docker-compose.agents.yml up -d momentum-agent
@@ -223,10 +245,10 @@ docker compose -f docker-compose.agents.yml up -d momentum-agent
 docker compose --profile tools up -d
 
 # 5. View agent logs
-docker logs -f algomatic-momentum-agent
+docker logs -f trader-momentum-agent
 ```
 
-#### Option B: Run locally without Docker
+#### Option C: Run locally without Docker
 
 ```bash
 # Ensure the database is running (either via Docker or locally)
@@ -254,6 +276,34 @@ python -m src.agent.main
 
 The agent requires `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` to be set for order submission. If using Finnhub as the data provider, also set `FINNHUB_API_KEY`.
 
+#### Log Locations
+
+Logs are written to the following locations:
+
+| Running Mode | Log Location |
+|---|---|
+| Docker (via `start-agents.sh`) | `~/projects/algomatic/logs/momentum-agent-logs/` |
+| Docker (manual) | Container path `/app/logs/` (mounted to host as configured in compose file) |
+| Local (no Docker) | `./logs/agent.log` (project root) |
+
+To enable verbose debug logging, set `AGENT_LOG_LEVEL=DEBUG` in your environment or `.env` file.
+
+#### Troubleshooting
+
+**Agent not starting:**
+- Verify Alpaca credentials are set correctly in `.env`
+- Check that the PostgreSQL database is running: `docker compose ps`
+- Review logs for errors: `docker logs trader-momentum-agent`
+
+**No trades being placed:**
+- The agent only trades during market hours (9:30 AM - 4:00 PM ET, weekdays)
+- Ensure `AGENT_PAPER=true` is set for paper trading (default)
+- Check that the momentum thresholds are appropriate for current market conditions
+
+**Permission errors on log files:**
+- Use `./start-agents.sh` which creates log directories with correct ownership
+- Or manually create the log directory: `mkdir -p ~/projects/algomatic/logs`
+
 ### 8. Launch Additional Trading Agents (Optional)
 
 Besides the basic momentum agent, the project includes three additional trading strategy agents that can be run independently:
@@ -264,21 +314,34 @@ Besides the basic momentum agent, the project includes three additional trading 
 
 #### Running Multiple Agents
 
-Use the dedicated `docker-compose.agents.yml` file to run any combination of agents:
+Use the `start-agents.sh` script or Docker Compose directly:
 
 ```bash
 # Start infrastructure first
 docker compose up -d postgres
 
-# Start all agents
-docker compose -f docker-compose.agents.yml up -d
+# Using start-agents.sh (recommended):
+./start-agents.sh -d                              # Start all agents
+./start-agents.sh -d breakout-agent vwap-agent   # Start specific agents
 
-# Or start specific agents
-docker compose -f docker-compose.agents.yml up -d breakout-agent vwap-agent
+# Or using Docker Compose directly:
+docker compose -f docker-compose.agents.yml up -d                          # All agents
+docker compose -f docker-compose.agents.yml up -d breakout-agent vwap-agent  # Specific agents
 
 # View logs for a specific agent
-docker logs -f algomatic-breakout-agent
+docker logs -f trader-breakout-agent
+docker logs -f trader-contrarian-agent
+docker logs -f trader-vwap-agent
 ```
+
+#### Agent Log Locations
+
+| Agent | Container Name | Log Directory (via `start-agents.sh`) |
+|---|---|---|
+| Momentum | `trader-momentum-agent` | `~/projects/algomatic/logs/momentum-agent-logs/` |
+| Contrarian | `trader-contrarian-agent` | `~/projects/algomatic/logs/contrarian-agent-logs/` |
+| Breakout | `trader-breakout-agent` | `~/projects/algomatic/logs/breakout-agent-logs/` |
+| VWAP | `trader-vwap-agent` | `~/projects/algomatic/logs/vwap-agent-logs/` |
 
 #### Agent-Specific Environment Variables
 
