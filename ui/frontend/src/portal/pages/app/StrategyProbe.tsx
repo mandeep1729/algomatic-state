@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
-import { fetchStrategyProbe, fetchOHLCVData, fetchThemeStrategies } from '../../api';
-import type { StrategyProbeResponse, WeekPerformance, OHLCVData, ThemeStrategiesResponse, ThemeStrategyDetail } from '../../api';
+import { fetchStrategyProbe, fetchOHLCVData, fetchTopStrategies } from '../../api';
+import type { StrategyProbeResponse, WeekPerformance, OHLCVData, TopStrategiesResponse, TopStrategyDetail } from '../../api';
 
 function defaultStartDate(): string {
   const d = new Date();
@@ -67,9 +67,9 @@ function getThemeLetter(theme: string): string {
   return THEME_LETTERS[n] ?? n.charAt(0).toUpperCase();
 }
 
-function formatDollars(val: number): string {
+function formatPct(val: number, decimals = 2): string {
   const sign = val >= 0 ? '+' : '';
-  return `${sign}$${val.toFixed(2)}`;
+  return `${sign}${(val * 100).toFixed(decimals)}%`;
 }
 
 function formatWeekLabel(weekStart: string): string {
@@ -267,27 +267,34 @@ function WeekCandles({
 }
 
 // ---------------------------------------------------------------------------
-// Theme detail modal
+// Theme detail modal — shows top 3 strategies for a theme within a week
 // ---------------------------------------------------------------------------
 
+interface ModalContext {
+  theme: string;
+  weekStart: string;
+  weekEnd: string;
+  avgPrice: number;
+}
+
 function ThemeDetailModal({
-  theme,
+  context,
   data,
   loading,
   error,
   onClose,
 }: {
-  theme: string;
-  data: ThemeStrategiesResponse | null;
+  context: ModalContext;
+  data: TopStrategiesResponse | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
 }) {
-  const n = normalize(theme);
+  const n = normalize(context.theme);
   const color = getThemeColor(n);
   const label = getThemeLabel(n);
+  const weekLabel = `${formatWeekLabel(context.weekStart)} – ${formatWeekLabel(context.weekEnd)}`;
 
-  // Close on Escape key
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose();
@@ -302,33 +309,35 @@ function ThemeDetailModal({
       onClick={onClose}
     >
       <div
-        className="relative max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-6 shadow-xl"
+        className="relative max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)] p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-5 flex items-start justify-between">
           <div className="flex items-center gap-3">
             <span
-              className="flex h-8 w-8 items-center justify-center rounded text-sm font-bold text-white"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-base font-bold text-white"
               style={{ backgroundColor: color }}
             >
               {getThemeLetter(n)}
             </span>
-            <h2 className="text-lg font-semibold text-[var(--text-primary)]">{label} Strategies</h2>
+            <div>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">{label}</h2>
+              <p className="text-xs text-[var(--text-secondary)]">Top strategies for week of {weekLabel}</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]"
             aria-label="Close"
           >
-            X
+            ✕
           </button>
         </div>
 
-        {/* Content */}
         {loading && (
-          <div className="flex items-center justify-center py-8">
+          <div className="flex items-center justify-center py-12">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-[var(--accent-blue)] border-t-transparent" />
           </div>
         )}
@@ -340,15 +349,21 @@ function ThemeDetailModal({
         )}
 
         {!loading && !error && data && data.strategies.length === 0 && (
-          <p className="py-4 text-center text-sm text-[var(--text-secondary)]">
-            No strategies found for this theme.
+          <p className="py-8 text-center text-sm text-[var(--text-secondary)]">
+            No strategy data found for this theme and week.
           </p>
         )}
 
         {!loading && !error && data && data.strategies.length > 0 && (
           <div className="space-y-4">
-            {data.strategies.map((strategy) => (
-              <StrategyCard key={strategy.name} strategy={strategy} themeColor={color} />
+            {data.strategies.map((strategy, idx) => (
+              <TopStrategyCard
+                key={strategy.name}
+                strategy={strategy}
+                rank={idx + 1}
+                themeColor={color}
+                avgPrice={context.avgPrice}
+              />
             ))}
           </div>
         )}
@@ -357,61 +372,114 @@ function ThemeDetailModal({
   );
 }
 
-function StrategyCard({
+function TopStrategyCard({
   strategy,
+  rank,
   themeColor,
+  avgPrice,
 }: {
-  strategy: ThemeStrategyDetail;
+  strategy: TopStrategyDetail;
+  rank: number;
   themeColor: string;
+  avgPrice: number;
 }) {
-  const entryConditions = (strategy.details?.entry_conditions ?? []) as string[];
-  const exitConditions = (strategy.details?.exit_conditions ?? []) as string[];
+  const d = strategy.details ?? {};
+  const entryLong = (d.entry_long as string) || '';
+  const entryShort = (d.entry_short as string) || '';
+  const exit = (d.exit as string) || '';
+  const indicators = (d.indicators ?? []) as string[];
+  const isProfit = strategy.weighted_avg_pnl >= 0;
+
+  // Avg/Trade($) = avgPrice * weighted_avg_pnl / num_trades (rounded to 3 decimals)
+  const avgTradeUsd = strategy.num_trades > 0
+    ? (avgPrice * strategy.weighted_avg_pnl / strategy.num_trades)
+    : 0;
 
   return (
-    <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{strategy.display_name}</h3>
+    <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] overflow-hidden">
+      {/* Card header: rank + name + direction badge */}
+      <div className="flex items-center gap-3 border-b border-[var(--border-color)] px-4 py-3">
         <span
-          className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
           style={{ backgroundColor: themeColor }}
+        >
+          #{rank}
+        </span>
+        <h3 className="flex-1 text-sm font-semibold text-[var(--text-primary)]">{strategy.display_name}</h3>
+        <span
+          className="shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white"
+          style={{ backgroundColor: themeColor, opacity: 0.85 }}
         >
           {strategy.direction}
         </span>
       </div>
 
-      <p className="mb-3 text-xs text-[var(--text-secondary)]">{strategy.philosophy}</p>
-
-      {entryConditions.length > 0 && (
-        <div className="mb-2">
-          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-            Entry Conditions
-          </h4>
-          <ul className="space-y-0.5">
-            {entryConditions.map((condition, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-xs text-[var(--text-primary)]">
-                <span className="mt-0.5 text-[var(--accent-green)]">&#8226;</span>
-                {condition}
-              </li>
-            ))}
-          </ul>
+      <div className="px-4 py-3 space-y-3">
+        {/* Performance metrics */}
+        <div className="flex gap-3">
+          <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 flex-1 text-center">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Trades</div>
+            <div className="text-sm font-bold text-[var(--text-primary)]">{strategy.num_trades}</div>
+          </div>
+          <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 flex-1 text-center">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Return</div>
+            <div className={`text-sm font-bold ${isProfit ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+              {formatPct(strategy.weighted_avg_pnl)}
+            </div>
+          </div>
+          <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 flex-1 text-center">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Avg/Trade</div>
+            <div className={`text-sm font-bold ${avgTradeUsd >= 0 ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+              ${avgTradeUsd.toFixed(3)}
+            </div>
+          </div>
         </div>
-      )}
 
-      {exitConditions.length > 0 && (
+        {/* Philosophy */}
         <div>
-          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">
-            Exit Conditions
-          </h4>
-          <ul className="space-y-0.5">
-            {exitConditions.map((condition, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-xs text-[var(--text-primary)]">
-                <span className="mt-0.5 text-[var(--accent-red)]">&#8226;</span>
-                {condition}
-              </li>
-            ))}
-          </ul>
+          <h4 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Philosophy</h4>
+          <p className="text-xs leading-relaxed text-[var(--text-primary)]">{strategy.philosophy}</p>
         </div>
-      )}
+
+        {/* Indicators */}
+        {indicators.length > 0 && (
+          <div>
+            <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Indicators</h4>
+            <div className="flex flex-wrap gap-1.5">
+              {indicators.map((ind, i) => (
+                <span
+                  key={i}
+                  className="rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0.5 text-[11px] font-mono text-[var(--text-primary)]"
+                >
+                  {ind}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Entry / Exit signals */}
+        <div className="space-y-2">
+          {entryLong && (
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 shrink-0 rounded bg-[#26a69a]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#26a69a]">LONG</span>
+              <p className="text-xs leading-relaxed text-[var(--text-primary)]">{entryLong}</p>
+            </div>
+          )}
+          {entryShort && (
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 shrink-0 rounded bg-[#ef5350]/20 px-1.5 py-0.5 text-[10px] font-bold text-[#ef5350]">SHORT</span>
+              <p className="text-xs leading-relaxed text-[var(--text-primary)]">{entryShort}</p>
+            </div>
+          )}
+          {exit && (
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 shrink-0 rounded bg-[var(--text-secondary)]/20 px-1.5 py-0.5 text-[10px] font-bold text-[var(--text-secondary)]">EXIT</span>
+              <p className="text-xs leading-relaxed text-[var(--text-primary)]">{exit}</p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -422,12 +490,16 @@ function StrategyCard({
 
 function ThemeBand({
   theme,
+  weekStart,
+  weekEnd,
   showThemeNames,
   onClick,
 }: {
   theme: { theme: string; rank: number; weighted_avg_pnl: number; num_trades: number; avg_pnl_per_trade: number };
+  weekStart: string;
+  weekEnd: string;
   showThemeNames: boolean;
-  onClick: (theme: string) => void;
+  onClick: (theme: string, weekStart: string, weekEnd: string) => void;
 }) {
   const n = normalize(theme.theme);
   const color = getThemeColor(n);
@@ -441,8 +513,8 @@ function ThemeBand({
         backgroundColor: `${color}${isPositive ? '33' : '18'}`,
         borderLeft: `3px solid ${color}`,
       }}
-      title={`${getThemeLetter(n)} - ${getThemeLabel(n)}\nRank: #${theme.rank}\nProfit: ${formatDollars(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}\nClick for strategy details`}
-      onClick={() => onClick(n)}
+      title={`${getThemeLetter(n)} - ${getThemeLabel(n)}\nRank: #${theme.rank}\nP&L: ${formatPct(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}\nClick for top strategies`}
+      onClick={() => onClick(n, weekStart, weekEnd)}
     >
       <span
         className="text-[12px] font-bold truncate px-1"
@@ -466,31 +538,48 @@ function StackedTimeline({
   ohlcv: OHLCVData | null;
 }) {
   const [showThemeNames, setShowThemeNames] = useState(false);
-  const [selectedTheme, setSelectedTheme] = useState<string | null>(null);
-  const [themeData, setThemeData] = useState<ThemeStrategiesResponse | null>(null);
-  const [themeLoading, setThemeLoading] = useState(false);
-  const [themeError, setThemeError] = useState<string | null>(null);
+  const [modalContext, setModalContext] = useState<ModalContext | null>(null);
+  const [topData, setTopData] = useState<TopStrategiesResponse | null>(null);
+  const [topLoading, setTopLoading] = useState(false);
+  const [topError, setTopError] = useState<string | null>(null);
 
-  const handleThemeClick = useCallback(async (theme: string) => {
-    setSelectedTheme(theme);
-    setThemeData(null);
-    setThemeError(null);
-    setThemeLoading(true);
-    try {
-      const result = await fetchThemeStrategies(theme);
-      setThemeData(result);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load strategy details';
-      setThemeError(message);
-    } finally {
-      setThemeLoading(false);
+  const handleThemeClick = useCallback(async (theme: string, weekStart: string, weekEnd: string) => {
+    // Compute average close price from OHLCV data for this week
+    let avgPrice = 0;
+    if (ohlcv && ohlcv.timestamps.length > 0) {
+      const ws = new Date(weekStart + 'T00:00:00').getTime();
+      const we = new Date(weekEnd + 'T23:59:59').getTime();
+      let sum = 0;
+      let count = 0;
+      for (let i = 0; i < ohlcv.timestamps.length; i++) {
+        const t = new Date(ohlcv.timestamps[i]).getTime();
+        if (t >= ws && t <= we) {
+          sum += ohlcv.close[i];
+          count++;
+        }
+      }
+      if (count > 0) avgPrice = sum / count;
     }
-  }, []);
+
+    setModalContext({ theme, weekStart, weekEnd, avgPrice });
+    setTopData(null);
+    setTopError(null);
+    setTopLoading(true);
+    try {
+      const result = await fetchTopStrategies(data.symbol, theme, weekStart, weekEnd);
+      setTopData(result);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load top strategies';
+      setTopError(message);
+    } finally {
+      setTopLoading(false);
+    }
+  }, [data.symbol, ohlcv]);
 
   const handleModalClose = useCallback(() => {
-    setSelectedTheme(null);
-    setThemeData(null);
-    setThemeError(null);
+    setModalContext(null);
+    setTopData(null);
+    setTopError(null);
   }, []);
 
   const themes = useMemo(() => collectThemes(data.weeks), [data.weeks]);
@@ -580,6 +669,8 @@ function StackedTimeline({
                 <ThemeBand
                   key={`${week.week_start}-${theme.theme}`}
                   theme={theme}
+                  weekStart={week.week_start}
+                  weekEnd={week.week_end}
                   showThemeNames={showThemeNames}
                   onClick={handleThemeClick}
                 />
@@ -589,12 +680,12 @@ function StackedTimeline({
         </div>
       </div>
 
-      {selectedTheme && (
+      {modalContext && (
         <ThemeDetailModal
-          theme={selectedTheme}
-          data={themeData}
-          loading={themeLoading}
-          error={themeError}
+          context={modalContext}
+          data={topData}
+          loading={topLoading}
+          error={topError}
           onClose={handleModalClose}
         />
       )}

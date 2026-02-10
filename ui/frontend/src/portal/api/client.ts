@@ -709,3 +709,42 @@ export async function fetchThemeStrategies(
     `/api/strategy-probe/strategies/${encodeURIComponent(strategyType)}`,
   );
 }
+
+// =============================================================================
+// Top Strategies — GET /api/strategy-probe/top-strategies/{symbol}/{strategy_type}
+// Returns top 3 strategies for a theme within a specific week
+// =============================================================================
+
+export interface TopStrategyDetail {
+  display_name: string;
+  name: string;
+  philosophy: string;
+  direction: string;
+  details: Record<string, unknown>;
+  num_trades: number;
+  weighted_avg_pnl: number;
+  avg_pnl_per_trade: number;
+}
+
+export interface TopStrategiesResponse {
+  strategy_type: string;
+  week_start: string;
+  week_end: string;
+  strategies: TopStrategyDetail[];
+}
+
+export async function fetchTopStrategies(
+  symbol: string,
+  strategyType: string,
+  weekStart: string,
+  weekEnd: string,
+  timeframe?: string,
+): Promise<TopStrategiesResponse> {
+  const params = new URLSearchParams();
+  params.set('week_start', weekStart);
+  params.set('week_end', weekEnd);
+  if (timeframe) params.set('timeframe', timeframe);
+  return get<TopStrategiesResponse>(
+    `/api/strategy-probe/top-strategies/${encodeURIComponent(symbol)}/${encodeURIComponent(strategyType)}?${params.toString()}`,
+  );
+}

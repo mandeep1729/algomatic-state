@@ -79,6 +79,26 @@ class ThemeStrategiesResponse(BaseModel):
     strategies: list[ThemeStrategyDetail]
 
 
+class TopStrategyDetail(BaseModel):
+    """A top strategy for a theme in a specific week, with performance + details."""
+    display_name: str
+    name: str
+    philosophy: str
+    direction: str
+    details: dict[str, Any]
+    num_trades: int
+    weighted_avg_pnl: float
+    avg_pnl_per_trade: float
+
+
+class TopStrategiesResponse(BaseModel):
+    """Top strategies for a theme within a specific week."""
+    strategy_type: str
+    week_start: str
+    week_end: str
+    strategies: list[TopStrategyDetail]
+
+
 # -----------------------------------------------------------------------------
 # Endpoints
 # -----------------------------------------------------------------------------
@@ -146,6 +166,104 @@ async def get_theme_strategies(
         strategy_type=strategy_type,
         strategies=result,
     )
+
+@router.get("/top-strategies/{symbol}/{strategy_type}", response_model=TopStrategiesResponse)
+async def get_top_strategies(
+    symbol: str,
+    strategy_type: str,
+    week_start: date = Query(..., description="Week start date (ISO)"),
+    week_end: date = Query(..., description="Week end date (ISO)"),
+    timeframe: Optional[str] = Query(None, description="Filter by timeframe"),
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get top 3 strategies for a theme within a specific week.
+
+    Queries strategy_probe_results grouped by individual strategy_id for
+    the given symbol, theme, and week. Returns up to 3 strategies ranked
+    by weighted average PnL, with full strategy details (philosophy, entry/exit).
+
+    Args:
+        symbol: Ticker symbol.
+        strategy_type: Theme (e.g. trend, breakout).
+        week_start: Start of the week (inclusive).
+        week_end: End of the week (inclusive).
+        timeframe: Optional timeframe filter.
+
+    Returns:
+        Top 3 strategies with performance metrics and details.
+    """
+    symbol = symbol.upper()
+    logger.info(
+        "Top strategies request: symbol=%s, theme=%s, week=%s to %s, tf=%s, user=%d",
+        symbol, strategy_type, week_start, week_end, timeframe, user_id,
+    )
+
+    query = db.query(
+        ProbeStrategy.id,
+        ProbeStrategy.display_name,
+        ProbeStrategy.name,
+        ProbeStrategy.philosophy,
+        ProbeStrategy.direction,
+        ProbeStrategy.details,
+        func.sum(StrategyProbeResult.num_trades).label("total_trades"),
+        func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).label("sum_pnl"),
+    ).join(
+        StrategyProbeResult, StrategyProbeResult.strategy_id == ProbeStrategy.id,
+    ).filter(
+        StrategyProbeResult.symbol == symbol,
+        ProbeStrategy.strategy_type == strategy_type,
+        StrategyProbeResult.open_day >= week_start,
+        StrategyProbeResult.open_day <= week_end,
+    )
+
+    if timeframe:
+        query = query.filter(StrategyProbeResult.timeframe == timeframe)
+
+    rows = (
+        query
+        .group_by(
+            ProbeStrategy.id,
+            ProbeStrategy.display_name,
+            ProbeStrategy.name,
+            ProbeStrategy.philosophy,
+            ProbeStrategy.direction,
+            ProbeStrategy.details,
+        )
+        .order_by(func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).desc())
+        .limit(3)
+        .all()
+    )
+
+    strategies = []
+    for row in rows:
+        total_trades = int(row.total_trades)
+        sum_pnl = float(row.sum_pnl)
+        avg_pnl = sum_pnl / total_trades if total_trades > 0 else 0.0
+
+        strategies.append(TopStrategyDetail(
+            display_name=row.display_name,
+            name=row.name,
+            philosophy=row.philosophy,
+            direction=row.direction,
+            details=row.details or {},
+            num_trades=total_trades,
+            weighted_avg_pnl=round(sum_pnl, 2),
+            avg_pnl_per_trade=round(avg_pnl, 2),
+        ))
+
+    logger.info(
+        "Top strategies complete: symbol=%s, theme=%s, found=%d",
+        symbol, strategy_type, len(strategies),
+    )
+
+    return TopStrategiesResponse(
+        strategy_type=strategy_type,
+        week_start=week_start.isoformat(),
+        week_end=week_end.isoformat(),
+        strategies=strategies,
+    )
+
 
 @router.get("/{symbol}", response_model=StrategyProbeResponse)
 async def get_strategy_probe(
