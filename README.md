@@ -163,10 +163,13 @@ The web UI provides interactive regime state visualization with price charts, fe
 #### Option A: Using the startup script
 
 ```bash
-# From the project root
-./ui/start_ui.sh       # Linux/macOS
-# or
-cd ui && start_ui.bat  # Windows
+# From the project root (Linux/macOS)
+./ui/start_ui.sh
+```
+
+```cmd
+:: From the project root (Windows)
+cd ui && start_ui.bat
 ```
 
 This starts both the backend (port 8729 by default) and frontend (port 5173) together.

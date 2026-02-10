@@ -2,8 +2,8 @@
 
 FastAPI backend endpoints for market data access and visualization.
 
-**Base URL:** `http://localhost:8000`
-**Swagger Docs:** `http://localhost:8000/docs`
+**Base URL:** `http://localhost:8729` (configurable via `SERVER_PORT` in `.env`)
+**Swagger Docs:** `http://localhost:8729/docs`
 
 ## Tickers
 
@@ -57,7 +57,7 @@ Data is always loaded from the PostgreSQL database. If data is not available for
 
 **Example:**
 ```bash
-curl "http://localhost:8000/api/ohlcv/AAPL?timeframe=1Min&start_date=2024-01-01"
+curl "http://localhost:8729/api/ohlcv/AAPL?timeframe=1Min&start_date=2024-01-01"
 ```
 
 **Response:**
@@ -167,7 +167,7 @@ Analyze a symbol using HMM: load OHLCV data, compute features, train model if ne
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8000/api/analyze/AAPL?timeframe=1Hour"
+curl -X POST "http://localhost:8729/api/analyze/AAPL?timeframe=1Hour"
 ```
 
 **Response:**
@@ -197,7 +197,7 @@ Analyze a symbol using PCA + K-means clustering (simpler alternative to HMM).
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8000/api/pca/analyze/AAPL?timeframe=1Hour"
+curl -X POST "http://localhost:8729/api/pca/analyze/AAPL?timeframe=1Hour"
 ```
 
 **Response:**
@@ -290,7 +290,7 @@ Trigger data synchronization from Alpaca.
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8000/api/sync/AAPL?timeframe=1Min&start_date=2024-01-01"
+curl -X POST "http://localhost:8729/api/sync/AAPL?timeframe=1Min&start_date=2024-01-01"
 ```
 
 **Response:**
@@ -320,7 +320,7 @@ Import data from a local file into the database.
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8000/api/import?symbol=AAPL&file_path=/data/raw/AAPL_1Min.parquet&timeframe=1Min"
+curl -X POST "http://localhost:8729/api/import?symbol=AAPL&file_path=/data/raw/AAPL_1Min.parquet&timeframe=1Min"
 ```
 
 **Response:**
@@ -389,7 +389,7 @@ Computes the full feature set including returns, volatility, volume, intrabar, a
 
 **Example:**
 ```bash
-curl -X POST "http://localhost:8000/api/compute-features/AAPL"
+curl -X POST "http://localhost:8729/api/compute-features/AAPL"
 ```
 
 **Response:**
