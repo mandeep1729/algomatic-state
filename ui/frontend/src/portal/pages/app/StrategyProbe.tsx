@@ -170,7 +170,7 @@ function ThemeLegend({ themes }: { themes: string[] }) {
 // ---------------------------------------------------------------------------
 
 const CANDLE_H = 160;
-const VOLUME_H = 40;
+const VOLUME_H = 70;
 const BULL_COLOR = '#26a69a';
 const BEAR_COLOR = '#ef5350';
 
@@ -222,7 +222,7 @@ function WeekCandles({
             width={bodyW}
             height={Math.max(vh, 0.5)}
             fill={bullish ? BULL_COLOR : BEAR_COLOR}
-            opacity={0.25}
+            opacity={0.7}
           />
         );
       })}
