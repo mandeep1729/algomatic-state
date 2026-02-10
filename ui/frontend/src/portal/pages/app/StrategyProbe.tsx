@@ -152,12 +152,10 @@ function ThemeLegend({ themes }: { themes: string[] }) {
       <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Legend</span>
       {themes.map((t) => (
         <div key={t} className="flex items-center gap-1.5">
-          <span
-            className="flex h-5 w-5 items-center justify-center rounded text-[11px] font-bold text-white"
+          <div
+            className="h-3 w-3 shrink-0 rounded-sm"
             style={{ backgroundColor: getThemeColor(t) }}
-          >
-            {getThemeLetter(t)}
-          </span>
+          />
           <span className="text-xs text-[var(--text-primary)]">{getThemeLabel(t)}</span>
         </div>
       ))}
