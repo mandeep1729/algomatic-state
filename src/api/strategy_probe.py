@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import func, extract
+from sqlalchemy import case, func, extract
 from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
@@ -45,9 +45,14 @@ class ThemeRanking(BaseModel):
     """A strategy theme's performance within a week."""
     theme: str
     num_trades: int
+    num_profitable: int = 0
+    num_unprofitable: int = 0
+    num_long: int = 0
+    num_short: int = 0
     avg_pnl_per_trade: float
     weighted_avg_pnl: float
     rank: int
+    top_strategy_name: str = ""
 
 
 class WeekPerformance(BaseModel):
@@ -77,6 +82,26 @@ class ThemeStrategiesResponse(BaseModel):
     """All strategies belonging to a theme (strategy_type)."""
     strategy_type: str
     strategies: list[ThemeStrategyDetail]
+
+
+class TopStrategyDetail(BaseModel):
+    """A top strategy for a theme in a specific week, with performance + details."""
+    display_name: str
+    name: str
+    philosophy: str
+    direction: str
+    details: dict[str, Any]
+    num_trades: int
+    weighted_avg_pnl: float
+    avg_pnl_per_trade: float
+
+
+class TopStrategiesResponse(BaseModel):
+    """Top strategies for a theme within a specific week."""
+    strategy_type: str
+    week_start: str
+    week_end: str
+    strategies: list[TopStrategyDetail]
 
 
 # -----------------------------------------------------------------------------
@@ -147,12 +172,111 @@ async def get_theme_strategies(
         strategies=result,
     )
 
+@router.get("/top-strategies/{symbol}/{strategy_type}", response_model=TopStrategiesResponse)
+async def get_top_strategies(
+    symbol: str,
+    strategy_type: str,
+    week_start: date = Query(..., description="Week start date (ISO)"),
+    week_end: date = Query(..., description="Week end date (ISO)"),
+    timeframe: Optional[str] = Query(None, description="Filter by timeframe"),
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get top 3 strategies for a theme within a specific week.
+
+    Queries strategy_probe_results grouped by individual strategy_id for
+    the given symbol, theme, and week. Returns up to 3 strategies ranked
+    by weighted average PnL, with full strategy details (philosophy, entry/exit).
+
+    Args:
+        symbol: Ticker symbol.
+        strategy_type: Theme (e.g. trend, breakout).
+        week_start: Start of the week (inclusive).
+        week_end: End of the week (inclusive).
+        timeframe: Optional timeframe filter.
+
+    Returns:
+        Top 3 strategies with performance metrics and details.
+    """
+    symbol = symbol.upper()
+    logger.info(
+        "Top strategies request: symbol=%s, theme=%s, week=%s to %s, tf=%s, user=%d",
+        symbol, strategy_type, week_start, week_end, timeframe, user_id,
+    )
+
+    query = db.query(
+        ProbeStrategy.id,
+        ProbeStrategy.display_name,
+        ProbeStrategy.name,
+        ProbeStrategy.philosophy,
+        ProbeStrategy.direction,
+        ProbeStrategy.details,
+        func.sum(StrategyProbeResult.num_trades).label("total_trades"),
+        func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).label("sum_pnl"),
+    ).join(
+        StrategyProbeResult, StrategyProbeResult.strategy_id == ProbeStrategy.id,
+    ).filter(
+        StrategyProbeResult.symbol == symbol,
+        ProbeStrategy.strategy_type == strategy_type,
+        StrategyProbeResult.open_day >= week_start,
+        StrategyProbeResult.open_day <= week_end,
+    )
+
+    if timeframe:
+        query = query.filter(StrategyProbeResult.timeframe == timeframe)
+
+    rows = (
+        query
+        .group_by(
+            ProbeStrategy.id,
+            ProbeStrategy.display_name,
+            ProbeStrategy.name,
+            ProbeStrategy.philosophy,
+            ProbeStrategy.direction,
+            ProbeStrategy.details,
+        )
+        .order_by(func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).desc())
+        .limit(3)
+        .all()
+    )
+
+    strategies = []
+    for row in rows:
+        total_trades = int(row.total_trades)
+        sum_pnl = float(row.sum_pnl)
+        avg_pnl = sum_pnl / total_trades if total_trades > 0 else 0.0
+
+        strategies.append(TopStrategyDetail(
+            display_name=row.display_name,
+            name=row.name,
+            philosophy=row.philosophy,
+            direction=row.direction,
+            details=row.details or {},
+            num_trades=total_trades,
+            weighted_avg_pnl=round(sum_pnl, 2),
+            avg_pnl_per_trade=round(avg_pnl, 2),
+        ))
+
+    logger.info(
+        "Top strategies complete: symbol=%s, theme=%s, found=%d",
+        symbol, strategy_type, len(strategies),
+    )
+
+    return TopStrategiesResponse(
+        strategy_type=strategy_type,
+        week_start=week_start.isoformat(),
+        week_end=week_end.isoformat(),
+        strategies=strategies,
+    )
+
+
 @router.get("/{symbol}", response_model=StrategyProbeResponse)
 async def get_strategy_probe(
     symbol: str,
     start_date: Optional[date] = Query(None, description="Start date (inclusive)"),
     end_date: Optional[date] = Query(None, description="End date (inclusive)"),
     timeframe: Optional[str] = Query(None, description="Filter by timeframe (e.g. 1Min, 5Min, 1Hour)"),
+    direction: Optional[str] = Query(None, description="Filter by trade direction (long, short)"),
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -167,14 +291,15 @@ async def get_strategy_probe(
         start_date: Start date for the analysis period (inclusive).
         end_date: End date for the analysis period (inclusive).
         timeframe: Optional timeframe filter (e.g. 1Min, 5Min, 1Hour).
+        direction: Optional direction filter (long, short).
 
     Returns:
         Weekly theme rankings with performance metrics and available timeframes.
     """
     symbol = symbol.upper()
     logger.info(
-        "Strategy probe request: symbol=%s, start=%s, end=%s, timeframe=%s, user_id=%d",
-        symbol, start_date, end_date, timeframe, user_id,
+        "Strategy probe request: symbol=%s, start=%s, end=%s, timeframe=%s, direction=%s, user_id=%d",
+        symbol, start_date, end_date, timeframe, direction, user_id,
     )
 
     # Query distinct available timeframes for this symbol and date range.
@@ -187,6 +312,8 @@ async def get_strategy_probe(
         tf_query = tf_query.filter(StrategyProbeResult.open_day >= start_date)
     if end_date:
         tf_query = tf_query.filter(StrategyProbeResult.open_day <= end_date)
+    if direction:
+        tf_query = tf_query.filter(StrategyProbeResult.long_short == direction)
 
     available_timeframes = sorted(
         row.timeframe for row in tf_query.distinct().all()
@@ -199,6 +326,30 @@ async def get_strategy_probe(
         extract("week", StrategyProbeResult.open_day).label("iso_week"),
         ProbeStrategy.strategy_type.label("theme"),
         func.sum(StrategyProbeResult.num_trades).label("total_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.pnl_mean > 0, StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("profitable_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.pnl_mean <= 0, StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("unprofitable_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.long_short == "long", StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("long_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.long_short == "short", StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("short_trades"),
         func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).label("sum_pnl"),
     ).join(
         ProbeStrategy, StrategyProbeResult.strategy_id == ProbeStrategy.id,
@@ -213,6 +364,9 @@ async def get_strategy_probe(
     if timeframe:
         base_query = base_query.filter(StrategyProbeResult.timeframe == timeframe)
         logger.debug("Filtering by timeframe=%s", timeframe)
+    if direction:
+        base_query = base_query.filter(StrategyProbeResult.long_short == direction)
+        logger.debug("Filtering by direction=%s", direction)
 
     results = (
         base_query
@@ -236,22 +390,80 @@ async def get_strategy_probe(
             symbol=symbol, weeks=[], available_timeframes=available_timeframes,
         )
 
+    # Find top strategy per (week, theme) — grouped by individual strategy
+    top_strat_query = db.query(
+        extract("isoyear", StrategyProbeResult.open_day).label("iso_year"),
+        extract("week", StrategyProbeResult.open_day).label("iso_week"),
+        ProbeStrategy.strategy_type.label("theme"),
+        ProbeStrategy.display_name,
+        func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).label("strat_pnl"),
+    ).join(
+        ProbeStrategy, StrategyProbeResult.strategy_id == ProbeStrategy.id,
+    ).filter(
+        StrategyProbeResult.symbol == symbol,
+    )
+
+    if start_date:
+        top_strat_query = top_strat_query.filter(StrategyProbeResult.open_day >= start_date)
+    if end_date:
+        top_strat_query = top_strat_query.filter(StrategyProbeResult.open_day <= end_date)
+    if timeframe:
+        top_strat_query = top_strat_query.filter(StrategyProbeResult.timeframe == timeframe)
+    if direction:
+        top_strat_query = top_strat_query.filter(StrategyProbeResult.long_short == direction)
+
+    top_strat_rows = (
+        top_strat_query
+        .group_by(
+            extract("isoyear", StrategyProbeResult.open_day),
+            extract("week", StrategyProbeResult.open_day),
+            ProbeStrategy.strategy_type,
+            ProbeStrategy.id,
+            ProbeStrategy.display_name,
+        )
+        .order_by(
+            extract("isoyear", StrategyProbeResult.open_day).asc(),
+            extract("week", StrategyProbeResult.open_day).asc(),
+            func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).desc(),
+        )
+        .all()
+    )
+
+    # Pick best strategy per (week, theme) — first seen per group wins (ordered by PnL desc)
+    top_strategy_names: dict[tuple[int, int, str], str] = {}
+    for row in top_strat_rows:
+        key = (int(row.iso_year), int(row.iso_week), row.theme or "unknown")
+        if key not in top_strategy_names:
+            top_strategy_names[key] = row.display_name
+
+    logger.debug("Found top strategies for %d week-theme groups", len(top_strategy_names))
+
     # Group results by (iso_year, iso_week)
     weeks_data: dict[tuple[int, int], list[dict]] = {}
     for row in results:
         iso_year = int(row.iso_year)
         iso_week = int(row.iso_week)
         key = (iso_year, iso_week)
+        theme = row.theme or "unknown"
 
         total_trades = int(row.total_trades)
+        profitable_trades = int(row.profitable_trades)
+        unprofitable_trades = int(row.unprofitable_trades)
+        long_trades = int(row.long_trades)
+        short_trades = int(row.short_trades)
         sum_pnl = float(row.sum_pnl)
         avg_pnl = sum_pnl / total_trades if total_trades > 0 else 0.0
 
         entry = {
-            "theme": row.theme or "unknown",
+            "theme": theme,
             "num_trades": total_trades,
+            "num_profitable": profitable_trades,
+            "num_unprofitable": unprofitable_trades,
+            "num_long": long_trades,
+            "num_short": short_trades,
             "avg_pnl_per_trade": round(avg_pnl, 2),
             "weighted_avg_pnl": round(sum_pnl, 2),
+            "top_strategy_name": top_strategy_names.get((iso_year, iso_week, theme), ""),
         }
 
         if key not in weeks_data:
@@ -272,9 +484,14 @@ async def get_strategy_probe(
             ranked_entries.append(ThemeRanking(
                 theme=entry["theme"],
                 num_trades=entry["num_trades"],
+                num_profitable=entry.get("num_profitable", 0),
+                num_unprofitable=entry.get("num_unprofitable", 0),
+                num_long=entry.get("num_long", 0),
+                num_short=entry.get("num_short", 0),
                 avg_pnl_per_trade=entry["avg_pnl_per_trade"],
                 weighted_avg_pnl=entry["weighted_avg_pnl"],
                 rank=current_rank,
+                top_strategy_name=entry.get("top_strategy_name", ""),
             ))
 
         week_start = datetime.strptime(f"{iso_year}-W{iso_week:02d}-1", "%G-W%V-%u").date()
