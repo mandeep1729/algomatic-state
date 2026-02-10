@@ -193,7 +193,7 @@ int Database::batch_upsert_features(
 
     // Build multi-row INSERT ... ON CONFLICT
     std::ostringstream sql;
-    sql << "INSERT INTO computed_features (bar_id, ticker_id, timeframe, timestamp, features, feature_version) "
+    sql << "INSERT INTO computed_features (bar_id, ticker_id, timeframe, timestamp, features, feature_version, created_at) "
         << "VALUES ";
 
     bool first = true;
@@ -208,6 +208,7 @@ int Database::batch_upsert_features(
             << ", (SELECT timestamp FROM ohlcv_bars WHERE id = " << r.bar_id << ")"
             << ", '" << features_json << "'::jsonb"
             << ", '" << feature_version << "'"
+            << ", NOW()"
             << ")";
     }
 
