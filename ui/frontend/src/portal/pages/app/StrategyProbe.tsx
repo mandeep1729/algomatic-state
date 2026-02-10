@@ -644,13 +644,33 @@ function ThemeBand({
   const n = normalize(theme.theme);
   const color = getThemeColor(n);
   const isPositive = theme.weighted_avg_pnl >= 0;
-  let displayText: string;
+  const pnlColor = isPositive ? '#26a69a' : '#ef5350';
+
+  let displayContent: React.ReactNode;
   if (displayMode === 'strategy') {
-    displayText = theme.top_strategy_name || getThemeLabel(n);
+    displayContent = (
+      <span className="text-[11px] font-bold leading-tight px-1" style={{ color }}>
+        {theme.top_strategy_name || getThemeLabel(n)}
+      </span>
+    );
   } else if (displayMode === 'performance') {
-    displayText = `#${theme.rank}`;
+    // Two-line layout: AVG/PNL on top, trade count on bottom
+    displayContent = (
+      <div className="flex flex-col items-center justify-center gap-0 w-full px-1">
+        <div className="text-[10px] font-bold leading-none" style={{ color: pnlColor }}>
+          {formatPct(theme.weighted_avg_pnl)}
+        </div>
+        <div className="text-[9px] font-medium leading-none text-[var(--text-secondary)]">
+          {theme.num_trades} trades
+        </div>
+      </div>
+    );
   } else {
-    displayText = getThemeLabel(n);
+    displayContent = (
+      <span className="text-[11px] font-bold leading-tight px-1" style={{ color }}>
+        {getThemeLabel(n)}
+      </span>
+    );
   }
 
   return (
@@ -664,12 +684,7 @@ function ThemeBand({
       title={`${getThemeLabel(n)}\nRank: #${theme.rank}\nP&L: ${formatPct(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades}\nTop: ${theme.top_strategy_name || '—'}\nClick for top strategies`}
       onClick={() => onClick(n, weekStart, weekEnd)}
     >
-      <span
-        className="text-[11px] font-bold leading-tight px-1"
-        style={{ color }}
-      >
-        {displayText}
-      </span>
+      {displayContent}
     </div>
   );
 }
