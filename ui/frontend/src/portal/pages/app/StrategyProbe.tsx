@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { fetchStrategyProbe, fetchOHLCVData, fetchTopStrategies } from '../../api';
 import type { StrategyProbeResponse, WeekPerformance, OHLCVData, TopStrategiesResponse, TopStrategyDetail } from '../../api';
 
@@ -183,6 +183,10 @@ function WeekCandles({
   pHi: number;
   maxVol: number;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
   const n = bars.timestamps.length;
   if (n === 0) {
     return <div style={{ height: CANDLE_H + VOLUME_H }} />;
@@ -199,68 +203,206 @@ function WeekCandles({
   const toVolY = (vol: number) =>
     CANDLE_H + VOLUME_H - (vol / maxVol) * (VOLUME_H - 2);
 
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = e.currentTarget;
+    const rect = svg.getBoundingClientRect();
+    // Map mouse X to viewBox coordinate to find which bar column we are over
+    const mouseXRatio = (e.clientX - rect.left) / rect.width;
+    const vbX = mouseXRatio * vbW;
+    const barIdx = Math.floor(vbX / colW);
+    if (barIdx >= 0 && barIdx < n) {
+      setHoveredIdx(barIdx);
+      // Position tooltip relative to the container div
+      const container = containerRef.current;
+      if (container) {
+        const containerRect = container.getBoundingClientRect();
+        setTooltipPos({
+          x: e.clientX - containerRect.left,
+          y: e.clientY - containerRect.top,
+        });
+      }
+    } else {
+      setHoveredIdx(null);
+    }
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredIdx(null);
+  };
+
   return (
-    <svg
-      viewBox={`0 0 ${vbW} ${totalH}`}
-      preserveAspectRatio="none"
-      className="block w-full"
-      style={{ height: totalH }}
-    >
-      {/* Volume bars */}
-      {bars.timestamps.map((_, i) => {
-        const bullish = bars.close[i] >= bars.open[i];
-        const cx = colW * i + colW / 2;
-        const vy = toVolY(bars.volume[i]);
-        const vh = CANDLE_H + VOLUME_H - vy;
-        return (
-          <rect
-            key={`v${i}`}
-            x={cx - bodyW / 2}
-            y={vy}
-            width={bodyW}
-            height={Math.max(vh, 0.5)}
-            fill={bullish ? BULL_COLOR : BEAR_COLOR}
-            opacity={0.7}
-          />
-        );
-      })}
-
-      {/* Separator */}
-      <line
-        x1={0} y1={CANDLE_H} x2={vbW} y2={CANDLE_H}
-        stroke="var(--border-color)" strokeWidth={0.3}
-      />
-
-      {/* Candlesticks */}
-      {bars.timestamps.map((ts, i) => {
-        const o = bars.open[i];
-        const c = bars.close[i];
-        const h = bars.high[i];
-        const l = bars.low[i];
-        const bullish = c >= o;
-        const color = bullish ? BULL_COLOR : BEAR_COLOR;
-        const cx = colW * i + colW / 2;
-        const bodyTop = toY(Math.max(o, c));
-        const bodyBot = toY(Math.min(o, c));
-        const bodyH = Math.max(bodyBot - bodyTop, 0.5);
-
-        return (
-          <g key={`c${i}`}>
-            <line
-              x1={cx} y1={toY(h)} x2={cx} y2={toY(l)}
-              stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke"
-            />
+    <div ref={containerRef} className="relative">
+      <svg
+        viewBox={`0 0 ${vbW} ${totalH}`}
+        preserveAspectRatio="none"
+        className="block w-full"
+        style={{ height: totalH }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+      >
+        {/* Volume bars */}
+        {bars.timestamps.map((_, i) => {
+          const bullish = bars.close[i] >= bars.open[i];
+          const cx = colW * i + colW / 2;
+          const vy = toVolY(bars.volume[i]);
+          const vh = CANDLE_H + VOLUME_H - vy;
+          return (
             <rect
-              x={cx - bodyW / 2} y={bodyTop}
-              width={bodyW} height={bodyH}
-              fill={bullish ? 'transparent' : color}
-              stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke"
+              key={`v${i}`}
+              x={cx - bodyW / 2}
+              y={vy}
+              width={bodyW}
+              height={Math.max(vh, 0.5)}
+              fill={bullish ? BULL_COLOR : BEAR_COLOR}
+              opacity={0.7}
             />
-            <title>{`${new Date(ts).toLocaleString('en-US', { timeZone: 'America/New_York' })}\nO: $${o.toFixed(2)}  H: $${h.toFixed(2)}  L: $${l.toFixed(2)}  C: $${c.toFixed(2)}\nVol: ${bars.volume[i].toLocaleString()}`}</title>
-          </g>
-        );
-      })}
-    </svg>
+          );
+        })}
+
+        {/* Separator */}
+        <line
+          x1={0} y1={CANDLE_H} x2={vbW} y2={CANDLE_H}
+          stroke="var(--border-color)" strokeWidth={0.3}
+        />
+
+        {/* Candlesticks */}
+        {bars.timestamps.map((_, i) => {
+          const o = bars.open[i];
+          const c = bars.close[i];
+          const h = bars.high[i];
+          const l = bars.low[i];
+          const bullish = c >= o;
+          const color = bullish ? BULL_COLOR : BEAR_COLOR;
+          const cx = colW * i + colW / 2;
+          const bodyTop = toY(Math.max(o, c));
+          const bodyBot = toY(Math.min(o, c));
+          const bodyH = Math.max(bodyBot - bodyTop, 0.5);
+
+          return (
+            <g key={`c${i}`}>
+              <line
+                x1={cx} y1={toY(h)} x2={cx} y2={toY(l)}
+                stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke"
+              />
+              <rect
+                x={cx - bodyW / 2} y={bodyTop}
+                width={bodyW} height={bodyH}
+                fill={bullish ? 'transparent' : color}
+                stroke={color} strokeWidth={1} vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Tooltip */}
+      {hoveredIdx !== null && hoveredIdx < n && (
+        <CandleTooltip
+          timestamp={bars.timestamps[hoveredIdx]}
+          open={bars.open[hoveredIdx]}
+          high={bars.high[hoveredIdx]}
+          low={bars.low[hoveredIdx]}
+          close={bars.close[hoveredIdx]}
+          volume={bars.volume[hoveredIdx]}
+          x={tooltipPos.x}
+          y={tooltipPos.y}
+          containerRef={containerRef}
+        />
+      )}
+    </div>
+  );
+}
+
+function CandleTooltip({
+  timestamp,
+  open,
+  high,
+  low,
+  close,
+  volume,
+  x,
+  y,
+  containerRef,
+}: {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  x: number;
+  y: number;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [adjustedPos, setAdjustedPos] = useState<{ left: number; top: number }>({ left: x + 12, top: y - 10 });
+
+  useEffect(() => {
+    const tooltip = tooltipRef.current;
+    const container = containerRef.current;
+    if (!tooltip || !container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const tooltipW = tooltip.offsetWidth;
+    const tooltipH = tooltip.offsetHeight;
+
+    let left = x + 12;
+    let top = y - 10;
+
+    // Prevent tooltip from going off the right edge of the viewport
+    const absoluteRight = containerRect.left + left + tooltipW;
+    if (absoluteRight > window.innerWidth - 8) {
+      left = x - tooltipW - 12;
+    }
+
+    // Prevent tooltip from going above the viewport
+    const absoluteTop = containerRect.top + top;
+    if (absoluteTop < 8) {
+      top = -containerRect.top + 8;
+    }
+
+    // Prevent tooltip from going below the viewport
+    const absoluteBottom = containerRect.top + top + tooltipH;
+    if (absoluteBottom > window.innerHeight - 8) {
+      top = window.innerHeight - 8 - containerRect.top - tooltipH;
+    }
+
+    setAdjustedPos({ left, top });
+  }, [x, y, containerRef]);
+
+  const estTimestamp = new Date(timestamp).toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+
+  const bullish = close >= open;
+
+  return (
+    <div
+      ref={tooltipRef}
+      className="pointer-events-none absolute z-50 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 shadow-lg"
+      style={{
+        left: adjustedPos.left,
+        top: adjustedPos.top,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div className="text-xs font-semibold text-[var(--text-primary)]">{estTimestamp} EST</div>
+      <div className={`text-sm font-bold ${bullish ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+        ${close.toFixed(2)}
+      </div>
+      <div className="mt-0.5 text-[10px] text-[var(--text-secondary)]">
+        O: ${open.toFixed(2)}  H: ${high.toFixed(2)}  L: ${low.toFixed(2)}  C: ${close.toFixed(2)}
+      </div>
+      <div className="text-[10px] text-[var(--text-secondary)]">
+        Vol: {volume.toLocaleString()}
+      </div>
+    </div>
   );
 }
 
