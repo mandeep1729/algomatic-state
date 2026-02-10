@@ -34,6 +34,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   '/app/transactions': 'Transactions',
   '/app/insights': 'Insights',
   '/app/journal': 'Journal',
+  '/app/strategy-probe': 'Strategy Probe',
   '/app/settings/profile': 'Profile',
   '/app/settings/risk': 'Risk',
   '/app/settings/strategies': 'Strategies',
@@ -100,6 +101,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Link: LinkIcon,
   Sliders: SlidersHorizontal,
   Lock,
+  Search,
   Receipt,
 };
 

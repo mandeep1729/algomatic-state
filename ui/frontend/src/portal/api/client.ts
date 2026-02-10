@@ -642,3 +642,70 @@ export async function saveFillContext(
 ): Promise<FillContextDetail> {
   return put<FillContextDetail>(`/api/broker/fills/${encodeURIComponent(fillId)}/context`, context);
 }
+
+// =============================================================================
+// Strategy Probe — GET /api/strategy-probe/{symbol}
+// Returns weekly strategy performance rankings for a given symbol
+// =============================================================================
+
+export interface ThemeRanking {
+  theme: string;
+  num_trades: number;
+  avg_pnl_per_trade: number;
+  weighted_avg_pnl: number;
+  rank: number;
+}
+
+export interface WeekPerformance {
+  week_start: string;
+  week_end: string;
+  themes: ThemeRanking[];
+}
+
+export interface StrategyProbeResponse {
+  symbol: string;
+  weeks: WeekPerformance[];
+  available_timeframes: string[];
+}
+
+export async function fetchStrategyProbe(
+  symbol: string,
+  startDate?: string,
+  endDate?: string,
+  timeframe?: string,
+): Promise<StrategyProbeResponse> {
+  const params = new URLSearchParams();
+  if (startDate) params.set('start_date', startDate);
+  if (endDate) params.set('end_date', endDate);
+  if (timeframe) params.set('timeframe', timeframe);
+  const qs = params.toString();
+  return get<StrategyProbeResponse>(
+    `/api/strategy-probe/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`,
+  );
+}
+
+// =============================================================================
+// Theme Strategies — GET /api/strategy-probe/strategies/{strategy_type}
+// Returns all strategies belonging to a theme with their details
+// =============================================================================
+
+export interface ThemeStrategyDetail {
+  display_name: string;
+  name: string;
+  philosophy: string;
+  direction: string;
+  details: Record<string, unknown>;
+}
+
+export interface ThemeStrategiesResponse {
+  strategy_type: string;
+  strategies: ThemeStrategyDetail[];
+}
+
+export async function fetchThemeStrategies(
+  strategyType: string,
+): Promise<ThemeStrategiesResponse> {
+  return get<ThemeStrategiesResponse>(
+    `/api/strategy-probe/strategies/${encodeURIComponent(strategyType)}`,
+  );
+}

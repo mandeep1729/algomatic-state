@@ -115,3 +115,7 @@ export { fetchTickerPnlTimeseries as fetchMockTickerPnlTimeseries } from '../moc
 
 // Re-export fill context functions from client
 export { fetchFillContext, saveFillContext } from './client';
+
+// Re-export strategy probe function from client
+export { fetchStrategyProbe, fetchThemeStrategies } from './client';
+export type { StrategyProbeResponse, WeekPerformance, ThemeRanking, OHLCVData, ThemeStrategiesResponse, ThemeStrategyDetail } from './client';
