@@ -23,12 +23,25 @@ class ContrarianAgentConfig(BaseSettings):
     paper: bool = True
     api_port: int = 8001
 
+    @property
+    def timeframe(self) -> str:
+        """Map interval_minutes to a supported timeframe string."""
+        if self.interval_minutes <= 1:
+            return "1Min"
+        elif self.interval_minutes <= 15:
+            return "15Min"
+        elif self.interval_minutes <= 60:
+            return "1Hour"
+        else:
+            return "1Day"
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         logger.debug(
-            "ContrarianAgentConfig loaded: symbol=%s, interval=%d min, provider=%s, paper=%s",
+            "ContrarianAgentConfig loaded: symbol=%s, interval=%d min, timeframe=%s, provider=%s, paper=%s",
             self.symbol,
             self.interval_minutes,
+            self.timeframe,
             self.data_provider,
             self.paper,
         )

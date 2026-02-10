@@ -46,40 +46,51 @@ def health():
 def market_data(
     symbol: str = Query(default="AAPL"),
     lookback_days: int = Query(default=5),
+    timeframe: str = Query(default=None),
 ):
-    """Return OHLCV data, syncing missing bars via the messaging bus."""
+    """Return OHLCV data, syncing missing bars via the messaging bus.
+
+    The timeframe defaults to the agent's configured timeframe (derived from
+    interval_minutes). The MarketDataService will fetch 1Min bars and aggregate
+    to the requested timeframe if needed.
+    """
     from src.messaging.events import Event, EventType
     from src.messaging.bus import get_message_bus
     from src.data.database.connection import get_db_manager
     from src.data.database.market_repository import OHLCVRepository
+
+    config = _get_config()
+    # Use provided timeframe or fall back to agent's configured timeframe
+    tf = timeframe or config.timeframe
 
     end = datetime.now(timezone.utc).replace(tzinfo=None)
     start = end - timedelta(days=lookback_days)
 
     logger.info(
         "Loading market data",
-        extra={"symbol": symbol, "start": str(start), "end": str(end)},
+        extra={"symbol": symbol, "timeframe": tf, "start": str(start), "end": str(end)},
     )
 
     # Request fresh data via the messaging bus (the orchestrator handles
-    # fetching from the configured provider and inserting into the DB).
+    # fetching 1Min from the provider, aggregating to target timeframe,
+    # and inserting into the DB).
     bus = get_message_bus()
     bus.publish(Event(
         event_type=EventType.MARKET_DATA_REQUEST,
         payload={
             "symbol": symbol,
-            "timeframes": ["1Min"],
+            "timeframes": [tf],
             "start": start,
             "end": end,
         },
         source="agent.api",
     ))
 
-    # Read from DB
+    # Read from DB at the requested timeframe
     db_manager = get_db_manager()
     with db_manager.get_session() as session:
         repo = OHLCVRepository(session)
-        df = repo.get_bars(symbol.upper(), "1Min", start, end)
+        df = repo.get_bars(symbol.upper(), tf, start, end)
 
     records = df.reset_index().to_dict(orient="records")
     # Convert timestamps to ISO strings for JSON serialisation
@@ -89,4 +100,4 @@ def market_data(
             key = "timestamp" if "timestamp" in rec else "index"
             rec[key] = ts.isoformat()
 
-    return {"symbol": symbol, "count": len(records), "data": records}
+    return {"symbol": symbol, "timeframe": tf, "count": len(records), "data": records}
