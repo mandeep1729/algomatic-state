@@ -40,38 +40,38 @@ Config Config::load(const std::string& path) {
         try {
             json j = json::parse(f);
 
-            if (j.contains("database")) {
+            if (j.count("database")) {
                 auto& db = j["database"];
-                if (db.contains("host")) cfg.database.host = db["host"];
-                if (db.contains("port")) cfg.database.port = db["port"];
-                if (db.contains("dbname")) cfg.database.dbname = db["dbname"];
-                if (db.contains("user")) cfg.database.user = db["user"];
-                if (db.contains("password")) cfg.database.password = db["password"];
+                if (db.count("host")) cfg.database.host = db["host"];
+                if (db.count("port")) cfg.database.port = db["port"];
+                if (db.count("dbname")) cfg.database.dbname = db["dbname"];
+                if (db.count("user")) cfg.database.user = db["user"];
+                if (db.count("password")) cfg.database.password = db["password"];
             }
 
-            if (j.contains("redis")) {
+            if (j.count("redis")) {
                 auto& r = j["redis"];
-                if (r.contains("host")) cfg.redis.host = r["host"];
-                if (r.contains("port")) cfg.redis.port = r["port"];
-                if (r.contains("channel_prefix")) cfg.redis.channel_prefix = r["channel_prefix"];
+                if (r.count("host")) cfg.redis.host = r["host"];
+                if (r.count("port")) cfg.redis.port = r["port"];
+                if (r.count("channel_prefix")) cfg.redis.channel_prefix = r["channel_prefix"];
             }
 
-            if (j.contains("service")) {
+            if (j.count("service")) {
                 auto& s = j["service"];
-                if (s.contains("interval_minutes")) cfg.service.interval_minutes = s["interval_minutes"];
-                if (s.contains("mode")) cfg.service.mode = s["mode"];
-                if (s.contains("log_level")) cfg.service.log_level = s["log_level"];
-                if (s.contains("feature_version")) cfg.service.feature_version = s["feature_version"];
+                if (s.count("interval_minutes")) cfg.service.interval_minutes = s["interval_minutes"];
+                if (s.count("mode")) cfg.service.mode = s["mode"];
+                if (s.count("log_level")) cfg.service.log_level = s["log_level"];
+                if (s.count("feature_version")) cfg.service.feature_version = s["feature_version"];
             }
 
-            if (j.contains("indicators")) {
+            if (j.count("indicators")) {
                 auto& ind = j["indicators"];
-                if (ind.contains("timeframes")) {
+                if (ind.count("timeframes")) {
                     cfg.indicators.timeframes.clear();
                     for (auto& tf : ind["timeframes"])
                         cfg.indicators.timeframes.push_back(tf);
                 }
-                if (ind.contains("lookback_buffer")) cfg.indicators.lookback_buffer = ind["lookback_buffer"];
+                if (ind.count("lookback_buffer")) cfg.indicators.lookback_buffer = ind["lookback_buffer"];
             }
 
             spdlog::info("Loaded config from {}", path);
