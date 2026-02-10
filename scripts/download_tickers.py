@@ -11,10 +11,19 @@ Usage:
 import argparse
 import csv
 import io
+import logging
 import re
 import sys
 import urllib.request
 from pathlib import Path
+
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+from scripts.helpers.logging_setup import setup_script_logging
+
+logger = logging.getLogger(__name__)
 
 NASDAQ_TRADED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt"
 
@@ -47,13 +56,12 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def fetch_nasdaq_traded(verbose: bool = False) -> str:
-    if verbose:
-        print(f"Fetching {NASDAQ_TRADED_URL} ...")
+def fetch_nasdaq_traded() -> str:
+    """Fetch NASDAQ traded symbols data from the source URL."""
+    logger.info(f"Fetching {NASDAQ_TRADED_URL}")
     with urllib.request.urlopen(NASDAQ_TRADED_URL) as resp:
         data = resp.read().decode("utf-8")
-    if verbose:
-        print(f"Downloaded {len(data)} bytes")
+    logger.debug(f"Downloaded {len(data)} bytes")
     return data
 
 
@@ -62,7 +70,8 @@ def _clean_name(raw_name: str) -> str:
     return cleaned[:255]
 
 
-def parse_tickers(raw_text: str, verbose: bool = False) -> list[dict]:
+def parse_tickers(raw_text: str) -> list[dict]:
+    """Parse ticker data from NASDAQ trader text format."""
     reader = csv.DictReader(io.StringIO(raw_text), delimiter="|")
     tickers = []
     skipped = {"test": 0, "not_traded": 0, "preferred": 0, "no_symbol": 0}
@@ -104,40 +113,44 @@ def parse_tickers(raw_text: str, verbose: bool = False) -> list[dict]:
             "asset_type": asset_type,
         })
 
-    if verbose:
-        print(f"Parsed {len(tickers)} tickers")
-        for reason, count in skipped.items():
-            if count:
-                print(f"  Skipped ({reason}): {count}")
+    logger.info(f"Parsed {len(tickers)} tickers")
+    for reason, count in skipped.items():
+        if count:
+            logger.debug(f"Skipped ({reason}): {count}")
 
     return tickers
 
 
-def write_csv(tickers: list[dict], output_path: Path, verbose: bool = False) -> None:
+def write_csv(tickers: list[dict], output_path: Path) -> None:
+    """Write tickers to CSV file."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["symbol", "name", "exchange", "asset_type"])
         writer.writeheader()
         writer.writerows(tickers)
-    if verbose:
-        print(f"Wrote {len(tickers)} tickers to {output_path}")
+    logger.debug(f"Wrote {len(tickers)} tickers to {output_path}")
 
 
 def main() -> int:
+    """Main entry point."""
     args = parse_args()
+
+    # Setup logging
+    setup_script_logging(args.verbose, __name__)
+
     try:
-        raw_text = fetch_nasdaq_traded(args.verbose)
+        raw_text = fetch_nasdaq_traded()
     except Exception as e:
-        print(f"Error fetching data: {e}", file=sys.stderr)
+        logger.error(f"Error fetching data: {e}")
         return 1
 
-    tickers = parse_tickers(raw_text, args.verbose)
+    tickers = parse_tickers(raw_text)
     if not tickers:
-        print("No tickers parsed — check the data source.", file=sys.stderr)
+        logger.error("No tickers parsed - check the data source")
         return 1
 
-    write_csv(tickers, args.output, args.verbose)
-    print(f"Saved {len(tickers)} US-traded tickers to {args.output}")
+    write_csv(tickers, args.output)
+    logger.info(f"Saved {len(tickers)} US-traded tickers to {args.output}")
     return 0
 
 

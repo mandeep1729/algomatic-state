@@ -11,6 +11,7 @@ Usage:
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
@@ -18,9 +19,12 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from scripts.helpers.logging_setup import setup_script_logging
 from src.data.database.connection import get_db_manager
 from src.data.database.models import VALID_TIMEFRAMES
 from src.data.loaders.database_loader import DatabaseLoader
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     _add_symbol_args(parser)
     _add_file_args(parser)
     _add_directory_args(parser)
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
     return parser.parse_args()
 
 
@@ -65,12 +70,12 @@ def _check_database_connection() -> None:
     try:
         db_manager = get_db_manager()
         if not db_manager.health_check():
-            print("Error: Cannot connect to database")
-            print("Make sure PostgreSQL is running: docker-compose up -d postgres")
+            logger.error("Cannot connect to database")
+            logger.error("Make sure PostgreSQL is running: docker-compose up -d postgres")
             sys.exit(1)
-        print("Database connection: OK")
+        logger.info("Database connection: OK")
     except Exception as e:
-        print(f"Database error: {e}")
+        logger.error(f"Database error: {e}")
         sys.exit(1)
 
 
@@ -81,17 +86,17 @@ def _import_file_with_loader(file_path: Path, symbol: str, timeframe: str, loade
             rows = loader.import_parquet(file_path, symbol, timeframe)
         else:
             rows = loader.import_csv(file_path, symbol, timeframe)
-        print(f"    Imported {rows} rows")
+        logger.debug(f"Imported {rows} rows from {file_path.name}")
         return rows
     except Exception as e:
-        print(f"    Error: {e}")
+        logger.error(f"Error importing {file_path.name}: {e}")
         return 0
 
 
 def import_file(file_path: Path, symbol: str | None = None, timeframe: str | None = None, loader: DatabaseLoader | None = None) -> int:
     """Import a single file into the database. Returns rows imported."""
     if not file_path.exists():
-        print(f"  Error: File not found: {file_path}")
+        logger.error(f"File not found: {file_path}")
         return 0
 
     if symbol is None or timeframe is None:
@@ -99,7 +104,7 @@ def import_file(file_path: Path, symbol: str | None = None, timeframe: str | Non
         symbol = symbol or extracted_symbol
         timeframe = timeframe or extracted_timeframe
 
-    print(f"  Importing {file_path.name} as {symbol}/{timeframe}...")
+    logger.info(f"Importing {file_path.name} as {symbol}/{timeframe}")
     loader = loader or DatabaseLoader(validate=True, auto_fetch=False)
     return _import_file_with_loader(file_path, symbol, timeframe, loader)
 
@@ -107,15 +112,15 @@ def import_file(file_path: Path, symbol: str | None = None, timeframe: str | Non
 def import_directory(directory: Path, pattern: str = "*.parquet", timeframe: str | None = None) -> tuple[int, int]:
     """Import all matching files from a directory. Returns (files_imported, total_rows)."""
     if not directory.exists():
-        print(f"Error: Directory not found: {directory}")
+        logger.error(f"Directory not found: {directory}")
         return 0, 0
 
     files = list(directory.glob(pattern))
     if not files:
-        print(f"No files matching '{pattern}' found in {directory}")
+        logger.warning(f"No files matching '{pattern}' found in {directory}")
         return 0, 0
 
-    print(f"Found {len(files)} files to import")
+    logger.info(f"Found {len(files)} files to import")
     return _import_file_list(files, timeframe)
 
 
@@ -136,17 +141,16 @@ def _import_file_list(files: list[Path], timeframe: str | None) -> tuple[int, in
 
 def _print_header() -> None:
     """Print script header."""
-    print("=" * 60)
-    print("Algomatic State - Data Import")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Algomatic State - Data Import")
+    logger.info("=" * 60)
 
 
 def _handle_directory_import(args) -> None:
     """Handle --all directory import mode."""
     timeframe_override = args.timeframe if args.timeframe != "1Min" else None
     files_imported, total_rows = import_directory(args.dir, args.pattern, timeframe_override)
-    print()
-    print(f"Import complete: {files_imported} files, {total_rows} total rows")
+    logger.info(f"Import complete: {files_imported} files, {total_rows} total rows")
 
 
 def _handle_single_file_import(args) -> None:
@@ -155,35 +159,36 @@ def _handle_single_file_import(args) -> None:
         args.symbol, _ = extract_symbol_timeframe(args.file.name)
 
     rows = import_file(args.file, args.symbol, args.timeframe)
-    print()
     if rows > 0:
-        print(f"Import complete: {rows} rows imported for {args.symbol}/{args.timeframe}")
+        logger.info(f"Import complete: {rows} rows imported for {args.symbol}/{args.timeframe}")
     else:
-        print("Import failed")
+        logger.error("Import failed")
         sys.exit(1)
 
 
-def _print_usage(parser: argparse.ArgumentParser) -> None:
+def _print_usage() -> None:
     """Print help and usage examples."""
-    parser.print_help()
-    print("\nExamples:")
-    print("  python scripts/import_csv_to_db.py AAPL --file data/raw/AAPL_1Min.parquet")
-    print("  python scripts/import_csv_to_db.py --all --dir data/raw --pattern '*.parquet'")
+    logger.info("Usage examples:")
+    logger.info("  python scripts/import_csv_to_db.py AAPL --file data/raw/AAPL_1Min.parquet")
+    logger.info("  python scripts/import_csv_to_db.py --all --dir data/raw --pattern '*.parquet'")
 
 
 def main():
     """Main entry point."""
     args = parse_args()
+
+    # Setup logging
+    setup_script_logging(getattr(args, 'verbose', False), __name__)
+
     _print_header()
     _check_database_connection()
-    print()
 
     if args.all:
         _handle_directory_import(args)
     elif args.file:
         _handle_single_file_import(args)
     else:
-        _print_usage(argparse.ArgumentParser())
+        _print_usage()
         sys.exit(1)
 
 

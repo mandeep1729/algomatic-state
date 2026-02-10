@@ -15,6 +15,7 @@ Options:
 
 import argparse
 import csv
+import logging
 import subprocess
 import sys
 from pathlib import Path
@@ -24,8 +25,11 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from config.settings import get_settings
+from scripts.helpers.logging_setup import setup_script_logging
 from src.data.database.connection import get_db_manager
 from src.data.database.market_repository import OHLCVRepository
+
+logger = logging.getLogger(__name__)
 
 SEED_CSV_PATH = project_root / "config" / "seed" / "us_tickers.csv"
 
@@ -35,29 +39,30 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Initialize the PostgreSQL database")
     parser.add_argument("--seed", action="store_true", help="Seed database with common ticker symbols")
     parser.add_argument("--skip-migrations", action="store_true", help="Skip Alembic migrations")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable debug logging")
     return parser.parse_args()
 
 
 def _print_header() -> None:
     """Print initialization header."""
-    print("=" * 60)
-    print("Algomatic State - Database Initialization")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Algomatic State - Database Initialization")
+    logger.info("=" * 60)
 
 
 def check_database_connection() -> bool:
     """Check if database is accessible. Returns True if successful."""
     try:
         settings = get_settings()
-        print(f"Checking database connection to: {settings.database.host}:{settings.database.port}/{settings.database.name}")
+        logger.info(f"Checking database connection to: {settings.database.host}:{settings.database.port}/{settings.database.name}")
         db_manager = get_db_manager()
         if db_manager.health_check():
-            print("Database connection successful!")
+            logger.info("Database connection successful!")
             return True
-        print("Database connection failed!")
+        logger.error("Database connection failed!")
         return False
     except Exception as e:
-        print(f"Database connection error: {e}")
+        logger.error(f"Database connection error: {e}")
         return False
 
 
@@ -73,22 +78,22 @@ def _run_alembic_command() -> subprocess.CompletedProcess:
 
 def run_migrations() -> bool:
     """Run Alembic migrations. Returns True if successful."""
-    print("\nRunning Alembic migrations...")
+    logger.info("Running Alembic migrations...")
     try:
         result = _run_alembic_command()
         if result.returncode == 0:
-            print("Migrations completed successfully!")
+            logger.info("Migrations completed successfully!")
             if result.stdout:
-                print(result.stdout)
+                logger.debug(result.stdout)
             return True
-        print(f"Migration failed with error:")
-        print(result.stderr)
+        logger.error("Migration failed with error:")
+        logger.error(result.stderr)
         return False
     except FileNotFoundError:
-        print("Alembic not found. Please install it: pip install alembic")
+        logger.error("Alembic not found. Please install it: pip install alembic")
         return False
     except Exception as e:
-        print(f"Migration error: {e}")
+        logger.error(f"Migration error: {e}")
         return False
 
 
@@ -100,50 +105,51 @@ def _load_seed_csv() -> list[dict]:
 
 def seed_tickers() -> bool:
     """Seed database with tickers from CSV. Returns True if successful."""
-    print("\nSeeding database with US-traded tickers...")
+    logger.info("Seeding database with US-traded tickers...")
 
     if not SEED_CSV_PATH.exists():
-        print(f"Seed CSV not found: {SEED_CSV_PATH}")
-        print("Run: python scripts/download_tickers.py")
+        logger.error(f"Seed CSV not found: {SEED_CSV_PATH}")
+        logger.error("Run: python scripts/download_tickers.py")
         return False
 
     try:
         tickers = _load_seed_csv()
+        logger.debug(f"Loaded {len(tickers)} tickers from seed file")
         db_manager = get_db_manager()
         with db_manager.get_session() as session:
             repo = OHLCVRepository(session)
             count = repo.bulk_upsert_tickers(tickers)
-        print(f"Seeding completed! Upserted {count} tickers from {SEED_CSV_PATH.name}.")
+        logger.info(f"Seeding completed! Upserted {count} tickers from {SEED_CSV_PATH.name}")
         return True
     except Exception as e:
-        print(f"Seeding error: {e}")
+        logger.error(f"Seeding error: {e}")
         return False
 
 
 def create_tables_directly() -> bool:
     """Create tables directly using SQLAlchemy. Returns True if successful."""
-    print("\nCreating tables directly...")
+    logger.info("Creating tables directly...")
     try:
         db_manager = get_db_manager()
         db_manager.create_tables()
-        print("Tables created successfully!")
+        logger.info("Tables created successfully!")
         return True
     except Exception as e:
-        print(f"Table creation error: {e}")
+        logger.error(f"Table creation error: {e}")
         return False
 
 
 def _print_connection_hint() -> None:
     """Print hint for starting PostgreSQL."""
-    print("\nMake sure PostgreSQL is running:")
-    print("  docker-compose up -d postgres")
+    logger.info("Make sure PostgreSQL is running:")
+    logger.info("  docker-compose up -d postgres")
 
 
 def _print_footer() -> None:
     """Print completion footer."""
-    print("\n" + "=" * 60)
-    print("Database initialization completed!")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Database initialization completed!")
+    logger.info("=" * 60)
 
 
 def _handle_migrations(args) -> bool:
@@ -154,13 +160,17 @@ def _handle_migrations(args) -> bool:
     if run_migrations():
         return True
 
-    print("\nTrying direct table creation as fallback...")
+    logger.warning("Trying direct table creation as fallback...")
     return create_tables_directly()
 
 
 def main() -> None:
     """Main entry point."""
     args = parse_args()
+
+    # Setup logging
+    setup_script_logging(args.verbose, __name__)
+
     _print_header()
 
     if not check_database_connection():
