@@ -648,8 +648,7 @@ export async function saveFillContext(
 // Returns weekly strategy performance rankings for a given symbol
 // =============================================================================
 
-export interface StrategyRanking {
-  category: string;
+export interface ThemeRanking {
   theme: string;
   num_trades: number;
   avg_pnl_per_trade: number;
@@ -660,7 +659,7 @@ export interface StrategyRanking {
 export interface WeekPerformance {
   week_start: string;
   week_end: string;
-  strategies: StrategyRanking[];
+  themes: ThemeRanking[];
 }
 
 export interface StrategyProbeResponse {

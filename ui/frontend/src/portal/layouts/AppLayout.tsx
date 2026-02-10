@@ -101,6 +101,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Link: LinkIcon,
   Sliders: SlidersHorizontal,
   Lock,
+  Search,
   Receipt,
 };
 

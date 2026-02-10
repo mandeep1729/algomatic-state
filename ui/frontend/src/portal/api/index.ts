@@ -118,4 +118,4 @@ export { fetchFillContext, saveFillContext } from './client';
 
 // Re-export strategy probe function from client
 export { fetchStrategyProbe } from './client';
-export type { StrategyProbeResponse, WeekPerformance, StrategyRanking } from './client';
+export type { StrategyProbeResponse, WeekPerformance, ThemeRanking, OHLCVData } from './client';

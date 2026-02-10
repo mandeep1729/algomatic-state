@@ -151,7 +151,7 @@ function CandlestickChart({ ohlcv, symbol }: { ohlcv: OHLCVData; symbol: string 
   const minPrice = Math.min(...allLow);
   const maxPrice = Math.max(...allHigh);
   const priceRange = maxPrice - minPrice || 1;
-  const pPad = priceRange * 0.05;
+  const pPad = priceRange * 0.01;
   const pLo = minPrice - pPad;
   const pHi = maxPrice + pPad;
 
