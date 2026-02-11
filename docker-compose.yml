@@ -57,6 +57,33 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  marketdata-service:
+    build:
+      context: ./marketdata-service
+      dockerfile: Dockerfile
+    container_name: algomatic-marketdata-service
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME:-algomatic}
+      - DB_USER=${DB_USER:-algomatic}
+      - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - SERVICE_MODE=${MARKETDATA_MODE:-both}
+      - SERVICE_INTERVAL_MINUTES=${MARKETDATA_INTERVAL_MINUTES:-5}
+      - SERVICE_LOG_FILE=/var/log/marketdata-service/service.log
+    volumes:
+      - marketdata_logs:/var/log/marketdata-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Optional: pgAdmin for database management (start with --profile tools)
   pgadmin:
     image: dpage/pgadmin4:latest
@@ -83,3 +110,5 @@ volumes:
     name: algomatic_redis_data
   pgadmin_data:
     name: algomatic_pgadmin_data
+  marketdata_logs:
+    name: algomatic_marketdata_logs
