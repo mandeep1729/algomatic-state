@@ -76,7 +76,7 @@ services:
       - SERVICE_INTERVAL_MINUTES=${MARKETDATA_INTERVAL_MINUTES:-5}
       - SERVICE_LOG_FILE=/var/log/marketdata-service/service.log
     volumes:
-      - marketdata_logs:/var/log/marketdata-service
+      - /home/mandeep/projects/algomatic/logs/marketdata-service:/var/log/marketdata-service
     depends_on:
       postgres:
         condition: service_healthy
