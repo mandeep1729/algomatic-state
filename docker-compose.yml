@@ -41,9 +41,9 @@ services:
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-algomatic}
-      - DB_USER=${DB_USER:-algomatic}
-      - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - ENGINE_MODE=${ENGINE_MODE:-both}
@@ -65,9 +65,9 @@ services:
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_NAME=${DB_NAME:-algomatic}
-      - DB_USER=${DB_USER:-algomatic}
-      - DB_PASSWORD=${DB_PASSWORD:-algomatic_dev}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - ALPACA_API_KEY=${ALPACA_API_KEY}
@@ -89,8 +89,8 @@ services:
     image: dpage/pgadmin4:latest
     container_name: algomatic-pgadmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@algomatic.local}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-mandeep@pyrsquare.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: "False"
     ports:
       - "5050:80"
