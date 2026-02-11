@@ -69,6 +69,8 @@ func UnmarshalEvent(data []byte) (*Event, error) {
 // Handles both ISO string and Python {"__type__": "datetime", "value": "..."} format.
 func ParsePayloadTime(v any) (time.Time, error) {
 	switch val := v.(type) {
+	case time.Time:
+		return val, nil
 	case string:
 		return parseTimestamp(val)
 	case map[string]any:
