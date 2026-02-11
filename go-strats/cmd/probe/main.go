@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/algomatic/strats100/go-strats/pkg/api"
@@ -202,9 +203,35 @@ func main() {
 	}
 	runID := tracker.StartRun(symbolName, timeframeName, []string{rp.Name}, stratInfos)
 
-	// Run strategies
+	// Pre-compute period bounds and strategy DB IDs before launching goroutines
+	var periodStart, periodEnd time.Time
+	var stratIDMap map[string]int
+	if dbClient != nil && len(bars) > 0 {
+		periodStart = bars[0].Bar.Timestamp
+		periodEnd = bars[len(bars)-1].Bar.Timestamp
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		stratIDMap = make(map[string]int, len(strategies))
+		for _, s := range strategies {
+			dbID, err := dbClient.LookupStrategyID(ctx, s.Name)
+			if err != nil {
+				logger.Error("Failed to look up strategy ID", "strategy", s.Name, "error", err)
+				continue
+			}
+			if dbID == 0 {
+				logger.Warn("Strategy not found in database, skipping persistence", "strategy", s.Name)
+				continue
+			}
+			stratIDMap[s.Name] = dbID
+		}
+		cancel()
+		logger.Info("Resolved strategy DB IDs", "resolved", len(stratIDMap), "total", len(strategies))
+	}
+
+	// Run strategies, persisting each one's results immediately after completion
 	results := make([]result, len(strategies))
 	var wg sync.WaitGroup
+	var totalResultRows, totalTradeRows int64
 	start := time.Now()
 
 	for i, strat := range strategies {
@@ -223,6 +250,20 @@ func main() {
 			}
 
 			tracker.MarkStrategyCompleted(runID, s.ID, len(trades))
+
+			// Persist this strategy's results immediately
+			if dbClient != nil && len(trades) > 0 {
+				dbID, ok := stratIDMap[s.Name]
+				if ok {
+					rCount, tCount := persistStrategyResult(
+						logger, dbClient, trades, s.Name, dbID,
+						symbolName, timeframeName, rp, runID,
+						periodStart, periodEnd, *persistTrades,
+					)
+					atomic.AddInt64(&totalResultRows, int64(rCount))
+					atomic.AddInt64(&totalTradeRows, int64(tCount))
+				}
+			}
 		}(i, strat)
 	}
 	wg.Wait()
@@ -239,10 +280,12 @@ func main() {
 		"elapsed", elapsed,
 	)
 
-	// Persist results to database if enabled
 	if dbClient != nil {
-		persistToDatabase(logger, dbClient, results, strategies, runID,
-			symbolName, timeframeName, rp, bars, *persistTrades)
+		logger.Info("Database persistence complete",
+			"run_id", runID,
+			"result_rows", atomic.LoadInt64(&totalResultRows),
+			"trade_rows", atomic.LoadInt64(&totalTradeRows),
+		)
 	}
 
 	// Output results
@@ -439,94 +482,53 @@ func loadCSV(path string) ([]types.BarData, error) {
 	return bars, nil
 }
 
-// persistToDatabase saves aggregated results and optionally individual trades
-// to PostgreSQL for each strategy's results.
-func persistToDatabase(
+// persistStrategyResult saves aggregated results and optionally individual trades
+// to PostgreSQL for a single strategy. Called from within each strategy's goroutine
+// so results are written as soon as the strategy completes.
+// Returns the number of result rows and trade rows inserted.
+func persistStrategyResult(
 	logger *slog.Logger,
 	dbClient *persistence.Client,
-	results []result,
-	strategies []*types.StrategyDef,
-	runID, symbol, timeframe string,
+	trades []types.Trade,
+	strategyName string,
+	strategyDBID int,
+	symbol, timeframe string,
 	riskProfile types.RiskProfile,
-	bars []types.BarData,
+	runID string,
+	periodStart, periodEnd time.Time,
 	persistTrades bool,
-) {
-	if len(bars) == 0 {
-		logger.Warn("No bars available, skipping persistence")
-		return
-	}
-
-	periodStart := bars[0].Bar.Timestamp
-	periodEnd := bars[len(bars)-1].Bar.Timestamp
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+) (resultCount, tradeCount int) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// Build strategy name -> ID mapping
-	stratIDMap := make(map[string]int)
-	for _, s := range strategies {
-		dbID, err := dbClient.LookupStrategyID(ctx, s.Name)
-		if err != nil {
-			logger.Error("Failed to look up strategy ID",
-				"strategy", s.Name, "error", err)
-			continue
-		}
-		if dbID == 0 {
-			logger.Warn("Strategy not found in database, skipping persistence",
-				"strategy", s.Name)
-			continue
-		}
-		stratIDMap[s.Name] = dbID
-	}
-
-	totalResultRows := 0
-	totalTradeRows := 0
-
-	for _, r := range results {
-		if len(r.trades) == 0 {
-			continue
-		}
-
-		dbID, ok := stratIDMap[r.strategyName]
-		if !ok {
-			continue
-		}
-
-		// Aggregate trades into groups
-		aggResults := persistence.AggregateTrades(
-			r.trades, dbID, symbol, timeframe,
-			riskProfile.Name, runID, periodStart, periodEnd,
-		)
-
-		if len(aggResults) == 0 {
-			continue
-		}
-
-		// Build trade records
-		tradeRecords := persistence.BuildTradeRecords(r.trades, symbol)
-
-		// Persist to DB
-		resultCount, tradeCount, err := dbClient.Persist(
-			ctx, tradeRecords, r.trades, aggResults, persistTrades,
-		)
-		if err != nil {
-			logger.Error("Failed to persist results for strategy",
-				"strategy", r.strategyName,
-				"strategy_id", dbID,
-				"error", err,
-			)
-			continue
-		}
-
-		totalResultRows += resultCount
-		totalTradeRows += tradeCount
-	}
-
-	logger.Info("Database persistence complete",
-		"run_id", runID,
-		"result_rows", totalResultRows,
-		"trade_rows", totalTradeRows,
+	aggResults := persistence.AggregateTrades(
+		trades, strategyDBID, symbol, timeframe,
+		riskProfile.Name, runID, periodStart, periodEnd,
 	)
+	if len(aggResults) == 0 {
+		return 0, 0
+	}
+
+	tradeRecords := persistence.BuildTradeRecords(trades, symbol)
+
+	resultCount, tradeCount, err := dbClient.Persist(
+		ctx, tradeRecords, trades, aggResults, persistTrades,
+	)
+	if err != nil {
+		logger.Error("Failed to persist results for strategy",
+			"strategy", strategyName,
+			"strategy_id", strategyDBID,
+			"error", err,
+		)
+		return 0, 0
+	}
+
+	logger.Info("Persisted strategy results",
+		"strategy", strategyName,
+		"result_rows", resultCount,
+		"trade_rows", tradeCount,
+	)
+	return resultCount, tradeCount
 }
 
 // parseTimestamp tries multiple timestamp formats.
