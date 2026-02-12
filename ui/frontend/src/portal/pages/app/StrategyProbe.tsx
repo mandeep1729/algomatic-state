@@ -92,6 +92,115 @@ function formatWeekLabel(weekStart: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Indicator descriptions for tooltips
+// ---------------------------------------------------------------------------
+
+const INDICATOR_DESCRIPTIONS: Record<string, string> = {
+  // Momentum
+  RSI: 'Relative Strength Index — measures speed and magnitude of recent price changes on a 0–100 scale. Readings above 70 suggest overbought, below 30 oversold.',
+  MACD: 'Moving Average Convergence Divergence — difference between the 12-period and 26-period EMA. Crossovers with the signal line indicate momentum shifts.',
+  MACD_SIGNAL: 'MACD Signal Line — 9-period EMA of MACD. Crossovers of MACD above/below this line generate buy/sell signals.',
+  MACD_HIST: 'MACD Histogram — difference between MACD and its signal line. Positive bars indicate bullish momentum, negative bars bearish.',
+  STOCH: 'Stochastic Oscillator — compares closing price to the high-low range over N periods (default 14). %K is the fast line, %D is its smoothed average.',
+  ADX: 'Average Directional Index — measures trend strength on a 0–100 scale regardless of direction. Readings above 25 indicate a strong trend.',
+  PLUS_DI: 'Plus Directional Indicator (+DI) — measures upward price movement strength. When +DI > −DI, the trend is bullish.',
+  MINUS_DI: 'Minus Directional Indicator (−DI) — measures downward price movement strength. When −DI > +DI, the trend is bearish.',
+  CCI: 'Commodity Channel Index — measures deviation of price from its statistical mean. Values above +100 suggest overbought, below −100 oversold.',
+  WILLR: 'Williams %R — momentum oscillator (0 to −100). Readings above −20 suggest overbought, below −80 oversold. Inverse of Stochastic %K.',
+  MFI: 'Money Flow Index — volume-weighted RSI. Combines price and volume to measure buying/selling pressure on a 0–100 scale.',
+  APO: 'Absolute Price Oscillator — difference between a fast EMA (12) and slow EMA (26) of price. Positive values indicate upward momentum.',
+  PPO: 'Percentage Price Oscillator — same as APO but expressed as a percentage of the slow EMA. Allows cross-security comparison.',
+  TRIX: 'TRIX — rate of change of a triple-smoothed EMA. Filters out insignificant price moves; zero-line crossovers signal trend changes.',
+  CMO: 'Chande Momentum Oscillator — similar to RSI but uses raw momentum. Ranges from −100 to +100; extreme values indicate overbought/oversold.',
+  ROC: 'Rate of Change — percentage change in price over N periods. Positive values mean price is higher than N periods ago.',
+  MOM: 'Momentum — raw difference between current price and price N periods ago. Simple measure of price velocity.',
+
+  // Trend
+  EMA: 'Exponential Moving Average — weighted moving average giving more importance to recent prices. Reacts faster to price changes than SMA.',
+  SMA: 'Simple Moving Average — arithmetic mean of price over N periods. Smooths out noise to show the underlying trend direction.',
+  KAMA: 'Kaufman Adaptive Moving Average — adjusts smoothing based on market noise. Moves quickly in trends, slowly in choppy markets.',
+  SAR: 'Parabolic Stop and Reverse — places trailing dots above (downtrend) or below (uptrend) price. Dot flip signals potential reversal.',
+  HT_TRENDLINE: 'Hilbert Transform Trendline — uses signal-processing math to extract the dominant cycle trend from price data. Smoothest trend indicator.',
+  LINEARREG_SLOPE: 'Linear Regression Slope — slope of the least-squares regression line over N periods. Positive slope = uptrend, negative = downtrend.',
+  AROON: 'Aroon — measures time since the highest high (Aroon Up) and lowest low (Aroon Down) over N periods. Crossovers signal trend changes.',
+  ICHIMOKU: 'Ichimoku Cloud — multi-component system with Tenkan/Kijun lines, Senkou spans forming a cloud, and Chikou span for confirmation.',
+
+  // Volatility
+  ATR: 'Average True Range — average of true ranges (max of |H−L|, |H−Prev Close|, |L−Prev Close|) over N periods. Measures volatility, not direction.',
+  BBANDS: 'Bollinger Bands — SMA(20) ± 2 standard deviations. Price touching upper/lower band suggests potential reversal; band width measures volatility.',
+  BB_UPPER: 'Bollinger Upper Band — SMA(20) + 2σ. Price above this level is statistically extended to the upside.',
+  BB_LOWER: 'Bollinger Lower Band — SMA(20) − 2σ. Price below this level is statistically extended to the downside.',
+  BB_MIDDLE: 'Bollinger Middle Band — 20-period SMA, the center line of the Bollinger Bands.',
+  BB_WIDTH: 'Bollinger Band Width — (Upper − Lower) / Middle. Measures how wide the bands are; low values precede volatility breakouts (squeeze).',
+  BB_PCT: 'Bollinger %B — (Price − Lower) / (Upper − Lower). Shows where price sits within the bands: 0 = lower band, 1 = upper band.',
+  STDDEV: 'Standard Deviation — statistical measure of price dispersion over N periods. Higher values mean more volatile price action.',
+
+  // Volume
+  OBV: 'On-Balance Volume — running total: adds volume on up days, subtracts on down days. Rising OBV confirms uptrend; divergence warns of reversal.',
+  ADOSC: 'Accumulation/Distribution Oscillator — difference between fast (3) and slow (10) EMA of the A/D line. Measures buying/selling pressure momentum.',
+  VWAP: 'Volume Weighted Average Price — cumulative (price × volume) / cumulative volume. Institutional benchmark; price above VWAP = bullish bias.',
+
+  // Support/Resistance
+  DONCHIAN: 'Donchian Channels — highest high and lowest low over N periods. Breakouts above/below the channel signal potential trend continuation.',
+  PIVOT: 'Pivot Points — calculated from prior period H/L/C: PP = (H+L+C)/3, with support/resistance levels derived from it. Key intraday levels.',
+
+  // Candlestick Patterns
+  CDLENGULFING: 'Engulfing Pattern — a large candle body completely engulfs the prior candle. Bullish engulfing at lows or bearish engulfing at highs signal reversals.',
+  CDLHAMMER: 'Hammer — small body at top with long lower shadow (2×+ body). Appears at the bottom of downtrends, signaling potential bullish reversal.',
+  CDLSHOOTINGSTAR: 'Shooting Star — small body at bottom with long upper shadow. Appears at the top of uptrends, signaling potential bearish reversal.',
+  CDLMORNINGSTAR: 'Morning Star — three-candle bullish reversal: large bearish candle, small-body candle (star), then large bullish candle.',
+  CDLEVENINGSTAR: 'Evening Star — three-candle bearish reversal: large bullish candle, small-body candle (star), then large bearish candle.',
+  CDLDOJI: 'Doji — open and close are nearly equal, creating a cross shape. Signals indecision; significant at trend extremes.',
+  CDL3WHITESOLDIERS: 'Three White Soldiers — three consecutive long bullish candles opening within prior body. Strong bullish reversal pattern.',
+  CDL3BLACKCROWS: 'Three Black Crows — three consecutive long bearish candles opening within prior body. Strong bearish reversal pattern.',
+  CDLHARAMI: 'Harami — small candle body contained within the prior large candle body. Signals potential reversal or consolidation.',
+  CDLMARUBOZU: 'Marubozu — candle with no shadows (or very small). Full-body candle indicates strong conviction in the direction.',
+};
+
+/**
+ * Look up indicator description. Handles parameterized names like "ATR(14)",
+ * "EMA(50)", "DONCHIAN_HIGH_20", "OBV_SMA_20", etc.
+ */
+function getIndicatorDescription(indicator: string): string | null {
+  const trimmed = indicator.trim().toUpperCase();
+
+  // Exact match first (handles "RSI", "MACD", etc.)
+  if (INDICATOR_DESCRIPTIONS[trimmed]) return INDICATOR_DESCRIPTIONS[trimmed];
+
+  // Strip parenthesized parameter — "ATR(14)" → "ATR"
+  const base = trimmed.replace(/\(.*\)$/, '');
+  if (INDICATOR_DESCRIPTIONS[base]) return INDICATOR_DESCRIPTIONS[base];
+
+  // Handle composite names like "DONCHIAN_HIGH_20" → "DONCHIAN", "OBV_SMA_20" → "OBV"
+  const prefix = base.split('_')[0];
+  if (INDICATOR_DESCRIPTIONS[prefix]) return INDICATOR_DESCRIPTIONS[prefix];
+
+  return null;
+}
+
+function IndicatorBadge({ indicator }: { indicator: string }) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const badgeRef = useRef<HTMLSpanElement>(null);
+  const description = getIndicatorDescription(indicator);
+
+  return (
+    <span
+      ref={badgeRef}
+      className="relative rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0.5 text-[11px] font-mono text-[var(--text-primary)] cursor-default"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      {indicator}
+      {showTooltip && description && (
+        <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 w-64 -translate-x-1/2 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-3 py-2 text-[11px] font-sans leading-relaxed text-[var(--text-primary)] shadow-lg">
+          {description}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -628,12 +737,7 @@ function TopStrategyCard({
             <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Indicators</h4>
             <div className="flex flex-wrap gap-1.5">
               {indicators.map((ind, i) => (
-                <span
-                  key={i}
-                  className="rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-2 py-0.5 text-[11px] font-mono text-[var(--text-primary)]"
-                >
-                  {ind}
-                </span>
+                <IndicatorBadge key={i} indicator={ind} />
               ))}
             </div>
           </div>
