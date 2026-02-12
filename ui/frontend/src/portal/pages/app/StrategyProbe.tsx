@@ -181,8 +181,8 @@ function ThemeLegend({ themes }: { themes: string[] }) {
 // Per-week candlestick cell (fits inside one grid column)
 // ---------------------------------------------------------------------------
 
-const CANDLE_H = 160;
-const VOLUME_H = 70;
+const CANDLE_H = 240;
+const VOLUME_H = 105;
 const BULL_COLOR = '#26a69a';
 const BEAR_COLOR = '#ef5350';
 
@@ -725,6 +725,7 @@ function StackedTimeline({
   direction: string;
   onDirectionChange: (d: string) => void;
 }) {
+  const [zoomLevel, setZoomLevel] = useState(0);
   const [displayMode, setDisplayMode] = useState<'theme' | 'strategy' | 'performance'>('theme');
   const [modalContext, setModalContext] = useState<ModalContext | null>(null);
   const [topData, setTopData] = useState<TopStrategiesResponse | null>(null);
@@ -795,12 +796,15 @@ function StackedTimeline({
     };
   }, [ohlcv]);
 
+  const BASE_COL_WIDTH = 90;
+  const ZOOM_STEP = 30;
+  const MIN_COL_WIDTH = 48;
   const SCROLL_THRESHOLD_WEEKS = 13;
-  const FIXED_COL_WIDTH_PX = 90;
-  const needsScroll = data.weeks.length > SCROLL_THRESHOLD_WEEKS;
+  const colWidth = Math.max(BASE_COL_WIDTH + zoomLevel * ZOOM_STEP, MIN_COL_WIDTH);
+  const needsScroll = data.weeks.length > SCROLL_THRESHOLD_WEEKS || zoomLevel > 0;
   const colTemplate = needsScroll
-    ? `repeat(${data.weeks.length}, ${FIXED_COL_WIDTH_PX}px)`
-    : `repeat(${data.weeks.length}, minmax(48px, 1fr))`;
+    ? `repeat(${data.weeks.length}, ${colWidth}px)`
+    : `repeat(${data.weeks.length}, minmax(${MIN_COL_WIDTH}px, 1fr))`;
   const BAND_HEIGHT = 56;
   const stackHeight = maxThemeCount * BAND_HEIGHT;
   const hasCandles = weekBuckets !== null;
@@ -843,6 +847,23 @@ function StackedTimeline({
             <option value="strategy">Display Strategy</option>
             <option value="performance">Performance</option>
           </select>
+          <div className="flex items-center gap-1 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-1">
+            <button
+              onClick={() => setZoomLevel((z) => Math.max(z - 1, -2))}
+              className="px-1.5 py-0.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              title="Zoom out"
+            >−</button>
+            <button
+              onClick={() => setZoomLevel(0)}
+              className="px-1 py-0.5 text-[10px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              title="Reset zoom"
+            >Reset</button>
+            <button
+              onClick={() => setZoomLevel((z) => Math.min(z + 1, 5))}
+              className="px-1.5 py-0.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+              title="Zoom in"
+            >+</button>
+          </div>
         </div>
       </div>
       <ThemeLegend themes={themes} />
