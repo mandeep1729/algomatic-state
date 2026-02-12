@@ -795,7 +795,12 @@ function StackedTimeline({
     };
   }, [ohlcv]);
 
-  const colTemplate = `repeat(${data.weeks.length}, minmax(48px, 1fr))`;
+  const SCROLL_THRESHOLD_WEEKS = 13;
+  const FIXED_COL_WIDTH_PX = 90;
+  const needsScroll = data.weeks.length > SCROLL_THRESHOLD_WEEKS;
+  const colTemplate = needsScroll
+    ? `repeat(${data.weeks.length}, ${FIXED_COL_WIDTH_PX}px)`
+    : `repeat(${data.weeks.length}, minmax(48px, 1fr))`;
   const BAND_HEIGHT = 56;
   const stackHeight = maxThemeCount * BAND_HEIGHT;
   const hasCandles = weekBuckets !== null;
@@ -842,7 +847,10 @@ function StackedTimeline({
       </div>
       <ThemeLegend themes={themes} />
 
-      <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]">
+      <div
+        className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]"
+        style={needsScroll ? { overflowX: 'auto' } : undefined}
+      >
         <div className="grid gap-0" style={{ gridTemplateColumns: colTemplate }}>
           {/* Row 1: Candlestick + volume per week (aligned columns) */}
           {hasCandles && data.weeks.map((week) => (
