@@ -159,20 +159,47 @@ function bucketByWeek(
 // Components
 // ---------------------------------------------------------------------------
 
-function ThemeLegend({ themes }: { themes: string[] }) {
+function ThemeLegend({
+  themes,
+  zoomLevel,
+  onZoomChange,
+}: {
+  themes: string[];
+  zoomLevel: number;
+  onZoomChange: (level: number) => void;
+}) {
   if (themes.length === 0) return null;
   return (
-    <div className="flex flex-wrap items-center gap-4 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-2.5">
+    <div className="flex items-center gap-4 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-2.5">
       <span className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wider">Legend</span>
-      {themes.map((t) => (
-        <div key={t} className="flex items-center gap-1.5">
-          <div
-            className="h-3 w-3 shrink-0 rounded-sm"
-            style={{ backgroundColor: getThemeColor(t) }}
-          />
-          <span className="text-xs text-[var(--text-primary)]">{getThemeLabel(t)}</span>
-        </div>
-      ))}
+      <div className="flex flex-wrap items-center gap-4">
+        {themes.map((t) => (
+          <div key={t} className="flex items-center gap-1.5">
+            <div
+              className="h-3 w-3 shrink-0 rounded-sm"
+              style={{ backgroundColor: getThemeColor(t) }}
+            />
+            <span className="text-xs text-[var(--text-primary)]">{getThemeLabel(t)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="ml-auto flex items-center gap-1 rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-1">
+        <button
+          onClick={() => onZoomChange(Math.max(zoomLevel - 1, -2))}
+          className="px-1.5 py-0.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          title="Zoom out"
+        >−</button>
+        <button
+          onClick={() => onZoomChange(0)}
+          className="px-1 py-0.5 text-[10px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          title="Reset zoom"
+        >Reset</button>
+        <button
+          onClick={() => onZoomChange(Math.min(zoomLevel + 1, 5))}
+          className="px-1.5 py-0.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          title="Zoom in"
+        >+</button>
+      </div>
     </div>
   );
 }
@@ -847,26 +874,9 @@ function StackedTimeline({
             <option value="strategy">Display Strategy</option>
             <option value="performance">Performance</option>
           </select>
-          <div className="flex items-center gap-1 rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-1">
-            <button
-              onClick={() => setZoomLevel((z) => Math.max(z - 1, -2))}
-              className="px-1.5 py-0.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              title="Zoom out"
-            >−</button>
-            <button
-              onClick={() => setZoomLevel(0)}
-              className="px-1 py-0.5 text-[10px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              title="Reset zoom"
-            >Reset</button>
-            <button
-              onClick={() => setZoomLevel((z) => Math.min(z + 1, 5))}
-              className="px-1.5 py-0.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-              title="Zoom in"
-            >+</button>
-          </div>
         </div>
       </div>
-      <ThemeLegend themes={themes} />
+      <ThemeLegend themes={themes} zoomLevel={zoomLevel} onZoomChange={setZoomLevel} />
 
       <div
         className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]"
