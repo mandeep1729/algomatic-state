@@ -16,7 +16,8 @@ const SORT_OPTIONS: { label: string; value: string }[] = [
   { label: 'Symbol Z-A', value: '-symbol' },
 ];
 
-const PAGE_SIZE = 25;
+// Fetch all trades and let DataTable handle client-side pagination
+const FETCH_LIMIT = 10000;
 
 function formatDate(iso: string | null): string {
   if (!iso) return '--';
@@ -51,7 +52,6 @@ export default function Transactions() {
   const symbolFilter = searchParams.get('symbol') ?? '';
   const uncategorizedFilter = searchParams.get('uncategorized') === 'true';
   const sortField = searchParams.get('sort') ?? '-entry_time';
-  const currentPage = parseInt(searchParams.get('page') ?? '1', 10);
 
   const [trades, setTrades] = useState<TradeSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -80,10 +80,6 @@ export default function Transactions() {
       } else {
         next.delete(key);
       }
-      // Reset to page 1 when filters change (except when changing page itself)
-      if (key !== 'page') {
-        next.delete('page');
-      }
       setSearchParams(next, { replace: true });
     },
     [searchParams, setSearchParams],
@@ -100,15 +96,14 @@ export default function Transactions() {
         symbol: symbolFilter || undefined,
         uncategorized: uncategorizedFilter || undefined,
         sort: sortField,
-        page: currentPage,
-        limit: PAGE_SIZE,
+        limit: FETCH_LIMIT,
       });
       setTrades(res.trades);
       setTotal(res.total);
     } finally {
       setLoading(false);
     }
-  }, [symbolFilter, uncategorizedFilter, sortField, currentPage]);
+  }, [symbolFilter, uncategorizedFilter, sortField]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,8 +115,7 @@ export default function Transactions() {
           symbol: symbolFilter || undefined,
           uncategorized: uncategorizedFilter || undefined,
           sort: sortField,
-          page: currentPage,
-          limit: PAGE_SIZE,
+          limit: FETCH_LIMIT,
         });
         if (!cancelled) {
           setTrades(res.trades);
@@ -134,7 +128,7 @@ export default function Transactions() {
 
     load();
     return () => { cancelled = true; };
-  }, [symbolFilter, uncategorizedFilter, sortField, currentPage]);
+  }, [symbolFilter, uncategorizedFilter, sortField]);
 
   // Load strategies when selection starts
   useEffect(() => {
