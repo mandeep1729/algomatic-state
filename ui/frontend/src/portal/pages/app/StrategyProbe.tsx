@@ -565,6 +565,8 @@ interface ModalContext {
   weekStart: string;
   weekEnd: string;
   avgPrice: number;
+  /** When set, the modal shows only this single strategy instead of top 3. */
+  strategyName?: string;
 }
 
 function ThemeDetailModal({
@@ -584,6 +586,7 @@ function ThemeDetailModal({
   const color = getThemeColor(n);
   const label = getThemeLabel(n);
   const weekLabel = `${formatWeekLabel(context.weekStart)} – ${formatWeekLabel(context.weekEnd)}`;
+  const isSingleStrategy = !!context.strategyName;
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -612,8 +615,14 @@ function ThemeDetailModal({
               {getThemeLetter(n)}
             </span>
             <div>
-              <h2 className="text-lg font-semibold text-[var(--text-primary)]">{label}</h2>
-              <p className="text-xs text-[var(--text-secondary)]">Top strategies for week of {weekLabel}</p>
+              <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+                {isSingleStrategy ? toTitleCase(context.strategyName!) : label}
+              </h2>
+              <p className="text-xs text-[var(--text-secondary)]">
+                {isSingleStrategy
+                  ? `${label} strategy for week of ${weekLabel}`
+                  : `Top strategies for week of ${weekLabel}`}
+              </p>
             </div>
           </div>
           <button
@@ -784,7 +793,7 @@ function ThemeBand({
   weekStart: string;
   weekEnd: string;
   displayMode: 'theme' | 'strategy';
-  onClick: (theme: string, weekStart: string, weekEnd: string) => void;
+  onClick: (theme: string, weekStart: string, weekEnd: string, strategyName?: string) => void;
 }) {
   const n = normalize(theme.theme);
   const color = getThemeColor(n);
@@ -830,7 +839,7 @@ function ThemeBand({
         borderLeft: `3px solid ${color}`,
       }}
       title={`${getThemeLabel(n)}\nRank: #${theme.rank}\nP&L: ${formatPct(theme.weighted_avg_pnl)}\nTrades: ${theme.num_trades} (W:${theme.num_profitable} / L:${theme.num_unprofitable})\nDirection: Long ${theme.num_long} / Short ${theme.num_short}\nTop: ${theme.top_strategy_name || '—'}\nClick for top strategies`}
-      onClick={() => onClick(n, weekStart, weekEnd)}
+      onClick={() => onClick(n, weekStart, weekEnd, displayMode === 'strategy' ? theme.top_strategy_name : undefined)}
     >
       {displayContent}
     </div>
@@ -865,7 +874,7 @@ function StackedTimeline({
   const [topLoading, setTopLoading] = useState(false);
   const [topError, setTopError] = useState<string | null>(null);
 
-  const handleThemeClick = useCallback(async (theme: string, weekStart: string, weekEnd: string) => {
+  const handleThemeClick = useCallback(async (theme: string, weekStart: string, weekEnd: string, strategyName?: string) => {
     // Compute average close price from OHLCV data for this week
     let avgPrice = 0;
     if (ohlcv && ohlcv.timestamps.length > 0) {
@@ -883,13 +892,21 @@ function StackedTimeline({
       if (count > 0) avgPrice = sum / count;
     }
 
-    setModalContext({ theme, weekStart, weekEnd, avgPrice });
+    setModalContext({ theme, weekStart, weekEnd, avgPrice, strategyName });
     setTopData(null);
     setTopError(null);
     setTopLoading(true);
     try {
       const result = await fetchTopStrategies(data.symbol, theme, weekStart, weekEnd);
-      setTopData(result);
+      if (strategyName) {
+        // Filter to only the clicked strategy when in strategy display mode
+        const filtered = result.strategies.filter(
+          (s) => s.name.toLowerCase() === strategyName.toLowerCase()
+        );
+        setTopData({ ...result, strategies: filtered });
+      } else {
+        setTopData(result);
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load top strategies';
       setTopError(message);
