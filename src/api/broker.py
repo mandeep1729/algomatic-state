@@ -80,6 +80,9 @@ class TradeListAPIResponse(BaseModel):
 class SyncResponse(BaseModel):
     status: str
     trades_synced: int
+    campaigns_created: int = 0
+    legs_created: int = 0
+    fills_backfilled: int = 0
 
 # -----------------------------------------------------------------------------
 # Endpoints
@@ -254,6 +257,7 @@ async def sync_data(
             # Create Trade
             trade = TradeFill(
                 broker_connection_id=conn.id,
+                account_id=user_id,
                 symbol=symbol,
                 side=activity_type.lower(),
                 quantity=float(activity.get("units", 0)),
@@ -266,8 +270,42 @@ async def sync_data(
             db.add(trade)
             synced_count += 1
 
-    logger.debug("Sync complete for user_id=%d: %d trades synced", user_id, synced_count)
-    return SyncResponse(status="success", trades_synced=synced_count)
+    db.flush()
+
+    # Backfill account_id on any existing fills that are NULL
+    # (from syncs before this fix was deployed)
+    user_conn_ids = [c.id for c in user_conns]
+    backfilled = 0
+    if user_conn_ids:
+        backfilled = db.query(TradeFill).filter(
+            TradeFill.broker_connection_id.in_(user_conn_ids),
+            TradeFill.account_id.is_(None),
+        ).update({"account_id": user_id}, synchronize_session="fetch")
+        if backfilled:
+            db.flush()
+            logger.info(
+                "Backfilled account_id=%d on %d fills", user_id, backfilled,
+            )
+
+    # Auto-populate campaigns from fills so strategy assignment works immediately
+    from src.data.database.trading_repository import TradingBuddyRepository
+    repo = TradingBuddyRepository(db)
+    pop_stats = repo.populate_campaigns_and_legs(account_id=user_id)
+
+    logger.info(
+        "Sync complete for user_id=%d: %d trades synced, %d backfilled, "
+        "%d campaigns created, %d legs created",
+        user_id, synced_count, backfilled,
+        pop_stats.get("campaigns_created", 0),
+        pop_stats.get("legs_created", 0),
+    )
+    return SyncResponse(
+        status="success",
+        trades_synced=synced_count,
+        campaigns_created=pop_stats.get("campaigns_created", 0),
+        legs_created=pop_stats.get("legs_created", 0),
+        fills_backfilled=backfilled,
+    )
 
 
 @router.get("/trades", response_model=TradeListAPIResponse)
@@ -845,4 +883,83 @@ async def bulk_update_strategy(
         updated_count=updated_count,
         skipped_count=skipped_count,
     )
+
+
+# -----------------------------------------------------------------------------
+# Populate Campaigns Endpoint
+# -----------------------------------------------------------------------------
+
+class PopulateCampaignsResponse(BaseModel):
+    """Response for populate-campaigns endpoint."""
+
+    status: str
+    lots_created: int
+    closures_created: int
+    campaigns_created: int
+    legs_created: int
+    fills_processed: int
+    total_pnl: Optional[float] = None
+    message: str
+
+
+@router.post("/populate-campaigns", response_model=PopulateCampaignsResponse)
+async def populate_campaigns(
+    symbol: Optional[str] = None,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Populate position campaigns from synced trade fills.
+
+    Processes trade fills using FIFO matching to create:
+    - PositionLot: Tracking individual open positions
+    - LotClosure: Pairing opening and closing fills with P&L
+    - PositionCampaign: Round-trip trade journeys (flat->flat)
+    - CampaignLeg: Semantic decision points (open, close)
+
+    This endpoint is idempotent: re-running it will skip already processed
+    fills and only create new campaigns for unprocessed fills.
+
+    Args:
+        symbol: Optional filter to process only one symbol
+    """
+    from src.data.database.trading_repository import TradingBuddyRepository
+
+    try:
+        repo = TradingBuddyRepository(db)
+        stats = repo.populate_campaigns_and_legs(
+            account_id=user_id,
+            symbol=symbol.upper() if symbol else None,
+        )
+
+        message_parts = []
+        if stats["campaigns_created"]:
+            message_parts.append(f"{stats['campaigns_created']} campaigns")
+        if stats["lots_created"]:
+            message_parts.append(f"{stats['lots_created']} lots")
+        if stats["closures_created"]:
+            message_parts.append(f"{stats['closures_created']} closures")
+        if stats["legs_created"]:
+            message_parts.append(f"{stats['legs_created']} legs")
+
+        if message_parts:
+            message = f"Created {', '.join(message_parts)}"
+            if stats.get("total_pnl"):
+                message += f", total P&L: ${stats['total_pnl']:.2f}"
+        else:
+            message = "No new campaigns to create (fills may already be processed)"
+
+        return PopulateCampaignsResponse(
+            status="success",
+            lots_created=stats["lots_created"],
+            closures_created=stats["closures_created"],
+            campaigns_created=stats["campaigns_created"],
+            legs_created=stats["legs_created"],
+            fills_processed=stats["fills_processed"],
+            total_pnl=stats.get("total_pnl"),
+            message=message,
+        )
+
+    except Exception as e:
+        logger.error("Failed to populate campaigns: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
