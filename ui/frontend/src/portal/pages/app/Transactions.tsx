@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, Filter, Pencil, Loader2, X } from 'lucide-react';
+import { Search, Filter, Pencil, Loader2, X } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../../api';
 import { bulkUpdateStrategy } from '../../api';
@@ -342,8 +342,6 @@ export default function Transactions() {
     },
   ], [handleContextClick]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -484,33 +482,6 @@ export default function Transactions() {
         selectedKeys={selectedTradeIds}
         onSelectionChange={setSelectedTradeIds}
       />
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <span className="text-xs text-[var(--text-secondary)]">
-            Page {currentPage} of {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <button
-              disabled={currentPage <= 1}
-              onClick={() => updateParam('page', String(currentPage - 1))}
-              className="inline-flex items-center gap-1 rounded-md border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <ChevronLeft size={13} />
-              Previous
-            </button>
-            <button
-              disabled={currentPage >= totalPages}
-              onClick={() => updateParam('page', String(currentPage + 1))}
-              className="inline-flex items-center gap-1 rounded-md border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Next
-              <ChevronRight size={13} />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Context Edit Modal */}
       {selectedFill && (
