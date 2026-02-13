@@ -16,8 +16,8 @@ const SORT_OPTIONS: { label: string; value: string }[] = [
   { label: 'Symbol Z-A', value: '-symbol' },
 ];
 
-// Fetch all trades and let DataTable handle client-side pagination
-const FETCH_LIMIT = 10000;
+// Fetch trades in bulk and let DataTable handle client-side pagination
+const FETCH_LIMIT = 200;
 
 function formatDate(iso: string | null): string {
   if (!iso) return '--';
