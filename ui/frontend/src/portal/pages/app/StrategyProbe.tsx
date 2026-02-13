@@ -799,9 +799,17 @@ function ThemeBand({
     );
   } else {
     displayContent = (
-      <span className="text-[11px] font-bold leading-tight px-1" style={{ color }}>
-        {getThemeLabel(n)}
-      </span>
+      <div className="flex flex-col items-center gap-0.5 px-1">
+        <span className="text-[11px] leading-tight" style={{ color }}>
+          {getThemeLabel(n)}
+        </span>
+        <span className={`text-[11px] font-bold leading-tight ${isPositive ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+          {formatPct(theme.weighted_avg_pnl)}
+        </span>
+        <span className="text-[9px] leading-tight text-[var(--text-secondary)]">
+          W:{theme.num_profitable} L:{theme.num_unprofitable}
+        </span>
+      </div>
     );
   }
 
@@ -922,7 +930,7 @@ function StackedTimeline({
   const colTemplate = needsScroll
     ? `repeat(${data.weeks.length}, ${colWidth}px)`
     : `repeat(${data.weeks.length}, minmax(${MIN_COL_WIDTH}px, 1fr))`;
-  const BAND_HEIGHT = 56;
+  const BAND_HEIGHT = 72;
   const stackHeight = maxThemeCount * BAND_HEIGHT;
   const hasCandles = weekBuckets !== null;
 
