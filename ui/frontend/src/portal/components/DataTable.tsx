@@ -5,6 +5,7 @@
  * - Configurable columns with custom renderers
  * - Column visibility toggle with user preference persistence
  * - Per-column text filtering with debounced updates
+ * - Pagination with configurable rows-per-page selector
  * - Loading and empty states
  * - Clickable rows with navigation support
  */
@@ -30,6 +31,9 @@ export interface Column<T> {
   filterFn?: (row: T, filterText: string) => boolean;
 }
 
+/** Available page size options for the rows-per-page selector */
+const ROWS_PER_PAGE_OPTIONS = [5, 10, 20, 50, 100] as const;
+
 export interface DataTableProps<T> {
   /** Unique identifier for this table (used for preference persistence) */
   tableName: string;
@@ -49,6 +53,8 @@ export interface DataTableProps<T> {
   selectedKeys?: Set<string>;
   /** Callback when selection changes. Required when selectedKeys is provided. */
   onSelectionChange?: (keys: Set<string>) => void;
+  /** Optional callback when rows-per-page changes, for parent to sync if needed */
+  onRowsPerPageChange?: (rowsPerPage: number) => void;
 }
 
 export function DataTable<T>({
@@ -61,8 +67,13 @@ export function DataTable<T>({
   onRowClick,
   selectedKeys,
   onSelectionChange,
+  onRowsPerPageChange,
 }: DataTableProps<T>) {
   const selectionEnabled = selectedKeys !== undefined && onSelectionChange !== undefined;
+
+  // Pagination state
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = useState(0);
   // Track visible columns by key
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     return new Set(columns.filter((c) => c.defaultVisible !== false).map((c) => c.key));
@@ -270,6 +281,33 @@ export function DataTable<T>({
     });
   }, [data, debouncedFilters, hasActiveFilters, columns, defaultFilterFn]);
 
+  // Reset currentPage when filteredData length changes (e.g. filters applied)
+  const prevFilteredLengthRef = useRef(filteredData.length);
+  useEffect(() => {
+    if (filteredData.length !== prevFilteredLengthRef.current) {
+      prevFilteredLengthRef.current = filteredData.length;
+      setCurrentPage(0);
+    }
+  }, [filteredData.length]);
+
+  // Pagination calculations
+  const totalPages = Math.max(1, Math.ceil(filteredData.length / rowsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages - 1);
+  const paginatedData = useMemo(() => {
+    const start = safeCurrentPage * rowsPerPage;
+    return filteredData.slice(start, start + rowsPerPage);
+  }, [filteredData, safeCurrentPage, rowsPerPage]);
+
+  // Handler for rows-per-page change
+  const handleRowsPerPageChange = useCallback(
+    (newRowsPerPage: number) => {
+      setRowsPerPage(newRowsPerPage);
+      setCurrentPage(0);
+      onRowsPerPageChange?.(newRowsPerPage);
+    },
+    [onRowsPerPageChange]
+  );
+
   return (
     <div className="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)]">
       {/* Header with column visibility toggle and clear filters */}
@@ -383,7 +421,7 @@ export function DataTable<T>({
               </td>
             </tr>
           ) : (
-            filteredData.map((row) => {
+            paginatedData.map((row) => {
               const rowKey = getRowKey(row);
               const isSelected = selectionEnabled && selectedKeys!.has(rowKey);
               return (
@@ -419,6 +457,66 @@ export function DataTable<T>({
           )}
         </tbody>
       </table>
+
+      {/* Pagination footer */}
+      {filteredData.length > 0 && (
+        <div className="flex items-center justify-between border-t border-[var(--border-color)] px-4 py-2">
+          <span className="text-xs text-[var(--text-secondary)]">
+            {filteredData.length} {filteredData.length === 1 ? 'row' : 'rows'}
+            {hasActiveFilters ? ' (filtered)' : ''}
+          </span>
+          <div className="flex items-center gap-3">
+            {/* Rows per page selector */}
+            <div className="flex items-center gap-1.5">
+              <label
+                htmlFor={`${tableName}-rows-per-page`}
+                className="text-xs text-[var(--text-secondary)]"
+              >
+                Rows per page:
+              </label>
+              <select
+                id={`${tableName}-rows-per-page`}
+                value={rowsPerPage}
+                onChange={(e) => handleRowsPerPageChange(Number(e.target.value))}
+                className="h-7 rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-1.5 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] focus:border-[var(--accent-blue)] focus:outline-none transition-colors"
+              >
+                {ROWS_PER_PAGE_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Page indicator */}
+            <span className="text-xs text-[var(--text-secondary)]">
+              Page {safeCurrentPage + 1} of {totalPages}
+            </span>
+
+            {/* Previous / Next buttons */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                disabled={safeCurrentPage === 0}
+                className="rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                aria-label="Previous page"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
+                disabled={safeCurrentPage >= totalPages - 1}
+                className="rounded border border-[var(--border-color)] bg-[var(--bg-primary)] px-2.5 py-1 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                aria-label="Next page"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
