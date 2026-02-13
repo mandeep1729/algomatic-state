@@ -729,6 +729,8 @@ export interface TopStrategyDetail {
   direction: string;
   details: Record<string, unknown>;
   num_trades: number;
+  num_profitable: number;
+  num_unprofitable: number;
   weighted_avg_pnl: number;
   avg_pnl_per_trade: number;
 }

@@ -719,6 +719,10 @@ function TopStrategyCard({
           <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 flex-1 text-center">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Trades</div>
             <div className="text-sm font-bold text-[var(--text-primary)]">{strategy.num_trades}</div>
+            <div className="text-[10px] text-[var(--text-secondary)]">
+              <span className="text-[#26a69a]">W:{strategy.num_profitable}</span>{' '}
+              <span className="text-[#ef5350]">L:{strategy.num_unprofitable}</span>
+            </div>
           </div>
           <div className="rounded-md border border-[var(--border-color)] bg-[var(--bg-primary)] px-3 py-2 flex-1 text-center">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-secondary)]">Return</div>

@@ -92,6 +92,8 @@ class TopStrategyDetail(BaseModel):
     direction: str
     details: dict[str, Any]
     num_trades: int
+    num_profitable: int = 0
+    num_unprofitable: int = 0
     weighted_avg_pnl: float
     avg_pnl_per_trade: float
 
@@ -213,6 +215,18 @@ async def get_top_strategies(
         ProbeStrategy.details,
         func.sum(StrategyProbeResult.num_trades).label("total_trades"),
         func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).label("sum_pnl"),
+        func.sum(
+            case(
+                (StrategyProbeResult.pnl_mean > 0, StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("profitable_trades"),
+        func.sum(
+            case(
+                (StrategyProbeResult.pnl_mean <= 0, StrategyProbeResult.num_trades),
+                else_=0,
+            )
+        ).label("unprofitable_trades"),
     ).join(
         StrategyProbeResult, StrategyProbeResult.strategy_id == ProbeStrategy.id,
     ).filter(
@@ -245,6 +259,8 @@ async def get_top_strategies(
         total_trades = int(row.total_trades)
         sum_pnl = float(row.sum_pnl)
         avg_pnl = sum_pnl / total_trades if total_trades > 0 else 0.0
+        profitable = int(row.profitable_trades)
+        unprofitable = int(row.unprofitable_trades)
 
         strategies.append(TopStrategyDetail(
             display_name=row.display_name,
@@ -253,6 +269,8 @@ async def get_top_strategies(
             direction=row.direction,
             details=row.details or {},
             num_trades=total_trades,
+            num_profitable=profitable,
+            num_unprofitable=unprofitable,
             weighted_avg_pnl=round(sum_pnl, 2),
             avg_pnl_per_trade=round(avg_pnl, 2),
         ))
