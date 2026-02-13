@@ -7,6 +7,7 @@ Defines tables for:
 - CampaignLeg: Semantic decision points within a campaign.
 - LegFillMap: Join table mapping legs to fills.
 - DecisionContext: Trader's context/feelings at decision points.
+- CampaignCheck: Behavioral nudge checks attached to campaign legs.
 """
 
 from datetime import datetime
@@ -14,6 +15,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Float,
@@ -320,6 +322,11 @@ class CampaignLeg(Base):
         back_populates="leg",
         cascade="all, delete-orphan",
     )
+    checks: Mapped[list["CampaignCheck"]] = relationship(
+        "CampaignCheck",
+        back_populates="leg",
+        cascade="all, delete-orphan",
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -450,4 +457,69 @@ class DecisionContext(Base):
         return (
             f"<DecisionContext(id={self.id}, type='{self.context_type}', "
             f"campaign_id={self.campaign_id}, leg_id={self.leg_id})>"
+        )
+
+
+class CampaignCheck(Base):
+    """Behavioral nudge check attached to a campaign leg.
+
+    Each row records one check evaluation (e.g. risk sanity, overtrading,
+    revenge trading). Checks live at the leg level so that moving legs
+    between campaigns automatically moves their checks.
+
+    Traders can acknowledge checks and record what action they took.
+    """
+
+    __tablename__ = "campaign_checks"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    leg_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("campaign_legs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    account_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    check_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    severity: Mapped[str] = mapped_column(String(10), nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    nudge_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    acknowledged: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    trader_action: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    check_phase: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # Relationships
+    leg: Mapped["CampaignLeg"] = relationship("CampaignLeg", back_populates="checks")
+    account: Mapped["UserAccount"] = relationship("UserAccount")
+
+    __table_args__ = (
+        CheckConstraint(
+            "severity IN ('info', 'warn', 'block', 'danger')",
+            name="ck_check_severity",
+        ),
+        CheckConstraint(
+            "check_phase IN ('pre_trade', 'at_entry', 'during', 'at_exit', 'post_trade')",
+            name="ck_check_phase",
+        ),
+        CheckConstraint(
+            "trader_action IS NULL OR trader_action IN ('proceeded', 'modified', 'cancelled')",
+            name="ck_check_trader_action",
+        ),
+        Index("ix_campaign_checks_account_check_type", "account_id", "check_type"),
+        Index("ix_campaign_checks_account_checked_at", "account_id", "checked_at"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<CampaignCheck(id={self.id}, leg_id={self.leg_id}, "
+            f"type='{self.check_type}', severity='{self.severity}', passed={self.passed})>"
         )

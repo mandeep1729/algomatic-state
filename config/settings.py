@@ -256,6 +256,41 @@ class MessagingConfig(BaseSettings):
     )
 
 
+class ChecksConfig(BaseSettings):
+    """Behavioral checks configuration for campaign leg evaluation.
+
+    severity_overrides maps check codes to custom severity labels.
+    Supported severities: info, warn, block, danger.
+    Escalated variants use the suffix '_escalated' (e.g. RS002_escalated).
+
+    Defaults when no override is set:
+        RS001        = block
+        RS002        = warn      (RS002_escalated = block)
+        RS003        = warn      (RS003_escalated = block)
+        RS004        = warn
+    """
+
+    model_config = SettingsConfigDict(env_prefix="CHECKS_")
+
+    atr_period: int = Field(default=14, description="ATR lookback period (standard = 14)")
+    min_rr_ratio: float = Field(default=1.5, description="Minimum acceptable risk:reward ratio")
+    max_risk_per_trade_pct: float = Field(
+        default=2.0,
+        description="Maximum risk per trade as % of account balance",
+    )
+    min_stop_atr_multiple: float = Field(
+        default=0.5,
+        description="Minimum stop distance as multiple of ATR",
+    )
+    severity_overrides: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Override severity per check code, e.g. "
+            '{"RS001": "danger", "RS002_escalated": "danger"}'
+        ),
+    )
+
+
 class AuthConfig(BaseSettings):
     """Authentication configuration."""
 
@@ -302,6 +337,7 @@ class Settings(BaseSettings):
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     messaging: MessagingConfig = Field(default_factory=MessagingConfig)
+    checks: ChecksConfig = Field(default_factory=ChecksConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 
