@@ -249,6 +249,17 @@ export async function fetchTickerPnlTimeseries(
   };
 }
 
+// --- Bulk Strategy Update ---
+
+export async function bulkUpdateStrategy(req: {
+  fill_ids: number[];
+  strategy_id: number | null;
+}): Promise<{ updated_count: number; skipped_count: number }> {
+  await delay();
+  // In mock mode, pretend all fills were updated
+  return { updated_count: req.fill_ids.length, skipped_count: 0 };
+}
+
 // --- Evaluation ---
 
 export async function evaluateTrade(request: EvaluateRequest): Promise<EvaluateResponse> {

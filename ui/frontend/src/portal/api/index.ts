@@ -116,6 +116,13 @@ export { fetchTickerPnlTimeseries as fetchMockTickerPnlTimeseries } from '../moc
 // Re-export fill context functions from client
 export { fetchFillContext, saveFillContext } from './client';
 
+// Re-export bulk strategy update - uses mock or real based on USE_MOCKS flag
+import type { BulkUpdateStrategyRequest, BulkUpdateStrategyResponse } from './client';
+export type { BulkUpdateStrategyRequest, BulkUpdateStrategyResponse } from './client';
+
+export const bulkUpdateStrategy: (req: BulkUpdateStrategyRequest) => Promise<BulkUpdateStrategyResponse> =
+  USE_MOCKS ? mockApi.bulkUpdateStrategy : realApi.bulkUpdateStrategy;
+
 // Re-export strategy probe function from client
 export { fetchStrategyProbe, fetchThemeStrategies, fetchTopStrategies } from './client';
 export type { StrategyProbeResponse, WeekPerformance, ThemeRanking, OHLCVData, ThemeStrategiesResponse, ThemeStrategyDetail, TopStrategiesResponse, TopStrategyDetail } from './client';

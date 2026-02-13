@@ -45,6 +45,10 @@ export interface DataTableProps<T> {
   getRowKey: (row: T) => string;
   /** Optional click handler for row clicks */
   onRowClick?: (row: T) => void;
+  /** Set of selected row keys. When provided, a checkbox column is rendered. */
+  selectedKeys?: Set<string>;
+  /** Callback when selection changes. Required when selectedKeys is provided. */
+  onSelectionChange?: (keys: Set<string>) => void;
 }
 
 export function DataTable<T>({
@@ -55,7 +59,10 @@ export function DataTable<T>({
   emptyMessage = 'No data available.',
   getRowKey,
   onRowClick,
+  selectedKeys,
+  onSelectionChange,
 }: DataTableProps<T>) {
+  const selectionEnabled = selectedKeys !== undefined && onSelectionChange !== undefined;
   // Track visible columns by key
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
     return new Set(columns.filter((c) => c.defaultVisible !== false).map((c) => c.key));
@@ -187,6 +194,41 @@ export function DataTable<T>({
   // Check if any filters are active
   const hasActiveFilters = Object.keys(debouncedFilters).length > 0;
 
+  // Selection helpers
+  const toggleRowSelection = useCallback(
+    (key: string) => {
+      if (!selectionEnabled) return;
+      const next = new Set(selectedKeys);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      onSelectionChange!(next);
+    },
+    [selectionEnabled, selectedKeys, onSelectionChange],
+  );
+
+  const toggleSelectAll = useCallback(
+    (filteredRows: T[]) => {
+      if (!selectionEnabled) return;
+      const allKeys = filteredRows.map(getRowKey);
+      const allSelected = allKeys.length > 0 && allKeys.every((k) => selectedKeys!.has(k));
+      if (allSelected) {
+        // Deselect all currently visible rows
+        const next = new Set(selectedKeys);
+        for (const k of allKeys) next.delete(k);
+        onSelectionChange!(next);
+      } else {
+        // Select all currently visible rows
+        const next = new Set(selectedKeys);
+        for (const k of allKeys) next.add(k);
+        onSelectionChange!(next);
+      }
+    },
+    [selectionEnabled, selectedKeys, onSelectionChange, getRowKey],
+  );
+
   // Filter to only visible columns
   const displayColumns = columns.filter((c) => visibleColumns.has(c.key));
   const hideableColumns = columns.filter((c) => c.hideable !== false);
@@ -279,6 +321,20 @@ export function DataTable<T>({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            {selectionEnabled && (
+              <th className="w-10 px-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={
+                    filteredData.length > 0 &&
+                    filteredData.every((row) => selectedKeys!.has(getRowKey(row)))
+                  }
+                  onChange={() => toggleSelectAll(filteredData)}
+                  className="h-3.5 w-3.5 rounded border-[var(--border-color)] text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
+                  aria-label="Select all rows"
+                />
+              </th>
+            )}
             {displayColumns.map((col) => (
               <th key={col.key} className="px-6 py-3">
                 {col.header}
@@ -288,6 +344,7 @@ export function DataTable<T>({
           {/* Filter row - only show if there are searchable columns */}
           {hasSearchableColumns && (
             <tr className="border-b border-[var(--border-color)] bg-[var(--bg-primary)]/50">
+              {selectionEnabled && <th className="w-10 px-3 py-2" />}
               {displayColumns.map((col) => (
                 <th key={`filter-${col.key}`} className="px-6 py-2">
                   {col.searchable !== false ? (
@@ -308,7 +365,7 @@ export function DataTable<T>({
           {loading ? (
             <tr>
               <td
-                colSpan={displayColumns.length || 1}
+                colSpan={(displayColumns.length || 1) + (selectionEnabled ? 1 : 0)}
                 className="px-6 py-12 text-center text-[var(--text-secondary)]"
               >
                 Loading...
@@ -317,7 +374,7 @@ export function DataTable<T>({
           ) : filteredData.length === 0 ? (
             <tr>
               <td
-                colSpan={displayColumns.length || 1}
+                colSpan={(displayColumns.length || 1) + (selectionEnabled ? 1 : 0)}
                 className="px-6 py-12 text-center text-[var(--text-secondary)]"
               >
                 {hasActiveFilters
@@ -326,23 +383,39 @@ export function DataTable<T>({
               </td>
             </tr>
           ) : (
-            filteredData.map((row) => (
-              <tr
-                key={getRowKey(row)}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-                className={
-                  onRowClick
-                    ? 'cursor-pointer transition-colors hover:bg-[var(--bg-tertiary)]/50'
-                    : ''
-                }
-              >
-                {displayColumns.map((col) => (
-                  <td key={col.key} className="px-6 py-4">
-                    {col.render(row)}
-                  </td>
-                ))}
-              </tr>
-            ))
+            filteredData.map((row) => {
+              const rowKey = getRowKey(row);
+              const isSelected = selectionEnabled && selectedKeys!.has(rowKey);
+              return (
+                <tr
+                  key={rowKey}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  className={`${
+                    onRowClick
+                      ? 'cursor-pointer transition-colors hover:bg-[var(--bg-tertiary)]/50'
+                      : 'transition-colors'
+                  } ${isSelected ? 'bg-[var(--accent-blue)]/5' : ''}`}
+                >
+                  {selectionEnabled && (
+                    <td className="w-10 px-3 py-4">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleRowSelection(rowKey)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-3.5 w-3.5 rounded border-[var(--border-color)] text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
+                        aria-label={`Select row ${rowKey}`}
+                      />
+                    </td>
+                  )}
+                  {displayColumns.map((col) => (
+                    <td key={col.key} className="px-6 py-4">
+                      {col.render(row)}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

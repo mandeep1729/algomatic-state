@@ -714,3 +714,135 @@ async def save_fill_context(
         updated_at=context.updated_at,
     )
 
+
+# -----------------------------------------------------------------------------
+# Bulk Strategy Update Endpoint
+# -----------------------------------------------------------------------------
+
+class BulkUpdateStrategyRequest(BaseModel):
+    """Request body for bulk-updating strategy on multiple fills."""
+
+    fill_ids: List[int]
+    strategy_id: Optional[int] = None
+
+
+class BulkUpdateStrategyResponse(BaseModel):
+    """Response for bulk strategy update."""
+
+    updated_count: int
+    skipped_count: int
+
+
+@router.post("/fills/bulk-update-strategy", response_model=BulkUpdateStrategyResponse)
+async def bulk_update_strategy(
+    request: BulkUpdateStrategyRequest,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Bulk-update the strategy assignment for multiple trade fills.
+
+    For each fill that is linked to a campaign leg with a DecisionContext,
+    updates the strategy_id. Fills not linked to a campaign are skipped.
+    """
+    logger.debug(
+        "bulk_update_strategy: user_id=%d, fill_ids=%s, strategy_id=%s",
+        user_id, request.fill_ids, request.strategy_id
+    )
+
+    if not request.fill_ids:
+        return BulkUpdateStrategyResponse(updated_count=0, skipped_count=0)
+
+    # Verify user exists
+    snap_user = db.query(SnapTradeUser).filter(
+        SnapTradeUser.user_account_id == user_id
+    ).first()
+
+    if not snap_user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Validate strategy exists if provided
+    if request.strategy_id is not None:
+        strategy = db.query(Strategy).filter(
+            Strategy.id == request.strategy_id,
+            Strategy.account_id == user_id,
+        ).first()
+        if not strategy:
+            raise HTTPException(status_code=404, detail="Strategy not found")
+
+    # Verify all fills belong to the user
+    user_fills = (
+        db.query(TradeFill.id)
+        .join(BrokerConnection)
+        .filter(
+            BrokerConnection.snaptrade_user_id == snap_user.id,
+            TradeFill.id.in_(request.fill_ids),
+        )
+        .all()
+    )
+    valid_fill_ids = {f.id for f in user_fills}
+
+    updated_count = 0
+    skipped_count = 0
+
+    for fill_id in request.fill_ids:
+        if fill_id not in valid_fill_ids:
+            skipped_count += 1
+            logger.warning("bulk_update_strategy: fill_id=%d not owned by user_id=%d", fill_id, user_id)
+            continue
+
+        # Find leg mapping for this fill
+        leg_map = (
+            db.query(LegFillMap, CampaignLeg)
+            .join(CampaignLeg, CampaignLeg.id == LegFillMap.leg_id)
+            .filter(LegFillMap.fill_id == fill_id)
+            .first()
+        )
+
+        if not leg_map:
+            skipped_count += 1
+            continue
+
+        _, leg = leg_map
+
+        # Find or create DecisionContext for this leg
+        context = db.query(DecisionContext).filter(
+            DecisionContext.leg_id == leg.id
+        ).first()
+
+        if context:
+            context.strategy_id = request.strategy_id
+            context.updated_at = datetime.utcnow()
+        else:
+            # Create new context with just the strategy
+            context_type_map = {
+                "open": "entry",
+                "add": "add",
+                "reduce": "reduce",
+                "close": "exit",
+                "flip_close": "exit",
+                "flip_open": "entry",
+            }
+            context_type = context_type_map.get(leg.leg_type, "entry")
+
+            context = DecisionContext(
+                account_id=user_id,
+                campaign_id=leg.campaign_id,
+                leg_id=leg.id,
+                context_type=context_type,
+                strategy_id=request.strategy_id,
+            )
+            db.add(context)
+
+        updated_count += 1
+
+    db.flush()
+    logger.info(
+        "bulk_update_strategy: user_id=%d, updated=%d, skipped=%d",
+        user_id, updated_count, skipped_count,
+    )
+
+    return BulkUpdateStrategyResponse(
+        updated_count=updated_count,
+        skipped_count=skipped_count,
+    )
+

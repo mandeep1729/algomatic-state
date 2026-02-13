@@ -627,6 +627,26 @@ export async function updateSitePrefs(prefs: Partial<SitePrefs>): Promise<SitePr
 }
 
 // =============================================================================
+// Bulk Strategy Update — POST /api/broker/fills/bulk-update-strategy
+// =============================================================================
+
+export interface BulkUpdateStrategyRequest {
+  fill_ids: number[];
+  strategy_id: number | null;
+}
+
+export interface BulkUpdateStrategyResponse {
+  updated_count: number;
+  skipped_count: number;
+}
+
+export async function bulkUpdateStrategy(
+  req: BulkUpdateStrategyRequest,
+): Promise<BulkUpdateStrategyResponse> {
+  return post<BulkUpdateStrategyResponse>('/api/broker/fills/bulk-update-strategy', req);
+}
+
+// =============================================================================
 // Fill Context — GET/PUT /api/broker/fills/{fillId}/context
 // =============================================================================
 
