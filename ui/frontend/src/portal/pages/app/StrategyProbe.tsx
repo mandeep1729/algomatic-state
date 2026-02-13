@@ -783,13 +783,12 @@ function ThemeBand({
   theme: { theme: string; rank: number; weighted_avg_pnl: number; num_trades: number; num_profitable: number; num_unprofitable: number; num_long: number; num_short: number; avg_pnl_per_trade: number; top_strategy_name: string };
   weekStart: string;
   weekEnd: string;
-  displayMode: 'theme' | 'strategy' | 'performance';
+  displayMode: 'theme' | 'strategy';
   onClick: (theme: string, weekStart: string, weekEnd: string) => void;
 }) {
   const n = normalize(theme.theme);
   const color = getThemeColor(n);
   const isPositive = theme.weighted_avg_pnl >= 0;
-  const pnlColor = isPositive ? '#26a69a' : '#ef5350';
 
   let displayContent: React.ReactNode;
   if (displayMode === 'strategy') {
@@ -797,19 +796,6 @@ function ThemeBand({
       <span className="text-[11px] font-bold leading-tight px-1" style={{ color }}>
         {toTitleCase(theme.top_strategy_name) || getThemeLabel(n)}
       </span>
-    );
-  } else if (displayMode === 'performance') {
-    // Two-line layout: AVG/PNL on top, trade count on bottom
-    displayContent = (
-      <div className="flex flex-col items-center justify-center gap-0.5 w-full px-1">
-        <div className="text-[12px] font-bold leading-tight" style={{ color: pnlColor }}>
-          {formatPct(theme.weighted_avg_pnl)}
-        </div>
-        <div className="text-[10px] font-medium leading-tight text-[var(--text-secondary)]">
-          <span className="text-[#26a69a]">W:{theme.num_profitable}</span>{' '}
-          <span className="text-[#ef5350]">L:{theme.num_unprofitable}</span>
-        </div>
-      </div>
     );
   } else {
     displayContent = (
@@ -857,7 +843,7 @@ function StackedTimeline({
   onDirectionChange: (d: string) => void;
 }) {
   const [zoomLevel, setZoomLevel] = useState(0);
-  const [displayMode, setDisplayMode] = useState<'theme' | 'strategy' | 'performance'>('theme');
+  const [displayMode, setDisplayMode] = useState<'theme' | 'strategy'>('theme');
   const [modalContext, setModalContext] = useState<ModalContext | null>(null);
   const [topData, setTopData] = useState<TopStrategiesResponse | null>(null);
   const [topLoading, setTopLoading] = useState(false);
@@ -971,12 +957,11 @@ function StackedTimeline({
           </select>
           <select
             value={displayMode}
-            onChange={(e) => setDisplayMode(e.target.value as 'theme' | 'strategy' | 'performance')}
+            onChange={(e) => setDisplayMode(e.target.value as 'theme' | 'strategy')}
             className="rounded-md border border-[var(--border-color)] bg-[var(--bg-secondary)] px-2.5 py-1 text-xs font-medium text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-primary)] hover:text-[var(--text-primary)] cursor-pointer"
           >
             <option value="theme">Display Theme</option>
             <option value="strategy">Display Strategy</option>
-            <option value="performance">Performance</option>
           </select>
         </div>
       </div>
