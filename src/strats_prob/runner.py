@@ -28,7 +28,7 @@ class ProbeRunConfig:
     """Configuration for a probe run."""
 
     symbols: list[str]
-    timeframes: list[str] = field(default_factory=lambda: ["1Min", "15Min", "1Hour", "1Day"])
+    timeframes: list[str] = field(default_factory=lambda: ["15Min", "1Hour", "1Day"])
     risk_profiles: list[str] = field(default_factory=lambda: ["low", "medium", "high"])
     strategy_ids: Optional[list[int]] = None  # None = all strategies
     start: Optional[datetime] = None

@@ -383,6 +383,143 @@ async def get_ohlcv_data(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------------------------------------------------------------------------
+# Go-strats compatible endpoints (/api/bars, /api/indicators)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/bars")
+async def get_bars_for_go(
+    symbol: str = Query(..., description="Ticker symbol"),
+    timeframe: str = Query("1Min", description="Bar timeframe"),
+    start_timestamp: Optional[str] = Query(None, description="Start timestamp (ISO 8601)"),
+    end_timestamp: Optional[str] = Query(None, description="End timestamp (ISO 8601)"),
+):
+    """Return OHLCV bars in the format expected by go-strats backend client.
+
+    Response shape:
+        {"symbol", "timeframe", "count", "bars": [{"timestamp", "open", "high", "low", "close", "volume"}]}
+    """
+    symbol = symbol.upper()
+    logger.info("GET /api/bars: symbol=%s, timeframe=%s, start=%s, end=%s",
+                symbol, timeframe, start_timestamp, end_timestamp)
+
+    start_date = start_timestamp[:10] if start_timestamp else None
+    end_date = end_timestamp[:10] if end_timestamp else None
+
+    try:
+        with get_db_manager().get_session() as session:
+            repo = OHLCVRepository(session)
+
+            start = datetime.fromisoformat(start_timestamp) if start_timestamp else None
+            end = datetime.fromisoformat(end_timestamp) if end_timestamp else None
+            # Strip timezone info for DB comparison
+            if start and start.tzinfo is not None:
+                start = start.replace(tzinfo=None)
+            if end and end.tzinfo is not None:
+                end = end.replace(tzinfo=None)
+
+            df = repo.get_bars(symbol, timeframe, start=start, end=end)
+
+        if df.empty:
+            raise HTTPException(status_code=404, detail=f"No bars for {symbol}/{timeframe}")
+
+        bars = []
+        for ts, row in df.iterrows():
+            bars.append({
+                "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]),
+            })
+
+        return {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "count": len(bars),
+            "bars": bars,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error in /api/bars: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/indicators")
+async def get_indicators_for_go(
+    symbol: str = Query(..., description="Ticker symbol"),
+    timeframe: str = Query("1Min", description="Bar timeframe"),
+    start_timestamp: Optional[str] = Query(None, description="Start timestamp (ISO 8601)"),
+    end_timestamp: Optional[str] = Query(None, description="End timestamp (ISO 8601)"),
+):
+    """Return computed indicators in the format expected by go-strats backend client.
+
+    Response shape:
+        {"symbol", "timeframe", "count", "indicator_names": [...],
+         "rows": [{"timestamp", "indicators": {"name": value, ...}}]}
+    """
+    symbol = symbol.upper()
+    logger.info("GET /api/indicators: symbol=%s, timeframe=%s, start=%s, end=%s",
+                symbol, timeframe, start_timestamp, end_timestamp)
+
+    try:
+        with get_db_manager().get_session() as session:
+            repo = OHLCVRepository(session)
+
+            start = datetime.fromisoformat(start_timestamp) if start_timestamp else None
+            end = datetime.fromisoformat(end_timestamp) if end_timestamp else None
+            if start and start.tzinfo is not None:
+                start = start.replace(tzinfo=None)
+            if end and end.tzinfo is not None:
+                end = end.replace(tzinfo=None)
+
+            features_df = repo.get_features(symbol, timeframe, start=start, end=end)
+
+        if features_df.empty:
+            # Fall back to computing indicators from OHLCV on-the-fly
+            logger.info("No stored features for %s/%s, computing from OHLCV", symbol, timeframe)
+            with get_db_manager().get_session() as session:
+                repo = OHLCVRepository(session)
+                ohlcv_df = repo.get_bars(symbol, timeframe, start=start, end=end)
+
+            if ohlcv_df.empty:
+                raise HTTPException(status_code=404, detail=f"No data for {symbol}/{timeframe}")
+
+            from src.features.talib_indicators import TALibIndicatorCalculator
+            calculator = TALibIndicatorCalculator()
+            features_df = calculator.compute(ohlcv_df)
+
+        indicator_names = sorted(features_df.columns.tolist())
+        rows = []
+        for ts, row in features_df.iterrows():
+            indicators = {}
+            for col in indicator_names:
+                val = row[col]
+                if pd.notna(val) and not (isinstance(val, float) and (np.isinf(val) or np.isnan(val))):
+                    indicators[col] = float(val)
+            rows.append({
+                "timestamp": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "indicators": indicators,
+            })
+
+        return {
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "count": len(rows),
+            "indicator_names": indicator_names,
+            "rows": rows,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error in /api/indicators: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/features/{symbol}")
 async def get_features(
     symbol: str,
