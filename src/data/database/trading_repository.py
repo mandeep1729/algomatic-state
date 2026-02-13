@@ -31,7 +31,6 @@ from src.data.database.trade_lifecycle_models import (
     CampaignLeg as CampaignLegModel,
     LegFillMap as LegFillMapModel,
     DecisionContext as DecisionContextModel,
-    CampaignCheck as CampaignCheckModel,
 )
 from src.trade.intent import (
     TradeIntent,
@@ -1046,11 +1045,10 @@ class TradingBuddyRepository:
     # Campaign Leg Operations
     # -------------------------------------------------------------------------
 
-    def create_leg(self, run_checks: bool = True, **kwargs) -> CampaignLegModel:
-        """Create a campaign leg record and optionally run behavioral checks.
+    def create_leg(self, **kwargs) -> CampaignLegModel:
+        """Create a campaign leg record.
 
         Args:
-            run_checks: Whether to run behavioral checks after creation
             **kwargs: CampaignLeg column values
 
         Returns:
@@ -1063,10 +1061,6 @@ class TradingBuddyRepository:
             "Created leg id=%s campaign_id=%s type=%s side=%s qty=%s",
             leg.id, leg.campaign_id, leg.leg_type, leg.side, leg.quantity,
         )
-
-        if run_checks:
-            self.run_checks_for_leg(leg)
-
         return leg
 
     def get_legs_for_campaign(self, campaign_id: int) -> list[CampaignLegModel]:
@@ -1149,121 +1143,6 @@ class TradingBuddyRepository:
         return self.session.query(DecisionContextModel).filter(
             DecisionContextModel.id == context_id
         ).first()
-
-    # -------------------------------------------------------------------------
-    # Campaign Check Operations
-    # -------------------------------------------------------------------------
-
-    def create_campaign_check(
-        self,
-        leg_id: int,
-        account_id: int,
-        check_type: str,
-        severity: str,
-        passed: bool,
-        check_phase: str,
-        details: Optional[dict] = None,
-        nudge_text: Optional[str] = None,
-    ) -> CampaignCheckModel:
-        """Create a campaign check record.
-
-        Args:
-            leg_id: Campaign leg ID
-            account_id: Account ID
-            check_type: Check category (e.g. "risk_sanity")
-            severity: "info", "warn", or "block"
-            passed: Whether the check passed
-            check_phase: When the check applies
-            details: Structured metrics (JSONB)
-            nudge_text: Human-readable nudge message
-
-        Returns:
-            Created CampaignCheckModel
-        """
-        check = CampaignCheckModel(
-            leg_id=leg_id,
-            account_id=account_id,
-            check_type=check_type,
-            severity=severity,
-            passed=passed,
-            details=details,
-            nudge_text=nudge_text,
-            check_phase=check_phase,
-            checked_at=datetime.utcnow(),
-        )
-        self.session.add(check)
-        self.session.flush()
-        logger.info(
-            "Created campaign check id=%s leg_id=%s type=%s severity=%s passed=%s",
-            check.id, leg_id, check_type, severity, passed,
-        )
-        return check
-
-    def get_checks_for_leg(self, leg_id: int) -> list[CampaignCheckModel]:
-        """Get all checks for a campaign leg.
-
-        Args:
-            leg_id: Campaign leg ID
-
-        Returns:
-            List of CampaignCheckModel ordered by checked_at
-        """
-        return self.session.query(CampaignCheckModel).filter(
-            CampaignCheckModel.leg_id == leg_id
-        ).order_by(CampaignCheckModel.checked_at.asc()).all()
-
-    def acknowledge_check(
-        self,
-        check_id: int,
-        trader_action: str,
-    ) -> Optional[CampaignCheckModel]:
-        """Acknowledge a check and record the trader's action.
-
-        Args:
-            check_id: Campaign check ID
-            trader_action: One of "proceeded", "modified", "cancelled"
-
-        Returns:
-            Updated CampaignCheckModel or None
-        """
-        check = self.session.query(CampaignCheckModel).filter(
-            CampaignCheckModel.id == check_id
-        ).first()
-
-        if check is None:
-            logger.warning("Check id=%s not found for acknowledgement", check_id)
-            return None
-
-        check.acknowledged = True
-        check.trader_action = trader_action
-        self.session.flush()
-        logger.info(
-            "Acknowledged check id=%s action=%s", check_id, trader_action,
-        )
-        return check
-
-    def run_checks_for_leg(self, leg: CampaignLegModel) -> list[CampaignCheckModel]:
-        """Run behavioral checks for a campaign leg and persist results.
-
-        Args:
-            leg: CampaignLeg to evaluate
-
-        Returns:
-            List of created CampaignCheck records
-        """
-        from config.settings import get_settings
-        from src.checks.runner import CheckRunner
-
-        settings = get_settings()
-        runner = CheckRunner(self.session, settings.checks)
-
-        try:
-            return runner.run_checks(leg)
-        except Exception:
-            logger.exception(
-                "Failed to run checks for leg_id=%s", leg.id,
-            )
-            return []
 
     # -------------------------------------------------------------------------
     # Campaign Population from Fills
@@ -1698,99 +1577,6 @@ class TradingBuddyRepository:
             total_pnl,
             return_pct,
         )
-
-    def _create_campaign_legs(
-        self,
-        campaign: PositionCampaignModel,
-        fills: list[TradeFillModel],
-        lots: list[PositionLotModel],
-        closures: list[LotClosureModel],
-    ) -> int:
-        """Create campaign legs linking to fills.
-
-        Args:
-            campaign: Campaign to add legs to
-            fills: All fills for this symbol
-            lots: Lots in this campaign
-            closures: Closures in this campaign
-
-        Returns:
-            Number of legs created
-        """
-        legs_created = 0
-
-        # Create opening leg
-        if lots:
-            open_fill_ids = [lot.open_fill_id for lot in lots]
-            open_fills = [f for f in fills if f.id in open_fill_ids]
-            if open_fills:
-                first_fill = min(open_fills, key=lambda f: f.executed_at)
-                total_open_qty = sum(lot.open_qty for lot in lots)
-                avg_price = sum(
-                    lot.open_qty * lot.avg_open_price for lot in lots
-                ) / total_open_qty
-
-                leg = self.create_leg(
-                    campaign_id=campaign.id,
-                    leg_type="open",
-                    side=first_fill.side.lower(),
-                    quantity=total_open_qty,
-                    avg_price=avg_price,
-                    started_at=first_fill.executed_at,
-                    ended_at=max(f.executed_at for f in open_fills),
-                    fill_count=len(open_fills),
-                )
-                legs_created += 1
-
-                # Create fill mappings
-                for fill in open_fills:
-                    lot_for_fill = next(
-                        (lot for lot in lots if lot.open_fill_id == fill.id),
-                        None,
-                    )
-                    qty = lot_for_fill.open_qty if lot_for_fill else fill.quantity
-                    self.create_leg_fill_map(
-                        leg_id=leg.id,
-                        fill_id=fill.id,
-                        allocated_qty=qty,
-                    )
-
-        # Create closing leg
-        if closures:
-            close_fill_ids = list(set(c.close_fill_id for c in closures))
-            close_fills = [f for f in fills if f.id in close_fill_ids]
-            if close_fills:
-                first_close = min(close_fills, key=lambda f: f.executed_at)
-                total_close_qty = sum(c.matched_qty for c in closures)
-                avg_price = sum(
-                    c.matched_qty * c.close_price for c in closures
-                ) / total_close_qty
-
-                leg = self.create_leg(
-                    campaign_id=campaign.id,
-                    leg_type="close",
-                    side=first_close.side.lower(),
-                    quantity=total_close_qty,
-                    avg_price=avg_price,
-                    started_at=first_close.executed_at,
-                    ended_at=max(f.executed_at for f in close_fills),
-                    fill_count=len(close_fills),
-                )
-                legs_created += 1
-
-                # Create fill mappings
-                for fill in close_fills:
-                    closures_for_fill = [
-                        c for c in closures if c.close_fill_id == fill.id
-                    ]
-                    qty = sum(c.matched_qty for c in closures_for_fill)
-                    self.create_leg_fill_map(
-                        leg_id=leg.id,
-                        fill_id=fill.id,
-                        allocated_qty=qty,
-                    )
-
-        return legs_created
 
     # -------------------------------------------------------------------------
     # Campaign Leg Population with Semantic Leg Types
