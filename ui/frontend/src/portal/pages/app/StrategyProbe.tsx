@@ -905,7 +905,7 @@ function StackedTimeline({
       if (strategyName) {
         // Filter to only the clicked strategy when in strategy display mode
         const filtered = result.strategies.filter(
-          (s) => s.name.toLowerCase() === strategyName.toLowerCase()
+          (s) => s.display_name.toLowerCase() === strategyName.toLowerCase()
         );
         setTopData({ ...result, strategies: filtered });
       } else {

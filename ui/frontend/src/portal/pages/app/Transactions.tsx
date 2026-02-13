@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, Filter, Pencil, Loader2, X } from 'lucide-react';
+import { Search, Filter, Pencil, Loader2, X } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../../api';
 import { bulkUpdateStrategy } from '../../api';
@@ -16,7 +16,8 @@ const SORT_OPTIONS: { label: string; value: string }[] = [
   { label: 'Symbol Z-A', value: '-symbol' },
 ];
 
-const PAGE_SIZE = 25;
+// Fetch all trades and let DataTable handle client-side pagination
+const FETCH_LIMIT = 10000;
 
 function formatDate(iso: string | null): string {
   if (!iso) return '--';
@@ -51,7 +52,6 @@ export default function Transactions() {
   const symbolFilter = searchParams.get('symbol') ?? '';
   const uncategorizedFilter = searchParams.get('uncategorized') === 'true';
   const sortField = searchParams.get('sort') ?? '-entry_time';
-  const currentPage = parseInt(searchParams.get('page') ?? '1', 10);
 
   const [trades, setTrades] = useState<TradeSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -80,10 +80,6 @@ export default function Transactions() {
       } else {
         next.delete(key);
       }
-      // Reset to page 1 when filters change (except when changing page itself)
-      if (key !== 'page') {
-        next.delete('page');
-      }
       setSearchParams(next, { replace: true });
     },
     [searchParams, setSearchParams],
@@ -100,15 +96,14 @@ export default function Transactions() {
         symbol: symbolFilter || undefined,
         uncategorized: uncategorizedFilter || undefined,
         sort: sortField,
-        page: currentPage,
-        limit: PAGE_SIZE,
+        limit: FETCH_LIMIT,
       });
       setTrades(res.trades);
       setTotal(res.total);
     } finally {
       setLoading(false);
     }
-  }, [symbolFilter, uncategorizedFilter, sortField, currentPage]);
+  }, [symbolFilter, uncategorizedFilter, sortField]);
 
   useEffect(() => {
     let cancelled = false;
@@ -120,8 +115,7 @@ export default function Transactions() {
           symbol: symbolFilter || undefined,
           uncategorized: uncategorizedFilter || undefined,
           sort: sortField,
-          page: currentPage,
-          limit: PAGE_SIZE,
+          limit: FETCH_LIMIT,
         });
         if (!cancelled) {
           setTrades(res.trades);
@@ -134,7 +128,7 @@ export default function Transactions() {
 
     load();
     return () => { cancelled = true; };
-  }, [symbolFilter, uncategorizedFilter, sortField, currentPage]);
+  }, [symbolFilter, uncategorizedFilter, sortField]);
 
   // Load strategies when selection starts
   useEffect(() => {
@@ -342,8 +336,6 @@ export default function Transactions() {
     },
   ], [handleContextClick]);
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
   return (
     <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -484,33 +476,6 @@ export default function Transactions() {
         selectedKeys={selectedTradeIds}
         onSelectionChange={setSelectedTradeIds}
       />
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="mt-4 flex items-center justify-between text-sm">
-          <span className="text-xs text-[var(--text-secondary)]">
-            Page {currentPage} of {totalPages}
-          </span>
-          <div className="flex gap-2">
-            <button
-              disabled={currentPage <= 1}
-              onClick={() => updateParam('page', String(currentPage - 1))}
-              className="inline-flex items-center gap-1 rounded-md border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <ChevronLeft size={13} />
-              Previous
-            </button>
-            <button
-              disabled={currentPage >= totalPages}
-              onClick={() => updateParam('page', String(currentPage + 1))}
-              className="inline-flex items-center gap-1 rounded-md border border-[var(--border-color)] px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              Next
-              <ChevronRight size={13} />
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Context Edit Modal */}
       {selectedFill && (
