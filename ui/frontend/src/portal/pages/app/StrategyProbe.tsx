@@ -793,9 +793,17 @@ function ThemeBand({
   let displayContent: React.ReactNode;
   if (displayMode === 'strategy') {
     displayContent = (
-      <span className="text-[11px] font-bold leading-tight px-1" style={{ color }}>
-        {toTitleCase(theme.top_strategy_name) || getThemeLabel(n)}
-      </span>
+      <div className="flex flex-col items-center gap-0.5 px-1">
+        <span className="text-[11px] font-bold leading-tight" style={{ color }}>
+          {toTitleCase(theme.top_strategy_name) || getThemeLabel(n)}
+        </span>
+        <span className={`text-[11px] font-bold leading-tight ${isPositive ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
+          {formatPct(theme.weighted_avg_pnl)}
+        </span>
+        <span className="text-[9px] leading-tight text-[var(--text-secondary)]">
+          W:{theme.num_profitable} L:{theme.num_unprofitable}
+        </span>
+      </div>
     );
   } else {
     displayContent = (
