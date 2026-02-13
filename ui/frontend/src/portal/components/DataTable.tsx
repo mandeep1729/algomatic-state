@@ -462,8 +462,9 @@ export function DataTable<T>({
       {filteredData.length > 0 && (
         <div className="flex items-center justify-between border-t border-[var(--border-color)] px-4 py-2">
           <span className="text-xs text-[var(--text-secondary)]">
-            {filteredData.length} {filteredData.length === 1 ? 'row' : 'rows'}
-            {hasActiveFilters ? ' (filtered)' : ''}
+            {hasActiveFilters
+              ? `Showing ${filteredData.length} of ${data.length} ${data.length === 1 ? 'result' : 'results'}`
+              : `${data.length} ${data.length === 1 ? 'row' : 'rows'}`}
           </span>
           <div className="flex items-center gap-3">
             {/* Rows per page selector */}
