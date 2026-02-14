@@ -311,9 +311,11 @@ async def get_account(
             pattern_day_trader=account.pattern_day_trader,
             trading_blocked=account.trading_blocked,
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to get Alpaca account: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to get Alpaca account: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/positions", response_model=List[AlpacaPositionResponse])
@@ -340,9 +342,11 @@ async def get_positions(
             )
             for p in positions
         ]
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to get Alpaca positions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to get Alpaca positions: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/sync", response_model=SyncResponse)
@@ -427,9 +431,11 @@ async def sync_trades(
             pnl_summary=pnl_summary,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to sync Alpaca trades: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to sync Alpaca trades: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/trades", response_model=TradeListResponse)

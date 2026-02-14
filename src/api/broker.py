@@ -978,7 +978,9 @@ async def populate_campaigns(
             message=message,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error("Failed to populate campaigns: %s", e)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Failed to populate campaigns: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 

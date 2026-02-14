@@ -858,8 +858,11 @@ async def get_statistics(
             "regime_stats": regime_stats,
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error computing statistics: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.delete("/api/cache")
@@ -890,9 +893,11 @@ async def list_tickers(_user_id: int = Depends(get_current_user)):
                 timeframes=list(summary.keys()),
             ))
         return result
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"Error listing tickers: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error listing tickers: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/api/tickers/{symbol}/summary", response_model=DataSummaryResponse)
@@ -915,9 +920,11 @@ async def get_ticker_summary(symbol: str, _user_id: int = Depends(get_current_us
             symbol=symbol.upper(),
             timeframes=formatted_summary,
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"Error getting ticker summary: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error getting ticker summary: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/api/sync-status/{symbol}", response_model=list[SyncStatusResponse])
@@ -932,9 +939,11 @@ async def get_sync_status(symbol: str, _user_id: int = Depends(get_current_user)
             return []
 
         return [SyncStatusResponse(**status) for status in statuses]
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"Error getting sync status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error getting sync status: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/api/sync/{symbol}")
@@ -1154,9 +1163,11 @@ async def import_data(
             "message": f"Import completed for {symbol.upper()}/{timeframe}",
             "rows_imported": rows,
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.exception(f"Error importing data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Error importing data: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class AnalyzeResponse(BaseModel):
