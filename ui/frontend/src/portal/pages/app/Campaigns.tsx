@@ -117,6 +117,8 @@ const columns: Column<CampaignSummary>[] = [
   {
     key: 'status',
     header: 'Status',
+    filterFn: (campaign, filterText) =>
+      campaign.status.toLowerCase().includes(filterText.toLowerCase()),
     render: (campaign) => (
       <span
         className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${
