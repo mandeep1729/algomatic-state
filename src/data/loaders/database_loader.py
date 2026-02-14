@@ -287,26 +287,13 @@ class DatabaseLoader(BaseDataLoader):
                 source="csv_import",
             )
 
-            # Update sync log
+            # Update sync log (update_sync_log normalizes naive → UTC)
             if rows_inserted > 0:
-                # Convert to timezone-aware UTC for database storage
-                import pytz
-                last_ts = df.index.max()
-                first_ts = df.index.min()
-                if hasattr(last_ts, 'to_pydatetime'):
-                    last_ts = last_ts.to_pydatetime()
-                if hasattr(first_ts, 'to_pydatetime'):
-                    first_ts = first_ts.to_pydatetime()
-                if last_ts.tzinfo is None:
-                    last_ts = pytz.UTC.localize(last_ts)
-                if first_ts.tzinfo is None:
-                    first_ts = pytz.UTC.localize(first_ts)
-
                 repo.update_sync_log(
                     ticker_id=ticker.id,
                     timeframe=timeframe,
-                    last_synced_timestamp=last_ts,
-                    first_synced_timestamp=first_ts,
+                    last_synced_timestamp=df.index.max(),
+                    first_synced_timestamp=df.index.min(),
                     bars_fetched=rows_inserted,
                     status="success",
                 )
@@ -365,26 +352,13 @@ class DatabaseLoader(BaseDataLoader):
                 source="csv_import",  # Same source for parquet imports
             )
 
-            # Update sync log
+            # Update sync log (update_sync_log normalizes naive → UTC)
             if rows_inserted > 0:
-                # Convert to timezone-aware UTC for database storage
-                import pytz
-                last_ts = df.index.max()
-                first_ts = df.index.min()
-                if hasattr(last_ts, 'to_pydatetime'):
-                    last_ts = last_ts.to_pydatetime()
-                if hasattr(first_ts, 'to_pydatetime'):
-                    first_ts = first_ts.to_pydatetime()
-                if last_ts.tzinfo is None:
-                    last_ts = pytz.UTC.localize(last_ts)
-                if first_ts.tzinfo is None:
-                    first_ts = pytz.UTC.localize(first_ts)
-
                 repo.update_sync_log(
                     ticker_id=ticker.id,
                     timeframe=timeframe,
-                    last_synced_timestamp=last_ts,
-                    first_synced_timestamp=first_ts,
+                    last_synced_timestamp=df.index.max(),
+                    first_synced_timestamp=df.index.min(),
                     bars_fetched=rows_inserted,
                     status="success",
                 )

@@ -271,10 +271,6 @@ class MarketDataService:
                 logger.warning("Provider returned 0 %s bars for %s", timeframe, symbol)
                 return 0
 
-            # Ensure timezone-naive timestamps
-            if df.index.tz is not None:
-                df.index = df.index.tz_localize(None)
-
             rows = repo.bulk_insert_bars(
                 df=df,
                 ticker_id=ticker.id,

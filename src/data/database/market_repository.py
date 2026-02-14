@@ -342,6 +342,14 @@ class OHLCVRepository:
         if df.empty:
             return 0
 
+        # All timestamps must be timezone-naive (UTC assumed) by this point.
+        # Providers strip tz at the boundary; callers must not pass tz-aware data.
+        if hasattr(df.index, 'tz') and df.index.tz is not None:
+            raise ValueError(
+                "bulk_insert_bars received timezone-aware timestamps. "
+                "Normalize to naive UTC before calling."
+            )
+
         # Prepare data for insertion
         records = []
         for timestamp, row in df.iterrows():

@@ -177,10 +177,6 @@ class TimeframeAggregator:
             )
             return 0
 
-        # Ensure timezone-naive timestamps for DB storage
-        if df_agg.index.tz is not None:
-            df_agg.index = df_agg.index.tz_localize(None)
-
         # Persist (upsert / ON CONFLICT DO NOTHING)
         ticker_obj = repo.get_or_create_ticker(symbol)
         rows_inserted = repo.bulk_insert_bars(
@@ -263,10 +259,6 @@ class TimeframeAggregator:
         if df_daily.empty:
             logger.info("Provider returned no 1Day bars for %s", symbol)
             return 0
-
-        # Ensure timezone-naive for storage
-        if df_daily.index.tz is not None:
-            df_daily.index = df_daily.index.tz_localize(None)
 
         ticker_obj = repo.get_or_create_ticker(symbol)
         rows_inserted = repo.bulk_insert_bars(
@@ -360,10 +352,6 @@ class TimeframeAggregator:
         if df_agg.empty:
             logger.warning("Aggregation produced no %s bars", target_timeframe)
             return 0
-
-        # Ensure timezone-naive timestamps for DB storage
-        if df_agg.index.tz is not None:
-            df_agg.index = df_agg.index.tz_localize(None)
 
         rows_inserted = repo.bulk_insert_bars(
             df=df_agg,
