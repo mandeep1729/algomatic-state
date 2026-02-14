@@ -541,6 +541,51 @@ async def get_ticker_pnl(
 
 
 # -----------------------------------------------------------------------------
+# Campaign Consolidation
+# -----------------------------------------------------------------------------
+
+class ConsolidateResponse(BaseModel):
+    """Response for campaign consolidation."""
+    groups_merged: int
+    campaigns_removed: int
+    lots_reassigned: int
+    legs_reassigned: int
+
+
+@router.post("/consolidate", response_model=ConsolidateResponse)
+async def consolidate_campaigns(
+    symbol: Optional[str] = Query(None, description="Optional symbol filter"),
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Consolidate duplicate open campaigns for the same (symbol, direction).
+
+    When incremental sync creates parallel open campaigns, this endpoint
+    merges them by keeping the oldest campaign and reassigning all related
+    objects (lots, legs, contexts, evaluations) from the duplicates.
+
+    Args:
+        symbol: Optional ticker symbol to consolidate (all symbols if omitted)
+
+    Returns:
+        Stats on groups merged, campaigns removed, and objects reassigned.
+    """
+    logger.info(
+        "consolidate_campaigns: user_id=%d, symbol=%s", user_id, symbol,
+    )
+
+    repo = TradingBuddyRepository(db)
+    stats = repo.consolidate_campaigns(account_id=user_id, symbol=symbol)
+    db.commit()
+
+    logger.info(
+        "Consolidation complete for user_id=%d: %s", user_id, stats,
+    )
+
+    return ConsolidateResponse(**stats)
+
+
+# -----------------------------------------------------------------------------
 # Campaign List/Detail Endpoints
 # -----------------------------------------------------------------------------
 

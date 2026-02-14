@@ -1425,6 +1425,23 @@ class TradingBuddyRepository:
         campaign_lots: list[PositionLotModel] = []
         campaign_closures: list[LotClosureModel] = []
 
+        # Restore current_campaign from existing open lots so new fills
+        # join the existing campaign instead of creating a duplicate.
+        if open_long_lots or open_short_lots:
+            active_lots = open_long_lots or open_short_lots
+            for lot in active_lots:
+                if lot.campaign_id:
+                    existing = self.session.get(PositionCampaignModel, lot.campaign_id)
+                    if existing and existing.status == "open":
+                        current_campaign = existing
+                        campaign_lots = list(active_lots)
+                        logger.debug(
+                            "Restored current_campaign id=%s for %s from existing open lots",
+                            existing.id,
+                            symbol,
+                        )
+                        break
+
         for fill in fills:
             is_buy = fill.side.lower() == "buy"
             is_new_fill = fill.id not in processed_fill_ids
@@ -2142,6 +2159,148 @@ class TradingBuddyRepository:
         )
 
         return {"legs_orphaned": legs_orphaned, "contexts_updated": contexts_updated}
+
+    def consolidate_campaigns(
+        self, account_id: int, symbol: Optional[str] = None
+    ) -> dict:
+        """Merge duplicate open campaigns for the same (account, symbol, direction).
+
+        When incremental sync creates parallel open campaigns for the same
+        position, this method consolidates them by keeping the oldest campaign
+        and reassigning all related objects from the duplicates.
+
+        Args:
+            account_id: Account ID to consolidate for
+            symbol: Optional symbol filter (consolidate all symbols if None)
+
+        Returns:
+            Dict with stats: groups_merged, campaigns_removed,
+            lots_reassigned, legs_reassigned
+        """
+        from sqlalchemy import func as sa_func
+
+        stats = {
+            "groups_merged": 0,
+            "campaigns_removed": 0,
+            "lots_reassigned": 0,
+            "legs_reassigned": 0,
+        }
+
+        # Find (symbol, direction) groups with >1 open campaign
+        query = (
+            self.session.query(
+                PositionCampaignModel.symbol,
+                PositionCampaignModel.direction,
+                sa_func.count(PositionCampaignModel.id).label("cnt"),
+            )
+            .filter(
+                PositionCampaignModel.account_id == account_id,
+                PositionCampaignModel.status == "open",
+            )
+            .group_by(
+                PositionCampaignModel.symbol,
+                PositionCampaignModel.direction,
+            )
+            .having(sa_func.count(PositionCampaignModel.id) > 1)
+        )
+
+        if symbol:
+            query = query.filter(PositionCampaignModel.symbol == symbol.upper())
+
+        groups = query.all()
+
+        for group_symbol, direction, _count in groups:
+            # Get all open campaigns for this group, oldest first
+            campaigns = (
+                self.session.query(PositionCampaignModel)
+                .filter(
+                    PositionCampaignModel.account_id == account_id,
+                    PositionCampaignModel.symbol == group_symbol,
+                    PositionCampaignModel.direction == direction,
+                    PositionCampaignModel.status == "open",
+                )
+                .order_by(PositionCampaignModel.opened_at.asc())
+                .all()
+            )
+
+            if len(campaigns) < 2:
+                continue
+
+            keeper = campaigns[0]
+            duplicates = campaigns[1:]
+
+            logger.info(
+                "Consolidating %d duplicate %s %s campaigns into campaign %d",
+                len(duplicates),
+                group_symbol,
+                direction,
+                keeper.id,
+            )
+
+            for dup in duplicates:
+                dup_id = dup.id
+
+                # Reassign lots
+                lots_moved = (
+                    self.session.query(PositionLotModel)
+                    .filter(PositionLotModel.campaign_id == dup_id)
+                    .update(
+                        {PositionLotModel.campaign_id: keeper.id},
+                        synchronize_session="fetch",
+                    )
+                )
+                stats["lots_reassigned"] += lots_moved
+
+                # Reassign legs
+                legs_moved = (
+                    self.session.query(CampaignLegModel)
+                    .filter(CampaignLegModel.campaign_id == dup_id)
+                    .update(
+                        {CampaignLegModel.campaign_id: keeper.id},
+                        synchronize_session="fetch",
+                    )
+                )
+                stats["legs_reassigned"] += legs_moved
+
+                # Reassign decision contexts
+                self.session.query(DecisionContextModel).filter(
+                    DecisionContextModel.campaign_id == dup_id,
+                ).update(
+                    {DecisionContextModel.campaign_id: keeper.id},
+                    synchronize_session="fetch",
+                )
+
+                # Reassign trade evaluations
+                self.session.query(TradeEvaluationModel).filter(
+                    TradeEvaluationModel.campaign_id == dup_id,
+                ).update(
+                    {TradeEvaluationModel.campaign_id: keeper.id},
+                    synchronize_session="fetch",
+                )
+
+                # Delete the empty duplicate
+                self.session.delete(dup)
+                stats["campaigns_removed"] += 1
+
+                logger.info(
+                    "Merged campaign %d into %d: %d lots, %d legs moved",
+                    dup_id,
+                    keeper.id,
+                    lots_moved,
+                    legs_moved,
+                )
+
+            stats["groups_merged"] += 1
+
+        self.session.flush()
+
+        logger.info(
+            "Consolidation complete for account %d: %s",
+            account_id,
+            stats,
+        )
+
+        return stats
 
     def get_orphaned_legs(self, account_id: int) -> list[CampaignLegModel]:
         """Get all orphaned legs (campaign_id IS NULL) for an account.
