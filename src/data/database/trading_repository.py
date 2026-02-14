@@ -11,7 +11,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from src.data.database.trading_buddy_models import (
@@ -1033,8 +1033,14 @@ class TradingBuddyRepository:
         Returns:
             List of PositionCampaignModel ordered by created_at desc
         """
-        query = self.session.query(PositionCampaignModel).filter(
-            PositionCampaignModel.account_id == account_id
+        query = (
+            self.session.query(PositionCampaignModel)
+            .options(
+                selectinload(PositionCampaignModel.legs)
+                .selectinload(CampaignLegModel.fill_maps)
+                .selectinload(LegFillMapModel.fill),
+            )
+            .filter(PositionCampaignModel.account_id == account_id)
         )
         if symbol:
             query = query.filter(PositionCampaignModel.symbol == symbol)

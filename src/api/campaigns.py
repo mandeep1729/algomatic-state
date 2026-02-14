@@ -73,6 +73,7 @@ class CampaignSummaryResponse(BaseModel):
     legQuantities: List[float]
     overallLabel: str
     keyFlags: List[str]
+    orderIds: List[str] = []
 
 
 class CampaignLegResponse(BaseModel):
@@ -209,6 +210,17 @@ def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
                 qty = -qty
             leg_quantities.append(qty)
 
+    # Collect unique broker order IDs from fills
+    order_ids: List[str] = []
+    seen_order_ids: set = set()
+    if campaign.legs:
+        for leg in campaign.legs:
+            for fm in (leg.fill_maps or []):
+                fill = fm.fill
+                if fill and fill.order_id and fill.order_id not in seen_order_ids:
+                    seen_order_ids.add(fill.order_id)
+                    order_ids.append(fill.order_id)
+
     return CampaignSummaryResponse(
         campaignId=str(campaign.id),
         symbol=campaign.symbol,
@@ -221,6 +233,7 @@ def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
         legQuantities=leg_quantities,
         overallLabel=overall_label,
         keyFlags=key_flags,
+        orderIds=order_ids,
     )
 
 

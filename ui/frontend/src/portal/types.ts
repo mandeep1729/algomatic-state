@@ -314,6 +314,8 @@ export interface CampaignSummary {
   keyFlags: string[];
   /** Unique strategy tags used across all legs of this campaign */
   strategies: string[];
+  /** Broker order IDs from trade fills */
+  orderIds?: string[];
 }
 
 export interface Campaign {

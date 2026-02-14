@@ -174,6 +174,41 @@ const columns: Column<CampaignSummary>[] = [
       );
     },
   },
+  {
+    key: 'campaignId',
+    header: 'Campaign ID',
+    filterFn: (campaign, filterText) =>
+      campaign.campaignId.includes(filterText),
+    render: (campaign) => (
+      <span className="text-[11px] text-[var(--text-secondary)]/50 font-mono">
+        {campaign.campaignId}
+      </span>
+    ),
+  },
+  {
+    key: 'orderIds',
+    header: 'Order IDs',
+    filterFn: (campaign, filterText) => {
+      const ids = campaign.orderIds ?? [];
+      const text = filterText.toLowerCase();
+      return ids.some((id) => id.toLowerCase().includes(text));
+    },
+    render: (campaign) => {
+      const ids = campaign.orderIds ?? [];
+      if (ids.length === 0) {
+        return <span className="text-[11px] text-[var(--text-secondary)]/50">-</span>;
+      }
+      return (
+        <div className="flex flex-col gap-0.5">
+          {ids.map((id) => (
+            <span key={id} className="text-[11px] text-[var(--text-secondary)]/50 font-mono truncate max-w-[140px]" title={id}>
+              {id}
+            </span>
+          ))}
+        </div>
+      );
+    },
+  },
 ];
 
 export default function Campaigns() {
