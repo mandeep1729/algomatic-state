@@ -718,22 +718,9 @@ export default function Campaigns() {
         </div>
       )}
 
-      {/* DataTable with column visibility persistence and expandable rows */}
-      <DataTable
-        tableName="campaigns"
-        columns={columns}
-        data={filtered}
-        loading={loading}
-        emptyMessage="No campaigns match your search."
-        getRowKey={(campaign) => campaign.campaignId}
-        expandedKeys={expandedCampaignIds}
-        onExpandChange={handleExpandChange}
-        renderExpandedRow={renderExpandedRow}
-      />
-
-      {/* Orphaned Legs Section */}
+      {/* Orphaned Legs Section — shown first */}
       {orphanedGroups.length > 0 && (
-        <div className="mt-8">
+        <div className="mb-6">
           <h2 className="mb-3 text-lg font-semibold text-[var(--text-primary)]">
             Orphaned Legs
             <span className="ml-2 text-sm font-normal text-[var(--text-secondary)]">
@@ -864,6 +851,19 @@ export default function Campaigns() {
           </div>
         </div>
       )}
+
+      {/* DataTable with column visibility persistence and expandable rows */}
+      <DataTable
+        tableName="campaigns"
+        columns={columns}
+        data={filtered}
+        loading={loading}
+        emptyMessage="No campaigns match your search."
+        getRowKey={(campaign) => campaign.campaignId}
+        expandedKeys={expandedCampaignIds}
+        onExpandChange={handleExpandChange}
+        renderExpandedRow={renderExpandedRow}
+      />
     </div>
   );
 }

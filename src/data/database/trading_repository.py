@@ -1046,7 +1046,7 @@ class TradingBuddyRepository:
             query = query.filter(PositionCampaignModel.symbol == symbol)
         if status:
             query = query.filter(PositionCampaignModel.status == status)
-        return query.order_by(PositionCampaignModel.created_at.desc()).limit(limit).all()
+        return query.order_by(PositionCampaignModel.opened_at.desc()).limit(limit).all()
 
     # -------------------------------------------------------------------------
     # Campaign Leg Operations
