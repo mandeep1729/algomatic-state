@@ -699,6 +699,12 @@ async def save_context(
         flag_modified(existing, "feelings_now")
         db.flush()
         logger.info("Updated decision context id=%s for campaign %s", existing.id, campaign_id)
+
+        # Trigger reviewer checks for this leg
+        if leg_id is not None:
+            from src.reviewer.publisher import publish_context_updated
+            publish_context_updated(leg_id=leg_id, campaign_id=campaign_id, account_id=user_id)
+
         return _context_to_response(existing)
     else:
         # Create new context
@@ -715,4 +721,10 @@ async def save_context(
             notes=request.notes,
         )
         logger.info("Created decision context id=%s for campaign %s", ctx.id, campaign_id)
+
+        # Trigger reviewer checks for this leg
+        if leg_id is not None:
+            from src.reviewer.publisher import publish_context_updated
+            publish_context_updated(leg_id=leg_id, campaign_id=campaign_id, account_id=user_id)
+
         return _context_to_response(ctx)

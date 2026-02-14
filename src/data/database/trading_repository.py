@@ -1048,6 +1048,9 @@ class TradingBuddyRepository:
     def create_leg(self, **kwargs) -> CampaignLegModel:
         """Create a campaign leg record.
 
+        Behavioral checks are now handled asynchronously by the
+        ReviewerOrchestrator via REVIEW_* events.
+
         Args:
             **kwargs: CampaignLeg column values
 
@@ -1061,6 +1064,7 @@ class TradingBuddyRepository:
             "Created leg id=%s campaign_id=%s type=%s side=%s qty=%s",
             leg.id, leg.campaign_id, leg.leg_type, leg.side, leg.quantity,
         )
+
         return leg
 
     def get_legs_for_campaign(self, campaign_id: int) -> list[CampaignLegModel]:
@@ -1143,6 +1147,98 @@ class TradingBuddyRepository:
         return self.session.query(DecisionContextModel).filter(
             DecisionContextModel.id == context_id
         ).first()
+
+    # -------------------------------------------------------------------------
+    # Campaign Check Operations
+    # -------------------------------------------------------------------------
+
+    def create_campaign_check(
+        self,
+        leg_id: int,
+        account_id: int,
+        check_type: str,
+        severity: str,
+        passed: bool,
+        check_phase: str,
+        details: Optional[dict] = None,
+        nudge_text: Optional[str] = None,
+    ) -> CampaignCheckModel:
+        """Create a campaign check record.
+
+        Args:
+            leg_id: Campaign leg ID
+            account_id: Account ID
+            check_type: Check category (e.g. "risk_sanity")
+            severity: "info", "warn", or "block"
+            passed: Whether the check passed
+            check_phase: When the check applies
+            details: Structured metrics (JSONB)
+            nudge_text: Human-readable nudge message
+
+        Returns:
+            Created CampaignCheckModel
+        """
+        check = CampaignCheckModel(
+            leg_id=leg_id,
+            account_id=account_id,
+            check_type=check_type,
+            severity=severity,
+            passed=passed,
+            details=details,
+            nudge_text=nudge_text,
+            check_phase=check_phase,
+            checked_at=datetime.utcnow(),
+        )
+        self.session.add(check)
+        self.session.flush()
+        logger.info(
+            "Created campaign check id=%s leg_id=%s type=%s severity=%s passed=%s",
+            check.id, leg_id, check_type, severity, passed,
+        )
+        return check
+
+    def get_checks_for_leg(self, leg_id: int) -> list[CampaignCheckModel]:
+        """Get all checks for a campaign leg.
+
+        Args:
+            leg_id: Campaign leg ID
+
+        Returns:
+            List of CampaignCheckModel ordered by checked_at
+        """
+        return self.session.query(CampaignCheckModel).filter(
+            CampaignCheckModel.leg_id == leg_id
+        ).order_by(CampaignCheckModel.checked_at.asc()).all()
+
+    def acknowledge_check(
+        self,
+        check_id: int,
+        trader_action: str,
+    ) -> Optional[CampaignCheckModel]:
+        """Acknowledge a check and record the trader's action.
+
+        Args:
+            check_id: Campaign check ID
+            trader_action: One of "proceeded", "modified", "cancelled"
+
+        Returns:
+            Updated CampaignCheckModel or None
+        """
+        check = self.session.query(CampaignCheckModel).filter(
+            CampaignCheckModel.id == check_id
+        ).first()
+
+        if check is None:
+            logger.warning("Check id=%s not found for acknowledgement", check_id)
+            return None
+
+        check.acknowledged = True
+        check.trader_action = trader_action
+        self.session.flush()
+        logger.info(
+            "Acknowledged check id=%s action=%s", check_id, trader_action,
+        )
+        return check
 
     # -------------------------------------------------------------------------
     # Campaign Population from Fills
@@ -1811,10 +1907,13 @@ class TradingBuddyRepository:
 
         Returns:
             Dict with stats: campaigns_created, lots_created, closures_created,
-            legs_created, fills_processed, total_pnl
+            legs_created, fills_processed, total_pnl, leg_ids
         """
         # Run the main population logic
         stats = self.populate_campaigns_from_fills(account_id=account_id, symbol=symbol)
+
+        # Track all leg IDs created during population
+        created_leg_ids: list[int] = []
 
         # Backfill legs for any campaigns that have zero legs
         campaigns = self.get_campaigns(account_id, symbol=symbol, limit=1000)
@@ -1824,6 +1923,9 @@ class TradingBuddyRepository:
                 backfill_stats = self.populate_legs_from_campaigns(campaign.id)
                 stats["legs_created"] += backfill_stats.get("legs_created", 0)
                 if backfill_stats.get("legs_created", 0) > 0:
+                    # Collect IDs of newly created legs
+                    new_legs = self.get_legs_for_campaign(campaign.id)
+                    created_leg_ids.extend(leg.id for leg in new_legs)
                     logger.info(
                         "Backfilled %d legs for campaign id=%s (%s)",
                         backfill_stats["legs_created"],
@@ -1835,6 +1937,7 @@ class TradingBuddyRepository:
         total_pnl = sum(c.realized_pnl or 0.0 for c in campaigns if c.status == "closed")
 
         stats["total_pnl"] = total_pnl
+        stats["leg_ids"] = created_leg_ids
 
         logger.info(
             "Populated campaigns and legs for account_id=%s: "

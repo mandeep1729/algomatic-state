@@ -291,6 +291,18 @@ class ChecksConfig(BaseSettings):
     )
 
 
+class ReviewerConfig(BaseSettings):
+    """Reviewer service configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="REVIEWER_")
+
+    enabled: bool = Field(default=True, description="Enable reviewer checks")
+    recheck_lookback_days: int = Field(
+        default=30,
+        description="Days to look back when re-running checks after risk pref changes",
+    )
+
+
 class AuthConfig(BaseSettings):
     """Authentication configuration."""
 
@@ -338,6 +350,7 @@ class Settings(BaseSettings):
     redis: RedisConfig = Field(default_factory=RedisConfig)
     messaging: MessagingConfig = Field(default_factory=MessagingConfig)
     checks: ChecksConfig = Field(default_factory=ChecksConfig)
+    reviewer: ReviewerConfig = Field(default_factory=ReviewerConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 

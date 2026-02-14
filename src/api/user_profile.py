@@ -181,6 +181,10 @@ async def update_risk_preferences(
 
         logger.info("Updated risk preferences for user_id=%d fields=%s", user_id, list(updates.keys()))
 
+        # Trigger reviewer to re-check recent legs with updated risk prefs
+        from src.reviewer.publisher import publish_risk_prefs_updated
+        publish_risk_prefs_updated(account_id=user_id)
+
         return RiskPreferencesResponse(
             max_loss_per_trade_pct=profile.max_risk_per_trade_pct,
             max_daily_loss_pct=profile.max_daily_loss_pct,

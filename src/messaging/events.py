@@ -20,6 +20,13 @@ class EventType(Enum):
     INDICATOR_COMPUTE_COMPLETE = "indicator_compute_complete"
     INDICATOR_COMPUTE_FAILED = "indicator_compute_failed"
 
+    REVIEW_LEG_CREATED = "review_leg_created"
+    REVIEW_CONTEXT_UPDATED = "review_context_updated"
+    REVIEW_RISK_PREFS_UPDATED = "review_risk_prefs_updated"
+    REVIEW_CAMPAIGNS_POPULATED = "review_campaigns_populated"
+    REVIEW_COMPLETE = "review_complete"
+    REVIEW_FAILED = "review_failed"
+
 
 @dataclass(frozen=True)
 class Event:
