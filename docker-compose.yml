@@ -84,6 +84,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  reviewer-service:
+    build: .
+    container_name: algomatic-reviewer-service
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MESSAGING_BACKEND=redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: python -m src.reviewer.main
+    restart: unless-stopped
+
   # Optional: pgAdmin for database management (start with --profile tools)
   pgadmin:
     image: dpage/pgadmin4:latest

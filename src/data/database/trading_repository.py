@@ -1046,11 +1046,13 @@ class TradingBuddyRepository:
     # Campaign Leg Operations
     # -------------------------------------------------------------------------
 
-    def create_leg(self, run_checks: bool = True, **kwargs) -> CampaignLegModel:
-        """Create a campaign leg record and optionally run behavioral checks.
+    def create_leg(self, **kwargs) -> CampaignLegModel:
+        """Create a campaign leg record.
+
+        Behavioral checks are now handled asynchronously by the
+        ReviewerOrchestrator via REVIEW_* events.
 
         Args:
-            run_checks: Whether to run behavioral checks after creation
             **kwargs: CampaignLeg column values
 
         Returns:
@@ -1063,9 +1065,6 @@ class TradingBuddyRepository:
             "Created leg id=%s campaign_id=%s type=%s side=%s qty=%s",
             leg.id, leg.campaign_id, leg.leg_type, leg.side, leg.quantity,
         )
-
-        if run_checks:
-            self.run_checks_for_leg(leg)
 
         return leg
 
@@ -1241,29 +1240,6 @@ class TradingBuddyRepository:
             "Acknowledged check id=%s action=%s", check_id, trader_action,
         )
         return check
-
-    def run_checks_for_leg(self, leg: CampaignLegModel) -> list[CampaignCheckModel]:
-        """Run behavioral checks for a campaign leg and persist results.
-
-        Args:
-            leg: CampaignLeg to evaluate
-
-        Returns:
-            List of created CampaignCheck records
-        """
-        from config.settings import get_settings
-        from src.checks.runner import CheckRunner
-
-        settings = get_settings()
-        runner = CheckRunner(self.session, settings.checks)
-
-        try:
-            return runner.run_checks(leg)
-        except Exception:
-            logger.exception(
-                "Failed to run checks for leg_id=%s", leg.id,
-            )
-            return []
 
     # -------------------------------------------------------------------------
     # Campaign Population from Fills
@@ -2035,10 +2011,13 @@ class TradingBuddyRepository:
 
         Returns:
             Dict with stats: campaigns_created, lots_created, closures_created,
-            legs_created, fills_processed, total_pnl
+            legs_created, fills_processed, total_pnl, leg_ids
         """
         # Run the main population logic
         stats = self.populate_campaigns_from_fills(account_id=account_id, symbol=symbol)
+
+        # Track all leg IDs created during population
+        created_leg_ids: list[int] = []
 
         # Backfill legs for any campaigns that have zero legs
         campaigns = self.get_campaigns(account_id, symbol=symbol, limit=1000)
@@ -2048,6 +2027,9 @@ class TradingBuddyRepository:
                 backfill_stats = self.populate_legs_from_campaigns(campaign.id)
                 stats["legs_created"] += backfill_stats.get("legs_created", 0)
                 if backfill_stats.get("legs_created", 0) > 0:
+                    # Collect IDs of newly created legs
+                    new_legs = self.get_legs_for_campaign(campaign.id)
+                    created_leg_ids.extend(leg.id for leg in new_legs)
                     logger.info(
                         "Backfilled %d legs for campaign id=%s (%s)",
                         backfill_stats["legs_created"],
@@ -2059,6 +2041,7 @@ class TradingBuddyRepository:
         total_pnl = sum(c.realized_pnl or 0.0 for c in campaigns if c.status == "closed")
 
         stats["total_pnl"] = total_pnl
+        stats["leg_ids"] = created_leg_ids
 
         logger.info(
             "Populated campaigns and legs for account_id=%s: "

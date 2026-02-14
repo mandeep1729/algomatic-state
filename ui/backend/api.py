@@ -64,6 +64,8 @@ app = FastAPI(title="Regime State Visualization API", version="1.0.0")
 
 # MarketDataOrchestrator instance (set during startup)
 _market_data_orchestrator = None
+# ReviewerOrchestrator instance (set during startup)
+_reviewer_orchestrator = None
 
 
 @app.on_event("startup")
@@ -93,6 +95,20 @@ def _startup_market_data_orchestrator():
         logger.warning("Failed to start MarketDataOrchestrator: %s", e)
 
 
+@app.on_event("startup")
+def _startup_reviewer_orchestrator():
+    """Start the ReviewerOrchestrator so behavioral checks run via events."""
+    global _reviewer_orchestrator
+    try:
+        from src.reviewer.orchestrator import ReviewerOrchestrator
+
+        _reviewer_orchestrator = ReviewerOrchestrator()
+        _reviewer_orchestrator.start()
+        logger.info("ReviewerOrchestrator started on app startup")
+    except Exception as e:
+        logger.warning("Failed to start ReviewerOrchestrator: %s", e)
+
+
 @app.on_event("shutdown")
 def _shutdown_market_data_orchestrator():
     """Stop the MarketDataOrchestrator and message bus cleanly."""
@@ -101,6 +117,12 @@ def _shutdown_market_data_orchestrator():
         _market_data_orchestrator.stop()
         _market_data_orchestrator = None
         logger.info("MarketDataOrchestrator stopped on app shutdown")
+
+    global _reviewer_orchestrator
+    if _reviewer_orchestrator is not None:
+        _reviewer_orchestrator.stop()
+        _reviewer_orchestrator = None
+        logger.info("ReviewerOrchestrator stopped on app shutdown")
 
     # Shut down the message bus (releases Redis connections if applicable)
     try:

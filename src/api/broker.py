@@ -292,6 +292,12 @@ async def sync_data(
     repo = TradingBuddyRepository(db)
     pop_stats = repo.populate_campaigns_and_legs(account_id=user_id)
 
+    # Trigger reviewer checks for all newly created legs
+    created_leg_ids = pop_stats.get("leg_ids", [])
+    if created_leg_ids:
+        from src.reviewer.publisher import publish_campaigns_populated
+        publish_campaigns_populated(account_id=user_id, leg_ids=created_leg_ids)
+
     logger.info(
         "Sync complete for user_id=%d: %d trades synced, %d backfilled, "
         "%d campaigns created, %d legs created",
@@ -729,6 +735,10 @@ async def save_fill_context(
             fill_id, context.id
         )
 
+    # Trigger reviewer checks for this leg
+    from src.reviewer.publisher import publish_context_updated
+    publish_context_updated(leg_id=leg.id, campaign_id=campaign_id, account_id=user_id)
+
     # Get strategy name for response
     strategy_name: Optional[str] = None
     if context.strategy_id:
@@ -821,6 +831,7 @@ async def bulk_update_strategy(
 
     updated_count = 0
     skipped_count = 0
+    affected_legs: list[tuple[int, int]] = []  # (leg_id, campaign_id)
 
     for fill_id in request.fill_ids:
         if fill_id not in valid_fill_ids:
@@ -871,9 +882,17 @@ async def bulk_update_strategy(
             )
             db.add(context)
 
+        affected_legs.append((leg.id, leg.campaign_id))
         updated_count += 1
 
     db.flush()
+
+    # Trigger reviewer checks for all affected legs
+    if affected_legs:
+        from src.reviewer.publisher import publish_context_updated
+        for leg_id, campaign_id in affected_legs:
+            publish_context_updated(leg_id=leg_id, campaign_id=campaign_id, account_id=user_id)
+
     logger.info(
         "bulk_update_strategy: user_id=%d, updated=%d, skipped=%d",
         user_id, updated_count, skipped_count,

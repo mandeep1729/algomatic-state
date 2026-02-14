@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from config.settings import ChecksConfig
-from src.checks.risk_sanity import RiskSanityChecker
+from src.reviewer.checks.risk_sanity import RiskSanityChecker
 from src.trade.intent import TradeIntent, TradeDirection
 
 
