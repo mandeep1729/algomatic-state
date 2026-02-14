@@ -39,10 +39,10 @@ def _get_fk_name(table: str, column: str, referred_table: str) -> str:
             FROM pg_constraint con
             JOIN pg_attribute att ON att.attnum = ANY(con.conkey)
                 AND att.attrelid = con.conrelid
-            WHERE con.conrelid = :table::regclass
+            WHERE con.conrelid = CAST(:table AS regclass)
                 AND att.attname = :column
                 AND con.contype = 'f'
-                AND con.confrelid = :referred::regclass
+                AND con.confrelid = CAST(:referred AS regclass)
             """
         ),
         {"table": table, "column": column, "referred": referred_table},
