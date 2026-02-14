@@ -2507,7 +2507,7 @@ class TradingBuddyRepository:
         """Unlink legs after a timestamp from campaigns for (symbol, strategy).
 
         Steps:
-        1. Find campaigns for (account_id, symbol, strategy_id)
+        1. Find campaigns containing legs whose DecisionContext.strategy_id matches
         2. Find legs in those campaigns with started_at > after_timestamp
         3. Set campaign_id=NULL on those legs and their DecisionContexts
         4. Delete campaigns that now have zero legs
@@ -2521,14 +2521,22 @@ class TradingBuddyRepository:
         Returns:
             List of unlinked leg IDs
         """
-        # Find campaigns matching (account, symbol, strategy)
+        # Find campaigns containing legs whose DecisionContext has the target strategy
+        campaign_ids_subq = (
+            self.session.query(CampaignLegModel.campaign_id)
+            .join(DecisionContextModel, DecisionContextModel.leg_id == CampaignLegModel.id)
+            .filter(
+                CampaignLegModel.account_id == account_id,
+                CampaignLegModel.symbol == symbol,
+                CampaignLegModel.campaign_id.isnot(None),
+                DecisionContextModel.strategy_id == strategy_id,
+            )
+            .distinct()
+            .subquery()
+        )
         campaigns = (
             self.session.query(PositionCampaignModel)
-            .filter(
-                PositionCampaignModel.account_id == account_id,
-                PositionCampaignModel.symbol == symbol,
-                PositionCampaignModel.strategy_id == strategy_id,
-            )
+            .filter(PositionCampaignModel.id.in_(campaign_ids_subq))
             .all()
         )
 
