@@ -1748,11 +1748,14 @@ class TradingBuddyRepository:
                 closures_by_close_fill[closure.close_fill_id] = []
             closures_by_close_fill[closure.close_fill_id].append(closure)
 
-        # Delete existing legs for this campaign (for idempotency)
+        # Skip if campaign already has legs (non-destructive)
         existing_legs = self.get_legs_for_campaign(campaign_id)
-        for leg in existing_legs:
-            self.session.delete(leg)
-        self.session.flush()
+        if existing_legs:
+            logger.info(
+                "Campaign %s already has %d legs, skipping",
+                campaign_id, len(existing_legs),
+            )
+            return stats
 
         # Process fills and create legs with semantic types
         legs_data = self._compute_leg_types(
@@ -1766,6 +1769,9 @@ class TradingBuddyRepository:
         for leg_data in legs_data:
             leg = self.create_leg(
                 campaign_id=campaign_id,
+                symbol=campaign.symbol,
+                direction=campaign.direction,
+                account_id=campaign.account_id,
                 leg_type=leg_data["leg_type"],
                 side=leg_data["side"],
                 quantity=leg_data["quantity"],
@@ -2033,3 +2039,364 @@ class TradingBuddyRepository:
                 return "add"
             else:
                 return "reduce"
+
+    # =========================================================================
+    # Campaign Orphan Support
+    # =========================================================================
+
+    def delete_campaign(self, campaign_id: int, account_id: int) -> dict:
+        """Delete a campaign, orphaning its legs instead of destroying them.
+
+        Steps:
+        1. Verify campaign ownership
+        2. Clear strategy_id on DecisionContexts for legs in this campaign
+        3. Set campaign_id=NULL on legs (orphan them)
+        4. Set campaign_id=NULL on DecisionContexts linked to this campaign
+        5. Set campaign_id=NULL on PositionLots linked to this campaign
+        6. Set campaign_id=NULL on TradeEvaluations linked to this campaign
+        7. Delete the campaign record
+
+        Args:
+            campaign_id: Campaign to delete
+            account_id: Account ID for ownership verification
+
+        Returns:
+            Dict with legs_orphaned and contexts_updated counts
+
+        Raises:
+            ValueError: If campaign not found or not owned by account
+        """
+        campaign = self.get_campaign(campaign_id)
+        if not campaign:
+            raise ValueError(f"Campaign {campaign_id} not found")
+        if campaign.account_id != account_id:
+            raise ValueError(f"Campaign {campaign_id} not owned by account {account_id}")
+
+        # Get legs for this campaign
+        legs = self.get_legs_for_campaign(campaign_id)
+        leg_ids = [leg.id for leg in legs]
+
+        # Clear strategy_id on DecisionContexts for these legs
+        contexts_updated = 0
+        if leg_ids:
+            contexts_updated = (
+                self.session.query(DecisionContextModel)
+                .filter(DecisionContextModel.leg_id.in_(leg_ids))
+                .update(
+                    {DecisionContextModel.strategy_id: None},
+                    synchronize_session="fetch",
+                )
+            )
+            logger.info(
+                "Cleared strategy_id on %d contexts for campaign %s legs",
+                contexts_updated, campaign_id,
+            )
+
+        # Orphan legs (set campaign_id=NULL)
+        legs_orphaned = (
+            self.session.query(CampaignLegModel)
+            .filter(CampaignLegModel.campaign_id == campaign_id)
+            .update(
+                {CampaignLegModel.campaign_id: None},
+                synchronize_session="fetch",
+            )
+        )
+
+        # Unlink DecisionContexts from this campaign
+        self.session.query(DecisionContextModel).filter(
+            DecisionContextModel.campaign_id == campaign_id,
+        ).update(
+            {DecisionContextModel.campaign_id: None},
+            synchronize_session="fetch",
+        )
+
+        # Unlink PositionLots from this campaign
+        self.session.query(PositionLotModel).filter(
+            PositionLotModel.campaign_id == campaign_id,
+        ).update(
+            {PositionLotModel.campaign_id: None},
+            synchronize_session="fetch",
+        )
+
+        # Unlink TradeEvaluations from this campaign
+        self.session.query(TradeEvaluationModel).filter(
+            TradeEvaluationModel.campaign_id == campaign_id,
+        ).update(
+            {TradeEvaluationModel.campaign_id: None},
+            synchronize_session="fetch",
+        )
+
+        # Delete the campaign
+        self.session.delete(campaign)
+        self.session.flush()
+
+        logger.info(
+            "Deleted campaign %s: orphaned %d legs, updated %d contexts",
+            campaign_id, legs_orphaned, contexts_updated,
+        )
+
+        return {"legs_orphaned": legs_orphaned, "contexts_updated": contexts_updated}
+
+    def get_orphaned_legs(self, account_id: int) -> list[CampaignLegModel]:
+        """Get all orphaned legs (campaign_id IS NULL) for an account.
+
+        Args:
+            account_id: Account ID
+
+        Returns:
+            List of CampaignLegModel ordered by started_at desc
+        """
+        return (
+            self.session.query(CampaignLegModel)
+            .filter(
+                CampaignLegModel.campaign_id.is_(None),
+                CampaignLegModel.account_id == account_id,
+            )
+            .order_by(CampaignLegModel.started_at.desc())
+            .all()
+        )
+
+    def regroup_legs_for_strategy(
+        self, account_id: int, symbol: str, strategy_id: int,
+    ) -> dict:
+        """FIFO-regroup orphaned legs for (symbol, strategy) into campaigns.
+
+        Algorithm:
+        1. Collect orphaned legs for (account, symbol) whose DecisionContext
+           has strategy_id matching the target.
+        2. Sort by started_at ascending.
+        3. Track running position: when position==0 start new campaign,
+           buy increases, sell decreases. When back to 0, close campaign.
+        4. Assign each leg to its computed campaign.
+
+        Args:
+            account_id: Account ID
+            symbol: Ticker symbol
+            strategy_id: Strategy to group by
+
+        Returns:
+            Dict with campaigns_created and legs_grouped counts
+        """
+        # Find orphaned legs for (account, symbol) with matching strategy
+        orphaned_legs = (
+            self.session.query(CampaignLegModel)
+            .join(
+                DecisionContextModel,
+                DecisionContextModel.leg_id == CampaignLegModel.id,
+            )
+            .filter(
+                CampaignLegModel.campaign_id.is_(None),
+                CampaignLegModel.account_id == account_id,
+                CampaignLegModel.symbol == symbol,
+                DecisionContextModel.strategy_id == strategy_id,
+            )
+            .order_by(CampaignLegModel.started_at.asc())
+            .all()
+        )
+
+        if not orphaned_legs:
+            logger.debug(
+                "No orphaned legs for account=%d symbol=%s strategy=%d",
+                account_id, symbol, strategy_id,
+            )
+            return {"campaigns_created": 0, "legs_grouped": 0}
+
+        campaigns_created = 0
+        legs_grouped = 0
+        current_campaign = None
+        position = 0.0
+
+        for leg in orphaned_legs:
+            # Start new campaign if position is flat
+            if position == 0.0:
+                current_campaign = PositionCampaignModel(
+                    account_id=account_id,
+                    symbol=symbol,
+                    direction=leg.direction,
+                    opened_at=leg.started_at,
+                    status="open",
+                    strategy_id=strategy_id,
+                    source="broker_synced",
+                )
+                self.session.add(current_campaign)
+                self.session.flush()  # get the ID
+                campaigns_created += 1
+                logger.debug(
+                    "Created campaign %s for %s/%s",
+                    current_campaign.id, symbol, strategy_id,
+                )
+
+            # Update running position
+            if leg.side == "buy":
+                position += leg.quantity
+            else:  # sell
+                position -= leg.quantity
+
+            # Assign leg to current campaign
+            leg.campaign_id = current_campaign.id
+            legs_grouped += 1
+
+            # Update DecisionContext campaign_id too
+            self.session.query(DecisionContextModel).filter(
+                DecisionContextModel.leg_id == leg.id,
+            ).update(
+                {DecisionContextModel.campaign_id: current_campaign.id},
+                synchronize_session="fetch",
+            )
+
+            # Position returned to flat: close campaign
+            if abs(position) < 1e-9:
+                position = 0.0
+                current_campaign.status = "closed"
+                current_campaign.closed_at = leg.started_at
+                # Compute realized P&L from legs
+                self._finalize_campaign_from_legs(current_campaign)
+                current_campaign = None
+
+        self.session.flush()
+
+        logger.info(
+            "Regrouped %d legs into %d campaigns for account=%d symbol=%s strategy=%d",
+            legs_grouped, campaigns_created, account_id, symbol, strategy_id,
+        )
+
+        return {"campaigns_created": campaigns_created, "legs_grouped": legs_grouped}
+
+    def _finalize_campaign_from_legs(self, campaign: PositionCampaignModel) -> None:
+        """Compute campaign summary fields from its legs.
+
+        Sets qty_opened, qty_closed, avg_open_price, avg_close_price,
+        realized_pnl, return_pct, max_qty.
+        """
+        legs = (
+            self.session.query(CampaignLegModel)
+            .filter(CampaignLegModel.campaign_id == campaign.id)
+            .order_by(CampaignLegModel.started_at.asc())
+            .all()
+        )
+
+        if not legs:
+            return
+
+        total_buy_qty = 0.0
+        total_buy_cost = 0.0
+        total_sell_qty = 0.0
+        total_sell_proceeds = 0.0
+
+        for leg in legs:
+            price = leg.avg_price or 0.0
+            if leg.side == "buy":
+                total_buy_qty += leg.quantity
+                total_buy_cost += leg.quantity * price
+            else:
+                total_sell_qty += leg.quantity
+                total_sell_proceeds += leg.quantity * price
+
+        campaign.qty_opened = total_buy_qty
+        campaign.qty_closed = total_sell_qty
+        campaign.avg_open_price = (
+            total_buy_cost / total_buy_qty if total_buy_qty > 0 else None
+        )
+        campaign.avg_close_price = (
+            total_sell_proceeds / total_sell_qty if total_sell_qty > 0 else None
+        )
+        campaign.max_qty = max(total_buy_qty, total_sell_qty)
+
+        # P&L for long: sell_proceeds - buy_cost
+        # P&L for short: buy_cost - sell_proceeds (reversed)
+        if campaign.direction == "long":
+            campaign.realized_pnl = total_sell_proceeds - total_buy_cost
+        else:
+            campaign.realized_pnl = total_buy_cost - total_sell_proceeds
+
+        if total_buy_cost > 0:
+            campaign.return_pct = (campaign.realized_pnl / total_buy_cost) * 100
+
+    def unwind_legs_after(
+        self,
+        account_id: int,
+        symbol: str,
+        strategy_id: int,
+        after_timestamp: datetime,
+    ) -> list[int]:
+        """Unlink legs after a timestamp from campaigns for (symbol, strategy).
+
+        Steps:
+        1. Find campaigns for (account_id, symbol, strategy_id)
+        2. Find legs in those campaigns with started_at > after_timestamp
+        3. Set campaign_id=NULL on those legs and their DecisionContexts
+        4. Delete campaigns that now have zero legs
+
+        Args:
+            account_id: Account ID
+            symbol: Ticker symbol
+            strategy_id: Strategy ID
+            after_timestamp: Unlink legs after this time
+
+        Returns:
+            List of unlinked leg IDs
+        """
+        # Find campaigns matching (account, symbol, strategy)
+        campaigns = (
+            self.session.query(PositionCampaignModel)
+            .filter(
+                PositionCampaignModel.account_id == account_id,
+                PositionCampaignModel.symbol == symbol,
+                PositionCampaignModel.strategy_id == strategy_id,
+            )
+            .all()
+        )
+
+        if not campaigns:
+            return []
+
+        campaign_ids = [c.id for c in campaigns]
+
+        # Find legs in those campaigns after the timestamp
+        legs_to_unlink = (
+            self.session.query(CampaignLegModel)
+            .filter(
+                CampaignLegModel.campaign_id.in_(campaign_ids),
+                CampaignLegModel.started_at > after_timestamp,
+            )
+            .all()
+        )
+
+        if not legs_to_unlink:
+            return []
+
+        unlinked_ids = [leg.id for leg in legs_to_unlink]
+
+        # Unlink legs
+        for leg in legs_to_unlink:
+            leg.campaign_id = None
+
+        # Unlink their DecisionContexts from campaigns
+        self.session.query(DecisionContextModel).filter(
+            DecisionContextModel.leg_id.in_(unlinked_ids),
+        ).update(
+            {DecisionContextModel.campaign_id: None},
+            synchronize_session="fetch",
+        )
+
+        self.session.flush()
+
+        # Clean up empty campaigns
+        for campaign in campaigns:
+            remaining = (
+                self.session.query(CampaignLegModel)
+                .filter(CampaignLegModel.campaign_id == campaign.id)
+                .count()
+            )
+            if remaining == 0:
+                logger.info("Deleting empty campaign %s after unwind", campaign.id)
+                self.session.delete(campaign)
+
+        self.session.flush()
+
+        logger.info(
+            "Unwound %d legs after %s for account=%d symbol=%s strategy=%d",
+            len(unlinked_ids), after_timestamp, account_id, symbol, strategy_id,
+        )
+
+        return unlinked_ids

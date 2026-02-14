@@ -42,6 +42,7 @@ import type {
   CampaignDetail,
   DecisionContext,
   SitePrefs,
+  OrphanedLegGroup,
 } from '../types';
 
 // Simulate network delay
@@ -258,6 +259,14 @@ export async function bulkUpdateStrategy(req: {
   await delay();
   // In mock mode, pretend all fills were updated
   return { updated_count: req.fill_ids.length, skipped_count: 0 };
+}
+
+export async function bulkUpdateLegStrategy(req: {
+  leg_ids: number[];
+  strategy_id: number | null;
+}): Promise<{ updated_count: number; skipped_count: number }> {
+  await delay();
+  return { updated_count: req.leg_ids.length, skipped_count: 0 };
 }
 
 // --- Evaluation ---
@@ -1041,4 +1050,18 @@ export async function updateSitePrefs(prefs: Partial<SitePrefs>): Promise<SitePr
     mockSitePrefs.table_columns = { ...mockSitePrefs.table_columns, ...prefs.table_columns };
   }
   return { ...mockSitePrefs };
+}
+
+// --- Campaign Orphan Support ---
+
+export async function deleteCampaign(
+  _campaignId: string,
+): Promise<{ deleted: boolean; legs_orphaned: number; contexts_updated: number }> {
+  await delay();
+  return { deleted: true, legs_orphaned: 0, contexts_updated: 0 };
+}
+
+export async function fetchOrphanedLegs(): Promise<OrphanedLegGroup[]> {
+  await delay();
+  return [];
 }

@@ -332,13 +332,34 @@ export interface Campaign {
 
 export interface CampaignLeg {
   legId: string;
-  campaignId: string;
+  campaignId: string | null;
   legType: LegType;
   side: 'buy' | 'sell';
   quantity: number;
   avgPrice: number;
   startedAt: string;
   endedAt: string;
+  symbol?: string;
+  direction?: string;
+}
+
+export interface OrphanedLegGroup {
+  symbol: string;
+  direction: string;
+  legs: OrphanedLeg[];
+}
+
+export interface OrphanedLeg {
+  legId: string;
+  legType: LegType;
+  side: 'buy' | 'sell';
+  quantity: number;
+  avgPrice: number;
+  startedAt: string;
+  endedAt?: string;
+  symbol: string;
+  direction: string;
+  strategyName?: string;
 }
 
 export interface EvaluationDimension {
