@@ -25,6 +25,9 @@ from src.evaluators.risk_reward import RiskRewardEvaluator
 from src.evaluators.exit_plan import ExitPlanEvaluator
 from src.evaluators.regime_fit import RegimeFitEvaluator
 from src.evaluators.mtfa import MTFAEvaluator
+from src.evaluators.structure_awareness import StructureAwarenessEvaluator
+from src.evaluators.volatility_liquidity import VolatilityLiquidityEvaluator
+from src.evaluators.stop_placement import StopPlacementEvaluator
 
 __all__ = [
     # Base
@@ -47,4 +50,7 @@ __all__ = [
     "ExitPlanEvaluator",
     "RegimeFitEvaluator",
     "MTFAEvaluator",
+    "StructureAwarenessEvaluator",
+    "VolatilityLiquidityEvaluator",
+    "StopPlacementEvaluator",
 ]
