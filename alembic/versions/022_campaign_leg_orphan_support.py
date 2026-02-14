@@ -23,6 +23,38 @@ branch_labels = None
 depends_on = None
 
 
+def _get_fk_name(table: str, column: str, referred_table: str) -> str:
+    """Look up the actual FK constraint name from the database.
+
+    PostgreSQL auto-generates FK names when using inline sa.ForeignKey()
+    inside create_table/add_column. The naming convention varies between
+    PostgreSQL versions and SQLAlchemy versions, so we look it up directly
+    from pg_constraint rather than guessing.
+    """
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            """
+            SELECT con.conname
+            FROM pg_constraint con
+            JOIN pg_attribute att ON att.attnum = ANY(con.conkey)
+                AND att.attrelid = con.conrelid
+            WHERE con.conrelid = :table::regclass
+                AND att.attname = :column
+                AND con.contype = 'f'
+                AND con.confrelid = :referred::regclass
+            """
+        ),
+        {"table": table, "column": column, "referred": referred_table},
+    )
+    row = result.fetchone()
+    if not row:
+        raise RuntimeError(
+            f"FK constraint not found: {table}.{column} -> {referred_table}"
+        )
+    return row[0]
+
+
 def upgrade() -> None:
     # -------------------------------------------------------------------------
     # Step 1: Add denormalized columns to campaign_legs
@@ -76,10 +108,8 @@ def upgrade() -> None:
     # -------------------------------------------------------------------------
     # Step 4: Change campaign_legs.campaign_id FK to SET NULL
     # -------------------------------------------------------------------------
-    # PostgreSQL auto-generated name: campaign_legs_campaign_id_fkey
-    op.drop_constraint(
-        "campaign_legs_campaign_id_fkey", "campaign_legs", type_="foreignkey"
-    )
+    fk_legs = _get_fk_name("campaign_legs", "campaign_id", "position_campaigns")
+    op.drop_constraint(fk_legs, "campaign_legs", type_="foreignkey")
     op.alter_column(
         "campaign_legs",
         "campaign_id",
@@ -98,11 +128,8 @@ def upgrade() -> None:
     # -------------------------------------------------------------------------
     # Step 5: Change decision_contexts.campaign_id FK to SET NULL
     # -------------------------------------------------------------------------
-    op.drop_constraint(
-        "decision_contexts_campaign_id_fkey",
-        "decision_contexts",
-        type_="foreignkey",
-    )
+    fk_ctx = _get_fk_name("decision_contexts", "campaign_id", "position_campaigns")
+    op.drop_constraint(fk_ctx, "decision_contexts", type_="foreignkey")
     op.create_foreign_key(
         "decision_contexts_campaign_id_fkey",
         "decision_contexts",
@@ -115,11 +142,8 @@ def upgrade() -> None:
     # -------------------------------------------------------------------------
     # Step 6: Change trade_evaluations.campaign_id FK to SET NULL
     # -------------------------------------------------------------------------
-    op.drop_constraint(
-        "trade_evaluations_campaign_id_fkey",
-        "trade_evaluations",
-        type_="foreignkey",
-    )
+    fk_eval = _get_fk_name("trade_evaluations", "campaign_id", "position_campaigns")
+    op.drop_constraint(fk_eval, "trade_evaluations", type_="foreignkey")
     op.create_foreign_key(
         "trade_evaluations_campaign_id_fkey",
         "trade_evaluations",
