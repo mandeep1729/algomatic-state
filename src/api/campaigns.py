@@ -834,9 +834,8 @@ class OrphanedLegResponse(BaseModel):
 
 
 class OrphanedLegGroup(BaseModel):
-    """Group of orphaned legs by symbol + direction."""
+    """Group of orphaned legs by symbol."""
     symbol: str
-    direction: str
     legs: List[OrphanedLegResponse]
 
 
@@ -845,8 +844,9 @@ async def get_orphaned_legs(
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get orphaned legs (campaign_id IS NULL) grouped by symbol + direction.
+    """Get orphaned legs (campaign_id IS NULL) grouped by symbol.
 
+    Legs within each group are sorted by started_at descending (newest first).
     Includes decision context strategy info per leg.
     """
     logger.debug("get_orphaned_legs: user_id=%d", user_id)
@@ -854,8 +854,8 @@ async def get_orphaned_legs(
     repo = TradingBuddyRepository(db)
     legs = repo.get_orphaned_legs(account_id=user_id)
 
-    # Build response grouped by (symbol, direction)
-    groups: dict[tuple[str, str], list[OrphanedLegResponse]] = {}
+    # Build response grouped by symbol
+    groups: dict[str, list[OrphanedLegResponse]] = {}
     for leg in legs:
         # Get strategy name from decision context
         ctx = db.query(DecisionContext).filter(
@@ -880,14 +880,17 @@ async def get_orphaned_legs(
             strategyName=strategy_name,
         )
 
-        key = (leg.symbol, leg.direction)
-        if key not in groups:
-            groups[key] = []
-        groups[key].append(leg_resp)
+        if leg.symbol not in groups:
+            groups[leg.symbol] = []
+        groups[leg.symbol].append(leg_resp)
+
+    # Sort legs within each group by started_at descending (newest first)
+    for group_legs in groups.values():
+        group_legs.sort(key=lambda l: l.startedAt, reverse=True)
 
     result = [
-        OrphanedLegGroup(symbol=sym, direction=direction, legs=group_legs)
-        for (sym, direction), group_legs in sorted(groups.items())
+        OrphanedLegGroup(symbol=sym, legs=group_legs)
+        for sym, group_legs in sorted(groups.items())
     ]
 
     logger.debug("Found %d orphaned leg groups for user_id=%d", len(result), user_id)

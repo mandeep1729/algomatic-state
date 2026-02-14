@@ -733,7 +733,7 @@ export default function Campaigns() {
 
           <div className="space-y-2">
             {orphanedGroups.map((group) => {
-              const groupKey = `${group.symbol}-${group.direction}`;
+              const groupKey = group.symbol;
               const isExpanded = expandedOrphanGroups.has(groupKey);
               const allSelected = group.legs.every((l) => selectedLegIds.has(l.legId));
 
@@ -756,15 +756,6 @@ export default function Campaigns() {
                     <span className="font-medium text-[var(--text-primary)]">
                       {group.symbol}
                     </span>
-                    <span
-                      className={`text-xs font-medium ${
-                        group.direction === 'long'
-                          ? 'text-[var(--accent-green)]'
-                          : 'text-[var(--accent-red)]'
-                      }`}
-                    >
-                      {group.direction.toUpperCase()}
-                    </span>
                     <span className="text-xs text-[var(--text-secondary)]">
                       {group.legs.length} leg{group.legs.length !== 1 ? 's' : ''}
                     </span>
@@ -786,6 +777,7 @@ export default function Campaigns() {
                               />
                             </th>
                             <th className="px-3 py-1.5">Type</th>
+                            <th className="px-3 py-1.5">Direction</th>
                             <th className="px-3 py-1.5">Side</th>
                             <th className="px-3 py-1.5">Qty</th>
                             <th className="px-3 py-1.5">Price</th>
@@ -813,6 +805,17 @@ export default function Campaigns() {
                                 <td className="px-3 py-2">
                                   <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
                                     {leg.legType}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2">
+                                  <span
+                                    className={`text-xs font-medium ${
+                                      leg.direction === 'long'
+                                        ? 'text-[var(--accent-green)]'
+                                        : 'text-[var(--accent-red)]'
+                                    }`}
+                                  >
+                                    {leg.direction.toUpperCase()}
                                   </span>
                                 </td>
                                 <td className="px-3 py-2">

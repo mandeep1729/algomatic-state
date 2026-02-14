@@ -347,7 +347,6 @@ export interface CampaignLeg {
 
 export interface OrphanedLegGroup {
   symbol: string;
-  direction: string;
   legs: OrphanedLeg[];
 }
 
