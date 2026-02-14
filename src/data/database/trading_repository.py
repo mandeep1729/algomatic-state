@@ -2440,9 +2440,34 @@ class TradingBuddyRepository:
 
         self.session.flush()
 
+        # Clean up campaigns that lost all their legs during regrouping
+        empty_campaigns = (
+            self.session.query(PositionCampaignModel)
+            .outerjoin(
+                CampaignLegModel,
+                CampaignLegModel.campaign_id == PositionCampaignModel.id,
+            )
+            .filter(
+                PositionCampaignModel.account_id == account_id,
+                PositionCampaignModel.symbol == symbol,
+                CampaignLegModel.id.is_(None),
+            )
+            .all()
+        )
+        campaigns_deleted = 0
+        for campaign in empty_campaigns:
+            logger.info("Deleting empty campaign %s after regroup", campaign.id)
+            self.session.delete(campaign)
+            campaigns_deleted += 1
+
+        if campaigns_deleted:
+            self.session.flush()
+
         logger.info(
-            "Regrouped %d legs into %d campaigns for account=%d symbol=%s strategy=%d",
-            legs_grouped, campaigns_created, account_id, symbol, strategy_id,
+            "Regrouped %d legs into %d campaigns (deleted %d empty) "
+            "for account=%d symbol=%s strategy=%d",
+            legs_grouped, campaigns_created, campaigns_deleted,
+            account_id, symbol, strategy_id,
         )
 
         return {"campaigns_created": campaigns_created, "legs_grouped": legs_grouped}
