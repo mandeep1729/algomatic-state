@@ -2342,6 +2342,8 @@ class TradingBuddyRepository:
         Returns:
             Dict with campaigns_created and legs_grouped counts
         """
+        from sqlalchemy import or_
+
         # Find orphaned legs for (account, symbol) with matching strategy
         orphaned_legs = (
             self.session.query(CampaignLegModel)
@@ -2374,22 +2376,54 @@ class TradingBuddyRepository:
         for leg in orphaned_legs:
             # Start new campaign if position is flat
             if position == 0.0:
-                current_campaign = PositionCampaignModel(
-                    account_id=account_id,
-                    symbol=symbol,
-                    direction=leg.direction,
-                    opened_at=leg.started_at,
-                    status="open",
-                    strategy_id=strategy_id,
-                    source="broker_synced",
+                # Reuse existing open campaign for (account, symbol, direction).
+                # Match by strategy_id first, then fall back to broker-synced
+                # campaigns (strategy_id IS NULL) for the same position.
+                existing_campaign = (
+                    self.session.query(PositionCampaignModel)
+                    .filter(
+                        PositionCampaignModel.account_id == account_id,
+                        PositionCampaignModel.symbol == symbol,
+                        PositionCampaignModel.direction == leg.direction,
+                        PositionCampaignModel.status == "open",
+                        or_(
+                            PositionCampaignModel.strategy_id == strategy_id,
+                            PositionCampaignModel.strategy_id.is_(None),
+                        ),
+                    )
+                    .order_by(
+                        # Prefer exact strategy match over NULL
+                        PositionCampaignModel.strategy_id.is_(None).asc(),
+                        PositionCampaignModel.opened_at.asc(),
+                    )
+                    .first()
                 )
-                self.session.add(current_campaign)
-                self.session.flush()  # get the ID
-                campaigns_created += 1
-                logger.debug(
-                    "Created campaign %s for %s/%s",
-                    current_campaign.id, symbol, strategy_id,
-                )
+                if existing_campaign:
+                    current_campaign = existing_campaign
+                    # Stamp strategy on broker-synced campaigns
+                    if current_campaign.strategy_id is None:
+                        current_campaign.strategy_id = strategy_id
+                    logger.debug(
+                        "Reusing existing campaign %s for %s/%s",
+                        current_campaign.id, symbol, strategy_id,
+                    )
+                else:
+                    current_campaign = PositionCampaignModel(
+                        account_id=account_id,
+                        symbol=symbol,
+                        direction=leg.direction,
+                        opened_at=leg.started_at,
+                        status="open",
+                        strategy_id=strategy_id,
+                        source="broker_synced",
+                    )
+                    self.session.add(current_campaign)
+                    self.session.flush()  # get the ID
+                    campaigns_created += 1
+                    logger.debug(
+                        "Created campaign %s for %s/%s",
+                        current_campaign.id, symbol, strategy_id,
+                    )
 
             # Update running position
             if leg.side == "buy":
