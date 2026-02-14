@@ -725,17 +725,6 @@ algomatic-state/
 │   │   ├── orchestrator.py        # Event subscriber and check dispatcher
 │   │   └── publisher.py           # Review event publishing helpers
 │   │
-│   ├── strats_prob/                # Strategy probability engine
-│   │   ├── aggregator.py          # Signal aggregation
-│   │   ├── cli.py                 # Command-line interface
-│   │   ├── conditions.py          # Entry/exit conditions
-│   │   ├── engine.py              # Strategy execution engine
-│   │   ├── exits.py               # Exit logic
-│   │   ├── registry.py            # Strategy registry
-│   │   ├── runner.py              # Strategy runner
-│   │   ├── strategy_def.py        # Strategy definition
-│   │   └── strategies/            # Individual strategy implementations
-│   │
 │   └── utils/                      # Utilities
 │       └── logging.py             # Centralized logging setup
 │

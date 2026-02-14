@@ -241,17 +241,6 @@ algomatic-state/
 │   │   ├── runner.py           # Trading runner
 │   │   └── snaptrade_client.py # SnapTrade broker client
 │   │
-│   ├── strats_prob/            # Strategy probability engine
-│   │   ├── aggregator.py       # Signal aggregation
-│   │   ├── cli.py              # Command-line interface
-│   │   ├── conditions.py       # Entry/exit conditions
-│   │   ├── engine.py           # Strategy execution engine
-│   │   ├── exits.py            # Exit logic
-│   │   ├── registry.py         # Strategy registry
-│   │   ├── runner.py           # Strategy runner
-│   │   ├── strategy_def.py     # Strategy definition
-│   │   └── strategies/         # Individual strategy implementations
-│   │
 │   └── utils/                  # Utilities
 │       ├── __init__.py
 │       └── logging.py          # Centralized logging setup with file logging

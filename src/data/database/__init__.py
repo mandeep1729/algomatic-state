@@ -21,7 +21,6 @@ from src.data.database.trade_lifecycle_models import (
     DecisionContext,
 )
 from src.data.database.probe_models import ProbeStrategy, StrategyProbeResult
-from src.data.database.probe_repository import ProbeRepository
 
 __all__ = [
     # Connection
@@ -54,5 +53,4 @@ __all__ = [
     # Probe system
     "ProbeStrategy",
     "StrategyProbeResult",
-    "ProbeRepository",
 ]

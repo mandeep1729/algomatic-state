@@ -64,8 +64,6 @@ The project has three major subsystems:
 
 5. **Position Campaigns & Trade Lifecycle** (`src/api/campaigns.py`, `src/data/database/trade_lifecycle_models.py`) -- Tracks trade journeys from flat-to-flat, with position lots, campaign legs, and decision contexts for post-trade analysis.
 
-6. **Strategy Probability Engine** (`src/strats_prob/`) -- Rule-based strategy framework with conditions, exits, and signal aggregation. Implements strategies from the TA-Lib Strategy Zoo (see `docs/STRATEGIES_REPO.md`).
-
 Supporting infrastructure: data loaders (`src/data/`), database models and repositories (`src/data/database/`), broker integration (`src/api/broker.py`, `src/api/alpaca.py`, `src/execution/snaptrade_client.py`), backtesting (`src/backtest/`), configuration (`config/settings.py`), authentication (`src/api/auth.py`, `src/api/auth_middleware.py`).
 
 Experimental components:
