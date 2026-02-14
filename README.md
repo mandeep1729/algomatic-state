@@ -355,6 +355,103 @@ Each agent has its own environment variable prefix:
 | VWAP | `VWAP_` | `dist_vwap_60` (distance from VWAP) | long: 0.005, short: -0.005 |
 
 
+### 9. Run the Market Data Service
+
+The market data service is a Go-based background process that fetches OHLCV bars from Alpaca on a schedule and listens for `MARKET_DATA_REQUEST` events via Redis. It replaces ad-hoc provider calls with a centralised fetch-and-persist loop.
+
+**Modes:**
+- `service` — Periodic fetcher (runs on an interval)
+- `listener` — Event-driven fetcher (subscribes to Redis bus)
+- `both` (default) — Runs both concurrently
+
+#### Docker Compose (recommended)
+
+```bash
+# 1. Ensure infrastructure is running
+docker compose up -d postgres redis
+
+# 2. Start the market data service
+docker compose up -d marketdata-service
+
+# 3. Check logs
+docker logs -f algomatic-marketdata-service
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `ALPACA_API_KEY` | — | Alpaca API key (required) |
+| `ALPACA_SECRET_KEY` | — | Alpaca secret key (required) |
+| `MARKETDATA_MODE` | `both` | Run mode: `service`, `listener`, or `both` |
+| `MARKETDATA_INTERVAL_MINUTES` | `5` | Minutes between scheduled fetches |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | — | PostgreSQL connection (set in `.env`) |
+| `REDIS_HOST`, `REDIS_PORT` | `redis`, `6379` | Redis connection for event bus |
+
+#### Log Location
+
+Logs are mounted to `${LOGS_DIR:-./logs}/marketdata-service/` on the host.
+
+### 10. Run the Reviewer Service
+
+The reviewer service is an event-driven Python process that runs behavioral checks against position campaigns. It subscribes to review events on the Redis message bus and persists check results to the database.
+
+**Events handled:**
+- `REVIEW_LEG_CREATED` — A new campaign leg was opened
+- `REVIEW_CAMPAIGNS_POPULATED` — Campaigns were populated with strategy assignments
+- `REVIEW_CONTEXT_UPDATED` — Market context was updated for a campaign
+- `REVIEW_RISK_PREFS_UPDATED` — User risk preferences changed
+
+#### Docker Compose (recommended)
+
+```bash
+# 1. Ensure infrastructure is running
+docker compose up -d postgres redis
+
+# 2. Start the reviewer service
+docker compose up -d reviewer-service
+
+# 3. Check logs
+docker logs -f algomatic-reviewer-service
+```
+
+#### Run locally without Docker
+
+```bash
+# Ensure postgres and redis are running
+docker compose up -d postgres redis
+
+# Run the reviewer service directly
+python -m src.reviewer.main
+```
+
+#### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MESSAGING_BACKEND` | `memory` | Set to `redis` for production/Docker |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | — | PostgreSQL connection (set in `.env`) |
+| `REDIS_HOST`, `REDIS_PORT` | `redis`, `6379` | Redis connection for event bus |
+
+#### Log Location
+
+Logs are written to `./logs/reviewer-service.log` (both Docker and local modes).
+
+### Starting All Services Together
+
+To run the full platform stack (database, Redis, market data, reviewer, and indicator engine):
+
+```bash
+# Start everything
+docker compose up -d
+
+# Verify all services are healthy
+docker compose ps
+
+# View logs for all services
+docker compose logs -f
+```
+
 ## Messaging & Market Data Service
 
 The pub/sub messaging system decouples market data fetching from all consumers (UI, agent, evaluators). Instead of each component creating its own `DatabaseLoader` with provider credentials, a single `MarketDataOrchestrator` listens for requests on the message bus and delegates to a centralized `MarketDataService`.
@@ -506,10 +603,19 @@ algomatic-state/
 │   │   └── vwap_strategy.py       # VWAP trading strategy
 │   │
 │   ├── api/                        # Public API routers
+│   │   ├── _data_helpers.py       # Shared cache and loader utilities
+│   │   ├── ohlcv.py               # OHLCV data endpoints
+│   │   ├── features_api.py        # Feature computation endpoints
+│   │   ├── regimes.py             # HMM + PCA regime endpoints
+│   │   ├── data_sync.py           # Sync and import endpoints
+│   │   ├── analysis.py            # Symbol analysis endpoints
+│   │   ├── market_data_api.py     # Market data API (v1 + Go-strats compat)
+│   │   ├── strategy_probe.py      # Strategy probe endpoints
 │   │   ├── trading_buddy.py       # Trading Buddy REST endpoints
 │   │   ├── broker.py              # SnapTrade broker integration
 │   │   ├── alpaca.py              # Direct Alpaca trade sync endpoints
 │   │   ├── campaigns.py           # Position campaigns and P&L endpoints
+│   │   ├── journal.py             # Trade journal endpoints
 │   │   ├── auth.py                # Google OAuth authentication endpoints
 │   │   ├── auth_middleware.py     # JWT token validation middleware
 │   │   └── user_profile.py        # User profile and risk preference endpoints
@@ -614,6 +720,11 @@ algomatic-state/
 │   │   ├── runner.py              # Trading runner
 │   │   └── snaptrade_client.py    # SnapTrade broker client
 │   │
+│   ├── reviewer/                   # Reviewer service (event-driven checks)
+│   │   ├── main.py                # Standalone entry point
+│   │   ├── orchestrator.py        # Event subscriber and check dispatcher
+│   │   └── publisher.py           # Review event publishing helpers
+│   │
 │   ├── strats_prob/                # Strategy probability engine
 │   │   ├── aggregator.py          # Signal aggregation
 │   │   ├── cli.py                 # Command-line interface
@@ -630,14 +741,18 @@ algomatic-state/
 │
 ├── tests/                          # Test suite
 │   ├── conftest.py                # Shared fixtures
-│   └── unit/
-│       ├── backtest/              # Backtest tests
-│       ├── broker/                # Broker integration tests
-│       ├── data/                  # Data layer tests
-│       ├── evaluators/            # Evaluator tests
-│       ├── execution/             # Execution tests
-│       ├── features/              # Feature tests
-│       └── hmm/                   # HMM module tests
+│   ├── unit/
+│   │   ├── backtest/              # Backtest tests
+│   │   ├── broker/                # Broker integration tests
+│   │   ├── data/                  # Data layer tests
+│   │   ├── evaluators/            # Evaluator tests
+│   │   ├── execution/             # Execution tests
+│   │   ├── features/              # Feature tests
+│   │   └── hmm/                   # HMM module tests
+│   └── integration/
+│       ├── test_strategy_parity.py   # Python/Go condition parity tests
+│       ├── test_data_pipeline.py     # Aggregation, tz, feature tests
+│       └── test_reviewer_flow.py     # Reviewer event flow tests
 │
 ├── models/                         # Trained model artifacts
 │   └── ticker=AAPL/
@@ -659,7 +774,18 @@ algomatic-state/
 │       ├── 007_auth_and_user_profiles.py
 │       ├── 008_trade_lifecycle_schema.py
 │       ├── 009_position_campaigns.py
-│       └── 010_strategies_first_class.py
+│       ├── 010_strategies_first_class.py
+│       ├── 011_user_profiles_jsonb.py
+│       ├── 012_strategy_risk_profiles.py
+│       ├── 013_settings_journal_schema.py
+│       ├── 014_site_preferences.py
+│       ├── 015_strategy_probe_tables.py
+│       ├── 016_strategy_probe_trades.py
+│       ├── 017_add_trade_pnl_metrics.py
+│       ├── 018_fix_open_day_to_date.py
+│       ├── 019_campaign_checks.py
+│       ├── 020_add_strategy_versioning.py
+│       └── 021_add_probe_results_open_day_index.py
 │
 ├── ui/                             # Web UI
 │   ├── backend/                   # FastAPI backend (api.py)
@@ -683,9 +809,14 @@ algomatic-state/
 │   ├── run_paper_trading.py       # Run paper trading session
 │   └── run_live_trading.py        # Run live trading session
 │
-├── Dockerfile                      # Docker image for trading agents
-├── docker-compose.yml              # PostgreSQL + pgAdmin services
+├── Dockerfile                      # Docker image for trading agents and reviewer service
+├── docker-compose.yml              # Core services (postgres, redis, indicator-engine, marketdata-service, reviewer-service, pgAdmin)
 ├── docker-compose.agents.yml       # Trading agent services (momentum, breakout, etc.)
+│
+├── marketdata-service/              # Go-based market data fetch service
+│   ├── cmd/marketdata-service/    # Entry point (service, listener, or both modes)
+│   ├── internal/                  # Internal packages (alpaca, db, redisbus, service)
+│   └── Dockerfile                 # Multi-stage Go build
 │
 ├── go-strats/                      # Go strategy backtesting framework (experimental)
 │   ├── cmd/                       # CLI entry points
