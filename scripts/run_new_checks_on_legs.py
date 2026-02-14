@@ -1,13 +1,14 @@
 #!/usr/bin/env python
-"""Batch-run new evaluators (Checks 3,4,5) against all campaign legs.
+"""Batch-run all evaluators against campaign legs.
 
-Runs StructureAwareness, VolatilityLiquidity, and StopPlacement evaluators
-retroactively on campaign legs. Uses point-in-time context (as_of=leg.started_at)
-so that volume, candle range, and key levels reflect the market state at trade time.
+Runs all 7 evaluators retroactively on campaign legs. Uses point-in-time
+context (as_of=leg.started_at) so that volume, candle range, and key levels
+reflect the market state at trade time.
 
-- Legs WITH intent_id: loads full TradeIntent, runs all 3 evaluators
+- Legs WITH intent_id: loads full TradeIntent, runs all 7 evaluators
 - Legs WITHOUT intent_id: synthesizes a TradeIntent from leg/campaign data,
-  runs only structure_awareness + volatility_liquidity (no stop data for SP checks)
+  runs only evaluators that don't depend on real stop/target data
+  (regime_fit, mtfa, structure_awareness, volatility_liquidity)
 
 Results are persisted as TradeEvaluation + TradeEvaluationItem records with
 eval_scope='leg'.
@@ -53,10 +54,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# All 3 new evaluators
-ALL_EVALUATOR_NAMES = ["structure_awareness", "volatility_liquidity", "stop_placement"]
-# Evaluators that work without stop_loss/profit_target
-NO_STOP_EVALUATOR_NAMES = ["structure_awareness", "volatility_liquidity"]
+# All 7 evaluators (for legs with real TradeIntent)
+ALL_EVALUATOR_NAMES = [
+    "risk_reward",
+    "exit_plan",
+    "regime_fit",
+    "mtfa",
+    "structure_awareness",
+    "volatility_liquidity",
+    "stop_placement",
+]
+# Evaluators that produce meaningful results without real stop/target
+# (regime_fit, mtfa, structure_awareness, volatility_liquidity)
+SYNTHETIC_EVALUATOR_NAMES = [
+    "regime_fit",
+    "mtfa",
+    "structure_awareness",
+    "volatility_liquidity",
+]
 
 # Default timeframe when no intent is available
 DEFAULT_TIMEFRAME = "5Min"
@@ -133,8 +148,8 @@ def synthesize_intent(leg: CampaignLegModel, campaign: PositionCampaignModel) ->
 
     Uses leg.avg_price as entry and manufactures stop/target at
     fixed offsets so the TradeIntent constructor doesn't reject it.
-    Only SA and VL checks will run — SP checks are skipped because
-    the stop_loss is synthetic.
+    Only evaluators that don't depend on real stop/target run against
+    synthetic intents (regime_fit, mtfa, structure_awareness, volatility_liquidity).
     """
     entry_price = leg.avg_price
     if entry_price is None or entry_price <= 0:
@@ -251,7 +266,7 @@ def main():
     )
 
     all_evaluators = [get_evaluator(name) for name in ALL_EVALUATOR_NAMES]
-    no_stop_evaluators = [get_evaluator(name) for name in NO_STOP_EVALUATOR_NAMES]
+    synthetic_evaluators = [get_evaluator(name) for name in SYNTHETIC_EVALUATOR_NAMES]
 
     # Summary accumulators
     total_legs = 0
@@ -296,8 +311,8 @@ def main():
                         leg.id, symbol, direction,
                     )
                     continue
-                evaluators = no_stop_evaluators
-                evaluators_run = NO_STOP_EVALUATOR_NAMES
+                evaluators = synthetic_evaluators
+                evaluators_run = SYNTHETIC_EVALUATOR_NAMES
                 timeframe = DEFAULT_TIMEFRAME
                 has_real_intent = False
 
