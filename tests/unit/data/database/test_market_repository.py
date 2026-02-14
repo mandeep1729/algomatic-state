@@ -259,7 +259,7 @@ class TestSyncLogOperations:
         assert result == mock_log
 
     def test_update_sync_log_creates_new(self, repository, mock_session):
-        """Test that update_sync_log creates new log when not found."""
+        """Test that update_sync_log executes upsert statement."""
         mock_session.query.return_value.filter.return_value.first.side_effect = [
             None,  # First call for get_sync_log
             MagicMock(symbol="AAPL"),  # Second call for ticker lookup
@@ -272,16 +272,19 @@ class TestSyncLogOperations:
             status="success",
         )
 
-        mock_session.add.assert_called_once()
+        # Phase 1.4: update_sync_log now uses PostgreSQL upsert via session.execute()
+        mock_session.execute.assert_called_once()
 
     def test_update_sync_log_updates_existing(self, repository, mock_session):
-        """Test that update_sync_log updates existing log."""
-        existing_log = MagicMock()
-        existing_log.first_synced_timestamp = datetime(2024, 1, 1)
-        mock_session.query.return_value.filter.return_value.first.side_effect = [
-            existing_log,
-            MagicMock(symbol="AAPL"),
-        ]
+        """Test that update_sync_log executes upsert for existing log."""
+        # Mock the ticker query for bar count
+        mock_session.query.return_value.filter.return_value.first.return_value = MagicMock(symbol="AAPL")
+        # Mock scalar_one for RETURNING clause
+        mock_session.execute.return_value.scalar_one.return_value = 1
+        # Mock the final .get() call to return the ORM object
+        mock_result = MagicMock()
+        mock_result.last_synced_timestamp = datetime(2024, 1, 15, tzinfo=timezone.utc)
+        mock_session.query.return_value.get.return_value = mock_result
 
         result = repository.update_sync_log(
             ticker_id=1,
@@ -291,37 +294,37 @@ class TestSyncLogOperations:
             status="success",
         )
 
-        # Result should be UTC-normalized
+        # Phase 1.4: uses PostgreSQL upsert via session.execute()
+        mock_session.execute.assert_called_once()
         assert result.last_synced_timestamp == datetime(2024, 1, 15, tzinfo=timezone.utc)
-        mock_session.add.assert_not_called()
 
     def test_update_sync_log_handles_timezone_mismatch(self, repository, mock_session):
-        """Test that update_sync_log handles TZ-aware existing vs TZ-naive incoming timestamps.
+        """Test that update_sync_log normalizes both TZ-aware and TZ-naive timestamps.
 
-        This reproduces a bug where PostgreSQL returns TZ-aware timestamps (DateTime(timezone=True))
-        but the code passes in TZ-naive timestamps from pandas DataFrames, causing:
-        'can't compare offset-naive and offset-aware datetimes'
+        The upsert implementation normalizes all timestamps via
+        _normalize_timestamp_to_utc(), avoiding the old comparison bug.
         """
-        existing_log = MagicMock()
-        # Existing log has TZ-aware timestamp (as returned by PostgreSQL)
-        existing_log.first_synced_timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        mock_session.query.return_value.filter.return_value.first.side_effect = [
-            existing_log,
-            MagicMock(symbol="AAPL"),
-        ]
+        # Mock the ticker query for bar count
+        mock_session.query.return_value.filter.return_value.first.return_value = MagicMock(symbol="AAPL")
+        mock_session.execute.return_value.scalar_one.return_value = 1
 
-        # New fetch has TZ-naive timestamp (as from pandas df.index.min())
-        # This used to raise: "can't compare offset-naive and offset-aware datetimes"
+        mock_result = MagicMock()
+        mock_result.first_synced_timestamp = datetime(2023, 12, 15, tzinfo=timezone.utc)
+        mock_result.last_synced_timestamp = datetime(2024, 1, 20, tzinfo=timezone.utc)
+        mock_session.query.return_value.get.return_value = mock_result
+
+        # TZ-naive timestamps (as from pandas df.index.min()):
+        # should not raise "can't compare offset-naive and offset-aware datetimes"
         result = repository.update_sync_log(
             ticker_id=1,
             timeframe="1Min",
-            first_synced_timestamp=datetime(2023, 12, 15),  # TZ-naive, earlier than existing
-            last_synced_timestamp=datetime(2024, 1, 20),  # TZ-naive
+            first_synced_timestamp=datetime(2023, 12, 15),
+            last_synced_timestamp=datetime(2024, 1, 20),
             bars_fetched=100,
             status="success",
         )
 
-        # Should pick the earlier timestamp (Dec 15) after normalizing both to UTC
+        mock_session.execute.assert_called_once()
         assert result.first_synced_timestamp == datetime(2023, 12, 15, tzinfo=timezone.utc)
         assert result.last_synced_timestamp == datetime(2024, 1, 20, tzinfo=timezone.utc)
 

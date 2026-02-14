@@ -352,12 +352,18 @@ class TestAggregatDaily:
         # Start should be the existing daily ts (normalised to naive)
         assert fetch_call.args[1] == existing_daily_ts
 
-    def test_strips_timezone_from_daily_df(
+    def test_passes_naive_daily_df_to_bulk_insert(
         self, mock_db_manager, mock_provider
     ):
-        """Timezone-aware daily bars are stored as timezone-naive."""
-        dates = pd.date_range("2024-01-02", periods=3, freq="B", tz="UTC")
-        df_tz = pd.DataFrame(
+        """Provider returns naive daily bars which are passed through to bulk_insert_bars.
+
+        Since Phase 4.3, providers strip timezone at the boundary (via
+        ensure_timezone_naive). The aggregator no longer strips tz itself;
+        bulk_insert_bars validates the invariant instead.
+        """
+        # Provider returns naive data (matching real provider behavior)
+        dates = pd.date_range("2024-01-02", periods=3, freq="B")
+        df_naive = pd.DataFrame(
             {
                 "open": [150.0, 151.0, 152.0],
                 "high": [155.0, 156.0, 157.0],
@@ -367,7 +373,7 @@ class TestAggregatDaily:
             },
             index=dates,
         )
-        mock_provider.fetch_daily_bars.return_value = df_tz
+        mock_provider.fetch_daily_bars.return_value = df_naive
 
         agg = TimeframeAggregator(
             db_manager=mock_db_manager, provider=mock_provider
@@ -383,7 +389,6 @@ class TestAggregatDaily:
 
         agg._aggregate_daily(mock_repo, "AAPL")
 
-        # The df passed to bulk_insert_bars should have tz-naive index
         inserted_df = mock_repo.bulk_insert_bars.call_args.kwargs["df"]
         assert inserted_df.index.tz is None
 
@@ -575,10 +580,14 @@ class TestAggregateIntradayFromDf:
 
         mock_repo.update_sync_log.assert_not_called()
 
-    def test_strips_timezone_from_aggregated_df(self):
-        """Timezone-aware indices are stripped before insertion."""
-        dates = pd.date_range("2024-01-02 09:30", periods=60, freq="1min", tz="UTC")
-        df_tz = pd.DataFrame(
+    def test_naive_timestamps_passed_through_to_bulk_insert(self):
+        """Naive-timestamped data from providers flows through to bulk_insert_bars.
+
+        Since Phase 4.3, providers strip timezone at the boundary. The aggregator
+        receives naive data and passes it through without modification.
+        """
+        dates = pd.date_range("2024-01-02 09:30", periods=60, freq="1min")
+        df_naive = pd.DataFrame(
             {
                 "open": [100.0] * 60,
                 "high": [101.0] * 60,
@@ -595,7 +604,7 @@ class TestAggregateIntradayFromDf:
         mock_ticker.id = 1
 
         TimeframeAggregator.aggregate_intraday_from_df(
-            mock_repo, mock_ticker, df_tz, "15Min",
+            mock_repo, mock_ticker, df_naive, "15Min",
         )
 
         inserted_df = mock_repo.bulk_insert_bars.call_args.kwargs["df"]

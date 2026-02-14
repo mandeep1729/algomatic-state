@@ -277,30 +277,7 @@ class TestDatabaseLoaderLoad:
             mock_sync.assert_not_called()
 
 
-class TestDatabaseLoaderMapTimeframe:
-    """Tests for DatabaseLoader._map_timeframe method."""
 
-    def test_map_1min(self, mock_db_manager):
-        """Test mapping 1Min timeframe."""
-        loader = DatabaseLoader(db_manager=mock_db_manager)
-        assert loader._map_timeframe("1Min") == "1Min"
-
-    def test_map_5min(self, mock_db_manager):
-        """Test mapping 5Min timeframe."""
-        loader = DatabaseLoader(db_manager=mock_db_manager)
-        assert loader._map_timeframe("5Min") == "5Min"
-
-    def test_map_1hour(self, mock_db_manager):
-        """Test mapping 1Hour timeframe."""
-        loader = DatabaseLoader(db_manager=mock_db_manager)
-        assert loader._map_timeframe("1Hour") == "1Hour"
-
-    def test_map_1day(self, mock_db_manager):
-        """Test mapping 1Day timeframe."""
-        loader = DatabaseLoader(db_manager=mock_db_manager)
-        assert loader._map_timeframe("1Day") == "1Day"
-
-    def test_map_unknown_returns_same(self, mock_db_manager):
-        """Test mapping unknown timeframe returns same value."""
-        loader = DatabaseLoader(db_manager=mock_db_manager)
-        assert loader._map_timeframe("unknown") == "unknown"
+# TestDatabaseLoaderMapTimeframe was removed — the _map_timeframe method was
+# dead code (unused identity mapping) and was removed during Phase 4.2
+# consolidation of DatabaseLoader.

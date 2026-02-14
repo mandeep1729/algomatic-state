@@ -325,11 +325,15 @@ class TestEdgeCases:
         # Should not raise and should have fetched data
         assert result["1Min"] == 60
 
-    def test_timezone_aware_dataframe_index_stripped(
+    def test_naive_dataframe_index_passed_through(
         self, mock_provider, mock_db_manager, mock_repo,
     ):
-        """Provider may return tz-aware index; it should be localised to naive."""
-        dates = pd.date_range("2024-01-02 09:30", periods=5, freq="1min", tz="UTC")
+        """Provider returns naive data (tz stripped at provider boundary).
+
+        Since Phase 4.3, providers strip tz via ensure_timezone_naive().
+        The service passes data through without modification.
+        """
+        dates = pd.date_range("2024-01-02 09:30", periods=5, freq="1min")
         df = pd.DataFrame(
             {
                 "open": [100.0] * 5,
@@ -348,7 +352,6 @@ class TestEdgeCases:
             result = svc.ensure_data("AAPL", ["1Min"], start=datetime(2024, 1, 2))
 
         assert result["1Min"] == 5
-        # The df passed to bulk_insert_bars should have tz-naive index
         inserted_df = mock_repo.bulk_insert_bars.call_args[1]["df"]
         assert inserted_df.index.tz is None
 

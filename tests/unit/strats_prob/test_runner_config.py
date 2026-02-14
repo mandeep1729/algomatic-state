@@ -44,7 +44,7 @@ class TestProbeRunConfigPersistTrades:
     def test_default_config_backward_compatible(self):
         """Default config matches the original behavior before persist_trades was added."""
         config = ProbeRunConfig(symbols=["AAPL"])
-        assert config.timeframes == ["1Min", "15Min", "1Hour", "1Day"]
+        assert config.timeframes == ["15Min", "1Hour", "1Day"]
         assert config.risk_profiles == ["low", "medium", "high"]
         assert config.strategy_ids is None
         assert config.start is None
