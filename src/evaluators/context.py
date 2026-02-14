@@ -361,10 +361,12 @@ class ContextPackBuilder:
             Assembled ContextPack
         """
         symbol = symbol.upper()
+        point_in_time = as_of is not None
         as_of = as_of or datetime.utcnow()
 
-        # Check cache
-        cache_key = f"{symbol}_{timeframe}_{lookback_bars}"
+        # Check cache — include as_of in key for point-in-time queries
+        as_of_key = as_of.isoformat() if point_in_time else "live"
+        cache_key = f"{symbol}_{timeframe}_{lookback_bars}_{as_of_key}"
         if self.cache_enabled and cache_key in self._cache:
             cached_time, cached_pack = self._cache[cache_key]
             if (datetime.utcnow() - cached_time).total_seconds() < self.CACHE_TTL:
@@ -391,15 +393,18 @@ class ContextPackBuilder:
         with db_manager.get_session() as session:
             repo = OHLCVRepository(session)
 
+            # Use as_of as end bound for point-in-time queries
+            end_filter = as_of if point_in_time else None
+
             for tf in timeframes:
                 # Get OHLCV bars
-                df = repo.get_bars(symbol, tf, limit=lookback_bars)
+                df = repo.get_bars(symbol, tf, end=end_filter, limit=lookback_bars)
                 if not df.empty:
                     bars[tf] = df
 
                 # Get features
                 if self.include_features:
-                    features_df = repo.get_features(symbol, tf)
+                    features_df = repo.get_features(symbol, tf, end=end_filter)
                     if not features_df.empty:
                         # Align with bars
                         if tf in bars:

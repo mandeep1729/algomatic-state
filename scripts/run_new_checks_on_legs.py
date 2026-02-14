@@ -2,8 +2,15 @@
 """Batch-run new evaluators (Checks 3,4,5) against all campaign legs.
 
 Runs StructureAwareness, VolatilityLiquidity, and StopPlacement evaluators
-retroactively on campaign legs that have a linked TradeIntent. Results are
-persisted as TradeEvaluation + TradeEvaluationItem records with eval_scope='leg'.
+retroactively on campaign legs. Uses point-in-time context (as_of=leg.started_at)
+so that volume, candle range, and key levels reflect the market state at trade time.
+
+- Legs WITH intent_id: loads full TradeIntent, runs all 3 evaluators
+- Legs WITHOUT intent_id: synthesizes a TradeIntent from leg/campaign data,
+  runs only structure_awareness + volatility_liquidity (no stop data for SP checks)
+
+Results are persisted as TradeEvaluation + TradeEvaluationItem records with
+eval_scope='leg'.
 
 Usage:
     python scripts/run_new_checks_on_legs.py                      # Run all
@@ -46,7 +53,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-EVALUATOR_NAMES = ["structure_awareness", "volatility_liquidity", "stop_placement"]
+# All 3 new evaluators
+ALL_EVALUATOR_NAMES = ["structure_awareness", "volatility_liquidity", "stop_placement"]
+# Evaluators that work without stop_loss/profit_target
+NO_STOP_EVALUATOR_NAMES = ["structure_awareness", "volatility_liquidity"]
+
+# Default timeframe when no intent is available
+DEFAULT_TIMEFRAME = "5Min"
 
 
 def parse_args() -> argparse.Namespace:
@@ -111,6 +124,54 @@ def load_intent(session, leg: CampaignLegModel) -> TradeIntent | None:
         logger.warning(
             "Could not construct TradeIntent from model id=%s: %s",
             model.id, exc,
+        )
+        return None
+
+
+def synthesize_intent(leg: CampaignLegModel, campaign: PositionCampaignModel) -> TradeIntent | None:
+    """Build a synthetic TradeIntent from leg/campaign data.
+
+    Uses leg.avg_price as entry and manufactures stop/target at
+    fixed offsets so the TradeIntent constructor doesn't reject it.
+    Only SA and VL checks will run — SP checks are skipped because
+    the stop_loss is synthetic.
+    """
+    entry_price = leg.avg_price
+    if entry_price is None or entry_price <= 0:
+        logger.debug(
+            "Cannot synthesize intent for leg_id=%s: no avg_price", leg.id,
+        )
+        return None
+
+    direction = TradeDirection(campaign.direction)
+
+    # Synthetic stop/target — placed far enough to pass validation.
+    # These values are never used by SA or VL evaluators.
+    offset = entry_price * 0.05
+    if direction == TradeDirection.LONG:
+        stop_loss = entry_price - offset
+        profit_target = entry_price + offset
+    else:
+        stop_loss = entry_price + offset
+        profit_target = entry_price - offset
+
+    try:
+        return TradeIntent(
+            user_id=campaign.account_id,
+            account_id=campaign.account_id,
+            symbol=campaign.symbol,
+            direction=direction,
+            timeframe=DEFAULT_TIMEFRAME,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            profit_target=profit_target,
+            position_size=leg.quantity,
+            status=TradeIntentStatus.EXECUTED,
+            created_at=leg.started_at,
+        )
+    except (ValueError, TypeError) as exc:
+        logger.warning(
+            "Could not synthesize TradeIntent for leg_id=%s: %s", leg.id, exc,
         )
         return None
 
@@ -189,14 +250,15 @@ def main():
         ensure_fresh_data=False,
     )
 
-    evaluators = [get_evaluator(name) for name in EVALUATOR_NAMES]
-    evaluators_run = [e.name for e in evaluators]
+    all_evaluators = [get_evaluator(name) for name in ALL_EVALUATOR_NAMES]
+    no_stop_evaluators = [get_evaluator(name) for name in NO_STOP_EVALUATOR_NAMES]
 
     # Summary accumulators
     total_legs = 0
-    skipped_no_intent = 0
     skipped_error = 0
-    processed = 0
+    skipped_no_price = 0
+    processed_with_intent = 0
+    processed_synthetic = 0
     summary_rows = []
 
     with db_manager.get_session() as session:
@@ -213,47 +275,50 @@ def main():
         total_legs = len(legs)
         logger.info("Found %d campaign legs to process", total_legs)
 
-        # Cache for ContextPacks keyed by (symbol, timeframe)
-        context_cache: dict[tuple[str, str], object] = {}
-
         for leg in legs:
             campaign = leg.campaign
             symbol = campaign.symbol
             direction = campaign.direction
 
+            # Determine intent source and evaluator set
             intent = load_intent(session, leg)
-            if intent is None:
-                skipped_no_intent += 1
-                logger.debug(
-                    "Skipping leg_id=%s (no intent): %s %s",
-                    leg.id, symbol, direction,
+            if intent is not None:
+                evaluators = all_evaluators
+                evaluators_run = ALL_EVALUATOR_NAMES
+                timeframe = intent.timeframe
+                has_real_intent = True
+            else:
+                intent = synthesize_intent(leg, campaign)
+                if intent is None:
+                    skipped_no_price += 1
+                    logger.debug(
+                        "Skipping leg_id=%s (no avg_price): %s %s",
+                        leg.id, symbol, direction,
+                    )
+                    continue
+                evaluators = no_stop_evaluators
+                evaluators_run = NO_STOP_EVALUATOR_NAMES
+                timeframe = DEFAULT_TIMEFRAME
+                has_real_intent = False
+
+            # Build ContextPack at the time the leg was executed
+            try:
+                context = builder.build(
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    lookback_bars=100,
+                    additional_timeframes=["1Day"],
+                    as_of=leg.started_at,
                 )
+            except Exception:
+                logger.exception(
+                    "Failed to build ContextPack for %s/%s as_of=%s, skipping leg_id=%s",
+                    symbol, timeframe, leg.started_at, leg.id,
+                )
+                skipped_error += 1
                 continue
 
-            timeframe = intent.timeframe
-            cache_key = (symbol, timeframe)
-
-            # Build or reuse ContextPack
-            if cache_key not in context_cache:
-                try:
-                    context = builder.build(
-                        symbol=symbol,
-                        timeframe=timeframe,
-                        lookback_bars=100,
-                        additional_timeframes=["1Day"],
-                    )
-                    context_cache[cache_key] = context
-                except Exception:
-                    logger.exception(
-                        "Failed to build ContextPack for %s/%s, skipping leg_id=%s",
-                        symbol, timeframe, leg.id,
-                    )
-                    skipped_error += 1
-                    continue
-
-            context = context_cache[cache_key]
-
-            # Run all 3 evaluators
+            # Run evaluators
             all_items = []
             for evaluator in evaluators:
                 try:
@@ -267,49 +332,56 @@ def main():
 
             # Persist results
             persist_evaluation(
-                session, leg, campaign, all_items, evaluators_run, args.dry_run,
+                session, leg, campaign, all_items, list(evaluators_run), args.dry_run,
             )
-            processed += 1
+
+            if has_real_intent:
+                processed_with_intent += 1
+            else:
+                processed_synthetic += 1
 
             # Collect summary row
             codes = [item.code for item in all_items]
+            source = "intent" if has_real_intent else "synthetic"
             summary_rows.append({
                 "leg_id": leg.id,
                 "campaign_id": campaign.id,
                 "symbol": symbol,
                 "direction": direction,
                 "leg_type": leg.leg_type,
+                "source": source,
                 "codes": codes,
                 "item_count": len(all_items),
             })
 
     # Print summary table
-    print("\n" + "=" * 90)
+    print("\n" + "=" * 100)
     print(f"BATCH EVALUATION SUMMARY {'(DRY-RUN)' if args.dry_run else ''}")
-    print("=" * 90)
-    print(f"Total legs:          {total_legs}")
-    print(f"Processed:           {processed}")
-    print(f"Skipped (no intent): {skipped_no_intent}")
-    print(f"Skipped (error):     {skipped_error}")
-    print("-" * 90)
+    print("=" * 100)
+    print(f"Total legs:              {total_legs}")
+    print(f"Processed (with intent): {processed_with_intent}")
+    print(f"Processed (synthetic):   {processed_synthetic}")
+    print(f"Skipped (no price):      {skipped_no_price}")
+    print(f"Skipped (error):         {skipped_error}")
+    print("-" * 100)
 
     if summary_rows:
         print(
             f"{'Leg ID':>8}  {'Campaign':>8}  {'Symbol':<8}  {'Dir':<6}  "
-            f"{'Type':<10}  {'Findings':>8}  Codes"
+            f"{'Type':<10}  {'Source':<10}  {'Findings':>8}  Codes"
         )
-        print("-" * 90)
+        print("-" * 100)
         for row in summary_rows:
             codes_str = ", ".join(row["codes"]) if row["codes"] else "(none)"
             print(
                 f"{row['leg_id']:>8}  {row['campaign_id']:>8}  {row['symbol']:<8}  "
                 f"{row['direction']:<6}  {row['leg_type']:<10}  "
-                f"{row['item_count']:>8}  {codes_str}"
+                f"{row['source']:<10}  {row['item_count']:>8}  {codes_str}"
             )
     else:
         print("No legs were processed.")
 
-    print("=" * 90)
+    print("=" * 100)
 
 
 if __name__ == "__main__":
