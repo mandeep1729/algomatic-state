@@ -2342,8 +2342,6 @@ class TradingBuddyRepository:
         Returns:
             Dict with campaigns_created and legs_grouped counts
         """
-        from sqlalchemy import or_
-
         # Find orphaned legs for (account, symbol) with matching strategy
         orphaned_legs = (
             self.session.query(CampaignLegModel)
@@ -2377,8 +2375,8 @@ class TradingBuddyRepository:
             # Start new campaign if position is flat
             if position == 0.0:
                 # Reuse existing open campaign for (account, symbol, direction).
-                # Match by strategy_id first, then fall back to broker-synced
-                # campaigns (strategy_id IS NULL) for the same position.
+                # Campaign strategy is inferred from its legs, so we match
+                # purely on position identity, not campaign.strategy_id.
                 existing_campaign = (
                     self.session.query(PositionCampaignModel)
                     .filter(
@@ -2386,23 +2384,12 @@ class TradingBuddyRepository:
                         PositionCampaignModel.symbol == symbol,
                         PositionCampaignModel.direction == leg.direction,
                         PositionCampaignModel.status == "open",
-                        or_(
-                            PositionCampaignModel.strategy_id == strategy_id,
-                            PositionCampaignModel.strategy_id.is_(None),
-                        ),
                     )
-                    .order_by(
-                        # Prefer exact strategy match over NULL
-                        PositionCampaignModel.strategy_id.is_(None).asc(),
-                        PositionCampaignModel.opened_at.asc(),
-                    )
+                    .order_by(PositionCampaignModel.opened_at.asc())
                     .first()
                 )
                 if existing_campaign:
                     current_campaign = existing_campaign
-                    # Stamp strategy on broker-synced campaigns
-                    if current_campaign.strategy_id is None:
-                        current_campaign.strategy_id = strategy_id
                     logger.debug(
                         "Reusing existing campaign %s for %s/%s",
                         current_campaign.id, symbol, strategy_id,
@@ -2414,7 +2401,6 @@ class TradingBuddyRepository:
                         direction=leg.direction,
                         opened_at=leg.started_at,
                         status="open",
-                        strategy_id=strategy_id,
                         source="broker_synced",
                     )
                     self.session.add(current_campaign)
