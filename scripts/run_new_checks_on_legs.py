@@ -192,7 +192,22 @@ def synthesize_intent(leg: CampaignLegModel, campaign: PositionCampaignModel) ->
 
 
 def persist_evaluation(session, leg, campaign, items, evaluators_run, dry_run):
-    """Persist TradeEvaluation + TradeEvaluationItem records for a leg."""
+    """Persist TradeEvaluation + TradeEvaluationItem records for a leg.
+
+    Deletes any existing evaluation for this leg before inserting,
+    so the script is safely re-runnable.
+    """
+    existing = session.query(TradeEvaluationModel).filter(
+        TradeEvaluationModel.leg_id == leg.id,
+    ).first()
+    if existing:
+        session.query(TradeEvaluationItemModel).filter(
+            TradeEvaluationItemModel.evaluation_id == existing.id,
+        ).delete()
+        session.delete(existing)
+        session.flush()
+        logger.info("Deleted existing evaluation id=%s for leg_id=%s", existing.id, leg.id)
+
     blocker_count = sum(1 for i in items if i.severity == Severity.BLOCKER)
     critical_count = sum(1 for i in items if i.severity == Severity.CRITICAL)
     warning_count = sum(1 for i in items if i.severity == Severity.WARNING)
