@@ -2374,9 +2374,9 @@ class TradingBuddyRepository:
         for leg in orphaned_legs:
             # Start new campaign if position is flat
             if position == 0.0:
-                # Reuse existing open campaign for (account, symbol, direction).
-                # Campaign strategy is inferred from its legs, so we match
-                # purely on position identity, not campaign.strategy_id.
+                # Reuse existing open campaign only if all its legs share
+                # the same strategy we're regrouping for. This prevents
+                # mixing legs from different strategies into one campaign.
                 existing_campaign = (
                     self.session.query(PositionCampaignModel)
                     .filter(
@@ -2388,7 +2388,25 @@ class TradingBuddyRepository:
                     .order_by(PositionCampaignModel.opened_at.asc())
                     .first()
                 )
+
+                can_reuse = False
                 if existing_campaign:
+                    # Check that all existing legs belong to the same strategy
+                    other_strategy_count = (
+                        self.session.query(CampaignLegModel.id)
+                        .join(
+                            DecisionContextModel,
+                            DecisionContextModel.leg_id == CampaignLegModel.id,
+                        )
+                        .filter(
+                            CampaignLegModel.campaign_id == existing_campaign.id,
+                            DecisionContextModel.strategy_id != strategy_id,
+                        )
+                        .count()
+                    )
+                    can_reuse = other_strategy_count == 0
+
+                if can_reuse:
                     current_campaign = existing_campaign
                     logger.debug(
                         "Reusing existing campaign %s for %s/%s",
