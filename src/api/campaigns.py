@@ -74,6 +74,7 @@ class CampaignSummaryResponse(BaseModel):
     legQuantities: List[float]
     overallLabel: str
     keyFlags: List[str]
+    strategies: List[str] = []
     orderIds: List[str] = []
 
 
@@ -208,8 +209,17 @@ class PnlTimeseriesResponse(BaseModel):
 # Helper Functions
 # -----------------------------------------------------------------------------
 
-def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
-    """Convert a PositionCampaign ORM model to a summary response."""
+def _campaign_to_summary(
+    campaign, strategies_by_campaign: Optional[dict] = None,
+) -> CampaignSummaryResponse:
+    """Convert a PositionCampaign ORM model to a summary response.
+
+    Args:
+        campaign: PositionCampaign ORM model with legs loaded.
+        strategies_by_campaign: Optional pre-computed mapping of
+            campaign_id -> list of strategy names.  When provided,
+            avoids per-campaign DB queries.
+    """
     legs_count = len(campaign.legs) if campaign.legs else 0
     # Extract key flags from campaign tags
     tags_dict = campaign.tags or {}
@@ -239,6 +249,11 @@ def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
                     seen_order_ids.add(fill.order_id)
                     order_ids.append(fill.order_id)
 
+    # Strategy names from pre-computed mapping
+    strategies: List[str] = []
+    if strategies_by_campaign is not None:
+        strategies = strategies_by_campaign.get(campaign.id, [])
+
     return CampaignSummaryResponse(
         campaignId=str(campaign.id),
         symbol=campaign.symbol,
@@ -251,6 +266,7 @@ def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
         legQuantities=leg_quantities,
         overallLabel=overall_label,
         keyFlags=key_flags,
+        strategies=strategies,
         orderIds=order_ids,
     )
 
@@ -956,7 +972,43 @@ async def list_campaigns(
         limit=200,
     )
 
-    return [_campaign_to_summary(c) for c in campaigns]
+    # Batch-query strategy names for all campaign legs to avoid N+1 queries.
+    # Collects all leg IDs, queries DecisionContext joined with Strategy,
+    # then builds a mapping of campaign_id -> sorted unique strategy names.
+    strategies_by_campaign: dict[int, List[str]] = {}
+    all_leg_ids: list[int] = []
+    leg_to_campaign: dict[int, int] = {}
+    for c in campaigns:
+        if c.legs:
+            for leg in c.legs:
+                all_leg_ids.append(leg.id)
+                leg_to_campaign[leg.id] = c.id
+
+    if all_leg_ids:
+        context_rows = (
+            db.query(DecisionContext.leg_id, Strategy.name)
+            .join(Strategy, DecisionContext.strategy_id == Strategy.id)
+            .filter(
+                DecisionContext.leg_id.in_(all_leg_ids),
+                DecisionContext.strategy_id.isnot(None),
+            )
+            .all()
+        )
+        for leg_id, strategy_name in context_rows:
+            campaign_id = leg_to_campaign.get(leg_id)
+            if campaign_id is not None:
+                if campaign_id not in strategies_by_campaign:
+                    strategies_by_campaign[campaign_id] = []
+                if strategy_name not in strategies_by_campaign[campaign_id]:
+                    strategies_by_campaign[campaign_id].append(strategy_name)
+
+        # Sort strategy names for consistent display
+        for names in strategies_by_campaign.values():
+            names.sort()
+
+    return [
+        _campaign_to_summary(c, strategies_by_campaign) for c in campaigns
+    ]
 
 
 @router.get("/{campaign_id}", response_model=CampaignDetailResponse)

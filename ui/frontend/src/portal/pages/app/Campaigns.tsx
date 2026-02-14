@@ -168,9 +168,16 @@ const columns: Column<CampaignSummary>[] = [
         return <span className="text-[var(--text-secondary)]">-</span>;
       }
       return (
-        <span className="text-[var(--text-secondary)]">
-          {campaign.strategies.join(', ')}
-        </span>
+        <div className="flex flex-wrap items-center gap-1">
+          {campaign.strategies.map((strategy) => (
+            <span
+              key={strategy}
+              className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-[var(--accent-green)]/10 text-[var(--accent-green)]"
+            >
+              {strategy}
+            </span>
+          ))}
+        </div>
       );
     },
   },
