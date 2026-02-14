@@ -3,6 +3,8 @@ import type { CampaignCheck, CheckSeverity } from '../../types';
 
 interface ChecksSummaryProps {
   checks: CampaignCheck[];
+  /** Optional label displayed above the summary counts (e.g. "L1: open") */
+  legLabel?: string;
 }
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = {
@@ -118,7 +120,7 @@ function CheckCard({ check }: { check: CampaignCheck }) {
   );
 }
 
-export function ChecksSummary({ checks }: ChecksSummaryProps) {
+export function ChecksSummary({ checks, legLabel }: ChecksSummaryProps) {
   const passed = checks.filter((c) => c.passed).length;
   const failed = checks.filter((c) => !c.passed).length;
   const warnings = checks.filter((c) => c.severity === 'warn' && !c.passed).length;
@@ -128,6 +130,11 @@ export function ChecksSummary({ checks }: ChecksSummaryProps) {
 
   return (
     <div>
+      {legLabel && (
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
+          {legLabel}
+        </h3>
+      )}
       {/* Summary counts */}
       <div className="mb-4 flex flex-wrap gap-3 text-xs">
         <span className="text-[var(--accent-green)]">

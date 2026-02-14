@@ -383,7 +383,36 @@ export default function CampaignDetail() {
               ? 'Checks (Campaign)'
               : `Checks (${selectedLeg?.legType.toUpperCase() ?? 'Leg'})`}
           </h2>
-          {currentChecks.length > 0 ? (
+          {isCampaignTab ? (
+            (() => {
+              const checksByLeg = detail.checksByLeg ?? {};
+              const legsWithChecks = detail.legs.filter(
+                (leg) => (checksByLeg[leg.legId] ?? []).length > 0,
+              );
+              if (legsWithChecks.length === 0) {
+                return (
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    No checks available for this campaign.
+                  </p>
+                );
+              }
+              return (
+                <div className="grid gap-6">
+                  {legsWithChecks.map((leg) => {
+                    const legIndex = detail.legs.indexOf(leg);
+                    const label = `L${legIndex + 1}: ${leg.legType}`;
+                    return (
+                      <ChecksSummary
+                        key={leg.legId}
+                        checks={checksByLeg[leg.legId]}
+                        legLabel={label}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })()
+          ) : currentChecks.length > 0 ? (
             <ChecksSummary checks={currentChecks} />
           ) : (
             <p className="text-sm text-[var(--text-secondary)]">
