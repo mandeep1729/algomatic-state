@@ -314,6 +314,8 @@ export interface CampaignSummary {
   keyFlags: string[];
   /** Unique strategy tags used across all legs of this campaign */
   strategies: string[];
+  /** Broker order IDs from trade fills */
+  orderIds?: string[];
 }
 
 export interface Campaign {
@@ -332,13 +334,34 @@ export interface Campaign {
 
 export interface CampaignLeg {
   legId: string;
-  campaignId: string;
+  campaignId: string | null;
   legType: LegType;
   side: 'buy' | 'sell';
   quantity: number;
   avgPrice: number;
   startedAt: string;
   endedAt: string;
+  symbol?: string;
+  direction?: string;
+}
+
+export interface OrphanedLegGroup {
+  symbol: string;
+  direction: string;
+  legs: OrphanedLeg[];
+}
+
+export interface OrphanedLeg {
+  legId: string;
+  legType: LegType;
+  side: 'buy' | 'sell';
+  quantity: number;
+  avgPrice: number;
+  startedAt: string;
+  endedAt?: string;
+  symbol: string;
+  direction: string;
+  strategyName?: string;
 }
 
 export interface EvaluationDimension {

@@ -46,6 +46,7 @@ import type {
   JournalEntryCreate,
   BehavioralTag,
   SitePrefs,
+  OrphanedLegGroup,
 } from '../types';
 
 const TOKEN_KEY = 'auth_token';
@@ -92,6 +93,10 @@ function post<T>(path: string, body?: unknown): Promise<T> {
 
 function put<T>(path: string, body?: unknown): Promise<T> {
   return request<T>(apiUrl(path), { method: 'PUT', body: body != null ? JSON.stringify(body) : undefined });
+}
+
+function del<T>(path: string): Promise<T> {
+  return request<T>(apiUrl(path), { method: 'DELETE' });
 }
 
 // =============================================================================
@@ -336,6 +341,28 @@ interface UncategorizedCountResponse {
 export async function fetchUncategorizedCount(): Promise<number> {
   const res = await get<UncategorizedCountResponse>('/api/campaigns/uncategorized-count');
   return res.count;
+}
+
+// =============================================================================
+// Delete Campaign — DELETE /api/campaigns/{campaignId}
+// =============================================================================
+
+export interface DeleteCampaignResponse {
+  deleted: boolean;
+  legs_orphaned: number;
+  contexts_updated: number;
+}
+
+export async function deleteCampaign(campaignId: string): Promise<DeleteCampaignResponse> {
+  return del<DeleteCampaignResponse>(`/api/campaigns/${encodeURIComponent(campaignId)}`);
+}
+
+// =============================================================================
+// Orphaned Legs — GET /api/campaigns/orphaned-legs
+// =============================================================================
+
+export async function fetchOrphanedLegs(): Promise<OrphanedLegGroup[]> {
+  return get<OrphanedLegGroup[]>('/api/campaigns/orphaned-legs');
 }
 
 export async function fetchCampaignDetail(campaignId: string): Promise<CampaignDetail> {
@@ -644,6 +671,26 @@ export async function bulkUpdateStrategy(
   req: BulkUpdateStrategyRequest,
 ): Promise<BulkUpdateStrategyResponse> {
   return post<BulkUpdateStrategyResponse>('/api/broker/fills/bulk-update-strategy', req);
+}
+
+// =============================================================================
+// Bulk Leg Strategy Update — POST /api/campaigns/legs/bulk-update-strategy
+// =============================================================================
+
+export interface BulkUpdateLegStrategyRequest {
+  leg_ids: number[];
+  strategy_id: number | null;
+}
+
+export interface BulkUpdateLegStrategyResponse {
+  updated_count: number;
+  skipped_count: number;
+}
+
+export async function bulkUpdateLegStrategy(
+  req: BulkUpdateLegStrategyRequest,
+): Promise<BulkUpdateLegStrategyResponse> {
+  return post<BulkUpdateLegStrategyResponse>('/api/campaigns/legs/bulk-update-strategy', req);
 }
 
 // =============================================================================

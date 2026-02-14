@@ -73,12 +73,13 @@ class CampaignSummaryResponse(BaseModel):
     legQuantities: List[float]
     overallLabel: str
     keyFlags: List[str]
+    orderIds: List[str] = []
 
 
 class CampaignLegResponse(BaseModel):
     """A single leg within a campaign."""
     legId: str
-    campaignId: str
+    campaignId: Optional[str] = None
     legType: str
     side: str
     quantity: float
@@ -209,6 +210,17 @@ def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
                 qty = -qty
             leg_quantities.append(qty)
 
+    # Collect unique broker order IDs from fills
+    order_ids: List[str] = []
+    seen_order_ids: set = set()
+    if campaign.legs:
+        for leg in campaign.legs:
+            for fm in (leg.fill_maps or []):
+                fill = fm.fill
+                if fill and fill.order_id and fill.order_id not in seen_order_ids:
+                    seen_order_ids.add(fill.order_id)
+                    order_ids.append(fill.order_id)
+
     return CampaignSummaryResponse(
         campaignId=str(campaign.id),
         symbol=campaign.symbol,
@@ -221,6 +233,7 @@ def _campaign_to_summary(campaign) -> CampaignSummaryResponse:
         legQuantities=leg_quantities,
         overallLabel=overall_label,
         keyFlags=key_flags,
+        orderIds=order_ids,
     )
 
 
@@ -561,6 +574,281 @@ async def get_uncategorized_count(
     return UncategorizedCountResponse(count=count)
 
 
+# -----------------------------------------------------------------------------
+# Bulk Leg Strategy Update
+# -----------------------------------------------------------------------------
+
+class BulkUpdateLegStrategyRequest(BaseModel):
+    """Request body for bulk-updating strategy on multiple campaign legs."""
+    leg_ids: List[int]
+    strategy_id: Optional[int] = None
+
+
+class BulkUpdateLegStrategyResponse(BaseModel):
+    """Response for bulk leg strategy update."""
+    updated_count: int
+    skipped_count: int
+
+
+@router.post("/legs/bulk-update-strategy", response_model=BulkUpdateLegStrategyResponse)
+async def bulk_update_leg_strategy(
+    request: BulkUpdateLegStrategyRequest,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Bulk-update the strategy assignment for multiple campaign legs.
+
+    For each leg, finds or creates a DecisionContext and sets the strategy_id.
+    Legs not owned by the current user are skipped.
+    """
+    logger.debug(
+        "bulk_update_leg_strategy: user_id=%d, leg_ids=%s, strategy_id=%s",
+        user_id, request.leg_ids, request.strategy_id,
+    )
+
+    if not request.leg_ids:
+        return BulkUpdateLegStrategyResponse(updated_count=0, skipped_count=0)
+
+    # Validate strategy ownership if provided
+    if request.strategy_id is not None:
+        strategy = db.query(Strategy).filter(
+            Strategy.id == request.strategy_id,
+            Strategy.account_id == user_id,
+        ).first()
+        if not strategy:
+            raise HTTPException(status_code=404, detail="Strategy not found")
+
+    # Load legs by account_id (supports both campaign-bound and orphaned legs)
+    legs = (
+        db.query(CampaignLeg)
+        .filter(
+            CampaignLeg.id.in_(request.leg_ids),
+            CampaignLeg.account_id == user_id,
+        )
+        .all()
+    )
+    valid_leg_ids = {leg.id for leg in legs}
+
+    updated_count = 0
+    skipped_count = 0
+    affected_legs: list[tuple[int, int]] = []  # (leg_id, campaign_id)
+
+    for leg_id in request.leg_ids:
+        if leg_id not in valid_leg_ids:
+            skipped_count += 1
+            logger.warning(
+                "bulk_update_leg_strategy: leg_id=%d not owned by user_id=%d",
+                leg_id, user_id,
+            )
+            continue
+
+        leg = next(l for l in legs if l.id == leg_id)
+
+        # Find or create DecisionContext for this leg
+        context = db.query(DecisionContext).filter(
+            DecisionContext.leg_id == leg.id,
+        ).first()
+
+        if context:
+            context.strategy_id = request.strategy_id
+            context.updated_at = datetime.now(timezone.utc)
+        else:
+            context_type_map = {
+                "open": "entry",
+                "add": "add",
+                "reduce": "reduce",
+                "close": "exit",
+                "flip_close": "exit",
+                "flip_open": "entry",
+            }
+            context_type = context_type_map.get(leg.leg_type, "entry")
+
+            context = DecisionContext(
+                account_id=user_id,
+                campaign_id=leg.campaign_id,
+                leg_id=leg.id,
+                context_type=context_type,
+                strategy_id=request.strategy_id,
+            )
+            db.add(context)
+
+        updated_count += 1
+        affected_legs.append((leg.id, leg.campaign_id))
+
+    db.flush()
+
+    # Trigger unwind + regroup for each unique (symbol, strategy) combo
+    if request.strategy_id is not None and affected_legs:
+        repo = TradingBuddyRepository(db)
+
+        # Collect unique (symbol, strategy_id) pairs and earliest timestamp
+        scope_map: dict[tuple[str, int], datetime] = {}
+        for leg_id, _campaign_id in affected_legs:
+            leg = next(l for l in legs if l.id == leg_id)
+            key = (leg.symbol, request.strategy_id)
+            if key not in scope_map or leg.started_at < scope_map[key]:
+                scope_map[key] = leg.started_at
+
+        for (sym, strat_id), earliest_ts in scope_map.items():
+            logger.info(
+                "Unwind+regroup for symbol=%s strategy=%d after %s",
+                sym, strat_id, earliest_ts,
+            )
+            # Unwind: unlink later legs from existing campaigns for this strategy
+            repo.unwind_legs_after(user_id, sym, strat_id, earliest_ts)
+            # Also orphan the updated legs from their old campaigns
+            for leg_id, _cid in affected_legs:
+                leg = next(l for l in legs if l.id == leg_id)
+                if leg.symbol == sym and leg.campaign_id is not None:
+                    leg.campaign_id = None
+            db.flush()
+            # Regroup all orphaned legs for this (symbol, strategy)
+            repo.regroup_legs_for_strategy(user_id, sym, strat_id)
+
+    db.commit()
+
+    # Trigger reviewer checks for affected legs
+    if affected_legs:
+        from src.reviewer.publisher import publish_context_updated
+        for leg_id, campaign_id in affected_legs:
+            publish_context_updated(
+                leg_id=leg_id, campaign_id=campaign_id, account_id=user_id,
+            )
+
+    logger.info(
+        "bulk_update_leg_strategy: user_id=%d, updated=%d, skipped=%d",
+        user_id, updated_count, skipped_count,
+    )
+
+    return BulkUpdateLegStrategyResponse(
+        updated_count=updated_count,
+        skipped_count=skipped_count,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Delete Campaign (orphans legs)
+# -----------------------------------------------------------------------------
+
+class DeleteCampaignResponse(BaseModel):
+    """Response for campaign deletion."""
+    deleted: bool
+    legs_orphaned: int
+    contexts_updated: int
+
+
+@router.delete("/{campaign_id}", response_model=DeleteCampaignResponse)
+async def delete_campaign(
+    campaign_id: int,
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Delete a campaign, orphaning its legs instead of destroying them.
+
+    Legs become orphaned (campaign_id=NULL) and their strategy_id is cleared
+    on decision contexts, but hypothesis/notes/feelings are preserved.
+    """
+    logger.info("delete_campaign: campaign_id=%d, user_id=%d", campaign_id, user_id)
+
+    repo = TradingBuddyRepository(db)
+    try:
+        result = repo.delete_campaign(campaign_id, account_id=user_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    db.commit()
+
+    logger.info(
+        "Deleted campaign %d: orphaned %d legs, updated %d contexts",
+        campaign_id, result["legs_orphaned"], result["contexts_updated"],
+    )
+
+    return DeleteCampaignResponse(
+        deleted=True,
+        legs_orphaned=result["legs_orphaned"],
+        contexts_updated=result["contexts_updated"],
+    )
+
+
+# -----------------------------------------------------------------------------
+# Orphaned Legs
+# -----------------------------------------------------------------------------
+
+class OrphanedLegResponse(BaseModel):
+    """A single orphaned leg."""
+    legId: str
+    legType: str
+    side: str
+    quantity: float
+    avgPrice: float
+    startedAt: str
+    endedAt: Optional[str] = None
+    symbol: str
+    direction: str
+    strategyName: Optional[str] = None
+
+
+class OrphanedLegGroup(BaseModel):
+    """Group of orphaned legs by symbol + direction."""
+    symbol: str
+    direction: str
+    legs: List[OrphanedLegResponse]
+
+
+@router.get("/orphaned-legs", response_model=List[OrphanedLegGroup])
+async def get_orphaned_legs(
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get orphaned legs (campaign_id IS NULL) grouped by symbol + direction.
+
+    Includes decision context strategy info per leg.
+    """
+    logger.debug("get_orphaned_legs: user_id=%d", user_id)
+
+    repo = TradingBuddyRepository(db)
+    legs = repo.get_orphaned_legs(account_id=user_id)
+
+    # Build response grouped by (symbol, direction)
+    groups: dict[tuple[str, str], list[OrphanedLegResponse]] = {}
+    for leg in legs:
+        # Get strategy name from decision context
+        ctx = db.query(DecisionContext).filter(
+            DecisionContext.leg_id == leg.id,
+        ).first()
+        strategy_name = None
+        if ctx and ctx.strategy_id:
+            strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
+            if strategy:
+                strategy_name = strategy.name
+
+        leg_resp = OrphanedLegResponse(
+            legId=str(leg.id),
+            legType=leg.leg_type,
+            side=leg.side,
+            quantity=leg.quantity,
+            avgPrice=leg.avg_price or 0,
+            startedAt=_format_dt(leg.started_at),
+            endedAt=_format_dt(leg.ended_at),
+            symbol=leg.symbol,
+            direction=leg.direction,
+            strategyName=strategy_name,
+        )
+
+        key = (leg.symbol, leg.direction)
+        if key not in groups:
+            groups[key] = []
+        groups[key].append(leg_resp)
+
+    result = [
+        OrphanedLegGroup(symbol=sym, direction=direction, legs=group_legs)
+        for (sym, direction), group_legs in sorted(groups.items())
+    ]
+
+    logger.debug("Found %d orphaned leg groups for user_id=%d", len(result), user_id)
+    return result
+
+
 @router.get("", response_model=List[CampaignSummaryResponse])
 async def list_campaigns(
     symbol: Optional[str] = None,
@@ -667,7 +955,7 @@ async def save_context(
     if request.strategyTags:
         strategy = db.query(Strategy).filter(
             Strategy.name == request.strategyTags[0],
-            Strategy.user_id == user_id,
+            Strategy.account_id == user_id,
         ).first()
         if strategy:
             strategy_id = strategy.id

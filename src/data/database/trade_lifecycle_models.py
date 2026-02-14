@@ -248,7 +248,7 @@ class PositionCampaign(Base):
     legs: Mapped[list["CampaignLeg"]] = relationship(
         "CampaignLeg",
         back_populates="campaign",
-        cascade="all, delete-orphan",
+        cascade="all",
         order_by="CampaignLeg.started_at",
     )
 
@@ -285,9 +285,16 @@ class CampaignLeg(Base):
     __tablename__ = "campaign_legs"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    campaign_id: Mapped[int] = mapped_column(
+    campaign_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        ForeignKey("position_campaigns.id", ondelete="CASCADE"),
+        ForeignKey("position_campaigns.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)  # 'long', 'short'
+    account_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("user_accounts.id", ondelete="CASCADE"),
         nullable=False,
     )
     leg_type: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -315,7 +322,8 @@ class CampaignLeg(Base):
     )
 
     # Relationships
-    campaign: Mapped["PositionCampaign"] = relationship("PositionCampaign", back_populates="legs")
+    campaign: Mapped[Optional["PositionCampaign"]] = relationship("PositionCampaign", back_populates="legs")
+    account: Mapped["UserAccount"] = relationship("UserAccount")
     intent: Mapped[Optional["TradeIntent"]] = relationship("TradeIntent")
     fill_maps: Mapped[list["LegFillMap"]] = relationship(
         "LegFillMap",
@@ -335,6 +343,7 @@ class CampaignLeg(Base):
         ),
         CheckConstraint("side IN ('buy', 'sell')", name="ck_leg_side"),
         CheckConstraint("quantity > 0", name="ck_leg_qty_positive"),
+        CheckConstraint("direction IN ('long', 'short')", name="ck_leg_direction"),
         Index("ix_campaign_legs_campaign_started", "campaign_id", "started_at"),
     )
 
@@ -395,7 +404,7 @@ class DecisionContext(Base):
     # Polymorphic links (at least one should be set)
     campaign_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        ForeignKey("position_campaigns.id", ondelete="CASCADE"),
+        ForeignKey("position_campaigns.id", ondelete="SET NULL"),
         nullable=True,
     )
     leg_id: Mapped[Optional[int]] = mapped_column(

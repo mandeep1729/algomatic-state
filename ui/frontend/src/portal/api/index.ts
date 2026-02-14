@@ -58,6 +58,8 @@ const api = USE_MOCKS
       fetchCampaignDetail: realApi.fetchCampaignDetail,
       saveDecisionContext: realApi.saveDecisionContext,
       fetchUncategorizedCount: realApi.fetchUncategorizedCount,
+      deleteCampaign: realApi.deleteCampaign,
+      fetchOrphanedLegs: realApi.fetchOrphanedLegs,
 
       // User profile & settings -- real backend
       fetchTradingProfile: realApi.fetchTradingProfile,
@@ -122,6 +124,24 @@ export type { BulkUpdateStrategyRequest, BulkUpdateStrategyResponse } from './cl
 
 export const bulkUpdateStrategy: (req: BulkUpdateStrategyRequest) => Promise<BulkUpdateStrategyResponse> =
   USE_MOCKS ? mockApi.bulkUpdateStrategy : realApi.bulkUpdateStrategy;
+
+// Re-export bulk leg strategy update - uses mock or real based on USE_MOCKS flag
+import type { BulkUpdateLegStrategyRequest, BulkUpdateLegStrategyResponse } from './client';
+export type { BulkUpdateLegStrategyRequest, BulkUpdateLegStrategyResponse } from './client';
+
+export const bulkUpdateLegStrategy: (req: BulkUpdateLegStrategyRequest) => Promise<BulkUpdateLegStrategyResponse> =
+  USE_MOCKS ? mockApi.bulkUpdateLegStrategy : realApi.bulkUpdateLegStrategy;
+
+// Re-export campaign orphan functions - uses mock or real based on USE_MOCKS flag
+import type { DeleteCampaignResponse } from './client';
+export type { DeleteCampaignResponse } from './client';
+import type { OrphanedLegGroup } from '../types';
+
+export const deleteCampaign: (campaignId: string) => Promise<DeleteCampaignResponse> =
+  USE_MOCKS ? mockApi.deleteCampaign : realApi.deleteCampaign;
+
+export const fetchOrphanedLegs: () => Promise<OrphanedLegGroup[]> =
+  USE_MOCKS ? mockApi.fetchOrphanedLegs : realApi.fetchOrphanedLegs;
 
 // Re-export strategy probe function from client
 export { fetchStrategyProbe, fetchThemeStrategies, fetchTopStrategies } from './client';

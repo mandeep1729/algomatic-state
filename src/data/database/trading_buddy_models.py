@@ -548,7 +548,7 @@ class TradeEvaluation(Base):
     # Multi-scope evaluation support
     campaign_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
-        ForeignKey("position_campaigns.id", ondelete="CASCADE"),
+        ForeignKey("position_campaigns.id", ondelete="SET NULL"),
         nullable=True,
     )
     leg_id: Mapped[Optional[int]] = mapped_column(

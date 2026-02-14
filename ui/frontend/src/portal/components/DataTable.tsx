@@ -10,8 +10,8 @@
  * - Clickable rows with navigation support
  */
 
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { Settings2, X } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { Settings2, X, ChevronRight } from 'lucide-react';
 import api from '../api';
 
 export interface Column<T> {
@@ -55,6 +55,12 @@ export interface DataTableProps<T> {
   onSelectionChange?: (keys: Set<string>) => void;
   /** Optional callback when rows-per-page changes, for parent to sync if needed */
   onRowsPerPageChange?: (rowsPerPage: number) => void;
+  /** Set of expanded row keys. When provided with onExpandChange and renderExpandedRow, enables expandable rows. */
+  expandedKeys?: Set<string>;
+  /** Callback when expansion changes. Required when expandedKeys is provided. */
+  onExpandChange?: (keys: Set<string>) => void;
+  /** Render function for expanded row content. Required when expandedKeys is provided. */
+  renderExpandedRow?: (row: T) => React.ReactNode;
 }
 
 export function DataTable<T>({
@@ -68,8 +74,12 @@ export function DataTable<T>({
   selectedKeys,
   onSelectionChange,
   onRowsPerPageChange,
+  expandedKeys,
+  onExpandChange,
+  renderExpandedRow,
 }: DataTableProps<T>) {
   const selectionEnabled = selectedKeys !== undefined && onSelectionChange !== undefined;
+  const expansionEnabled = expandedKeys !== undefined && onExpandChange !== undefined && renderExpandedRow !== undefined;
 
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -240,6 +250,21 @@ export function DataTable<T>({
     [selectionEnabled, selectedKeys, onSelectionChange, getRowKey],
   );
 
+  // Toggle row expansion
+  const toggleRowExpansion = useCallback(
+    (key: string) => {
+      if (!expansionEnabled) return;
+      const next = new Set(expandedKeys);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      onExpandChange!(next);
+    },
+    [expansionEnabled, expandedKeys, onExpandChange],
+  );
+
   // Filter to only visible columns
   const displayColumns = columns.filter((c) => visibleColumns.has(c.key));
   const hideableColumns = columns.filter((c) => c.hideable !== false);
@@ -359,6 +384,7 @@ export function DataTable<T>({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-[var(--border-color)] text-left text-xs font-medium uppercase tracking-wider text-[var(--text-secondary)]">
+            {expansionEnabled && <th className="w-8 px-1 py-3" />}
             {selectionEnabled && (
               <th className="w-10 px-3 py-3">
                 <input
@@ -382,6 +408,7 @@ export function DataTable<T>({
           {/* Filter row - only show if there are searchable columns */}
           {hasSearchableColumns && (
             <tr className="border-b border-[var(--border-color)] bg-[var(--bg-primary)]/50">
+              {expansionEnabled && <th className="w-8 px-1 py-2" />}
               {selectionEnabled && <th className="w-10 px-3 py-2" />}
               {displayColumns.map((col) => (
                 <th key={`filter-${col.key}`} className="px-6 py-2">
@@ -403,7 +430,7 @@ export function DataTable<T>({
           {loading ? (
             <tr>
               <td
-                colSpan={(displayColumns.length || 1) + (selectionEnabled ? 1 : 0)}
+                colSpan={(displayColumns.length || 1) + (selectionEnabled ? 1 : 0) + (expansionEnabled ? 1 : 0)}
                 className="px-6 py-12 text-center text-[var(--text-secondary)]"
               >
                 Loading...
@@ -412,7 +439,7 @@ export function DataTable<T>({
           ) : filteredData.length === 0 ? (
             <tr>
               <td
-                colSpan={(displayColumns.length || 1) + (selectionEnabled ? 1 : 0)}
+                colSpan={(displayColumns.length || 1) + (selectionEnabled ? 1 : 0) + (expansionEnabled ? 1 : 0)}
                 className="px-6 py-12 text-center text-[var(--text-secondary)]"
               >
                 {hasActiveFilters
@@ -424,34 +451,58 @@ export function DataTable<T>({
             paginatedData.map((row) => {
               const rowKey = getRowKey(row);
               const isSelected = selectionEnabled && selectedKeys!.has(rowKey);
+              const isExpanded = expansionEnabled && expandedKeys!.has(rowKey);
               return (
-                <tr
-                  key={rowKey}
-                  onClick={onRowClick ? () => onRowClick(row) : undefined}
-                  className={`${
-                    onRowClick
-                      ? 'cursor-pointer transition-colors hover:bg-[var(--bg-tertiary)]/50'
-                      : 'transition-colors'
-                  } ${isSelected ? 'bg-[var(--accent-blue)]/5' : ''}`}
-                >
-                  {selectionEnabled && (
-                    <td className="w-10 px-3 py-4">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleRowSelection(rowKey)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="h-3.5 w-3.5 rounded border-[var(--border-color)] text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
-                        aria-label={`Select row ${rowKey}`}
-                      />
-                    </td>
+                <React.Fragment key={rowKey}>
+                  <tr
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    className={`${
+                      onRowClick
+                        ? 'cursor-pointer transition-colors hover:bg-[var(--bg-tertiary)]/50'
+                        : 'transition-colors'
+                    } ${isSelected ? 'bg-[var(--accent-blue)]/5' : ''}`}
+                  >
+                    {expansionEnabled && (
+                      <td className="w-8 px-1 py-4">
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); toggleRowExpansion(rowKey); }}
+                          className="flex items-center justify-center rounded p-0.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-all"
+                          aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
+                        >
+                          <ChevronRight
+                            size={16}
+                            className={`transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}
+                          />
+                        </button>
+                      </td>
+                    )}
+                    {selectionEnabled && (
+                      <td className="w-10 px-3 py-4">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleRowSelection(rowKey)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-3.5 w-3.5 rounded border-[var(--border-color)] text-[var(--accent-blue)] focus:ring-[var(--accent-blue)]"
+                          aria-label={`Select row ${rowKey}`}
+                        />
+                      </td>
+                    )}
+                    {displayColumns.map((col) => (
+                      <td key={col.key} className="px-6 py-4">
+                        {col.render(row)}
+                      </td>
+                    ))}
+                  </tr>
+                  {isExpanded && (
+                    <tr className="bg-[var(--bg-primary)]/50">
+                      <td colSpan={(displayColumns.length || 1) + (selectionEnabled ? 1 : 0) + (expansionEnabled ? 1 : 0)}>
+                        {renderExpandedRow!(row)}
+                      </td>
+                    </tr>
                   )}
-                  {displayColumns.map((col) => (
-                    <td key={col.key} className="px-6 py-4">
-                      {col.render(row)}
-                    </td>
-                  ))}
-                </tr>
+                </React.Fragment>
               );
             })
           )}
