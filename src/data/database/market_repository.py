@@ -433,7 +433,10 @@ class OHLCVRepository:
         status: str = "success",
         error_message: Optional[str] = None,
     ) -> DataSyncLog:
-        """Update or create sync log entry.
+        """Update or create sync log entry using PostgreSQL upsert.
+
+        Uses ON CONFLICT DO UPDATE to avoid TOCTOU race conditions when
+        concurrent syncs target the same ticker/timeframe.
 
         Args:
             ticker_id: Ticker ID
@@ -447,43 +450,58 @@ class OHLCVRepository:
         Returns:
             Updated or created DataSyncLog
         """
-        sync_log = self.get_sync_log(ticker_id, timeframe)
+        now = datetime.now(timezone.utc)
+        normalized_last = _normalize_timestamp_to_utc(last_synced_timestamp) if last_synced_timestamp else None
+        normalized_first = _normalize_timestamp_to_utc(first_synced_timestamp) if first_synced_timestamp else None
 
-        if sync_log is None:
-            sync_log = DataSyncLog(
-                ticker_id=ticker_id,
-                timeframe=timeframe,
-            )
-            self.session.add(sync_log)
-
-        # Update fields - normalize timestamps to UTC for consistent comparison
-        if last_synced_timestamp:
-            sync_log.last_synced_timestamp = _normalize_timestamp_to_utc(last_synced_timestamp)
-        if first_synced_timestamp:
-            normalized_first = _normalize_timestamp_to_utc(first_synced_timestamp)
-            if sync_log.first_synced_timestamp is None:
-                sync_log.first_synced_timestamp = normalized_first
-            else:
-                # Both are now UTC-aware, safe to compare
-                existing_first = _normalize_timestamp_to_utc(sync_log.first_synced_timestamp)
-                sync_log.first_synced_timestamp = min(existing_first, normalized_first)
-
-        sync_log.last_sync_at = datetime.now(timezone.utc)
-        sync_log.bars_fetched = bars_fetched
-
-        # Get total bar count - need to look up ticker symbol
+        # Get total bar count
         total_bars = 0
         if ticker_id:
             ticker = self.session.query(Ticker).filter(Ticker.id == ticker_id).first()
             if ticker:
                 total_bars = self.get_bar_count(ticker.symbol, timeframe)
-        sync_log.total_bars = total_bars
 
-        sync_log.status = status
-        sync_log.error_message = error_message
+        # Build insert values
+        insert_values = {
+            "ticker_id": ticker_id,
+            "timeframe": timeframe,
+            "last_synced_timestamp": normalized_last,
+            "first_synced_timestamp": normalized_first,
+            "last_sync_at": now,
+            "bars_fetched": bars_fetched,
+            "total_bars": total_bars,
+            "status": status,
+            "error_message": error_message,
+        }
 
+        # Build update set for conflict — use SQL expressions for conditional updates
+        update_set = {
+            "last_sync_at": now,
+            "bars_fetched": bars_fetched,
+            "total_bars": total_bars,
+            "status": status,
+            "error_message": error_message,
+        }
+        if normalized_last is not None:
+            update_set["last_synced_timestamp"] = normalized_last
+        if normalized_first is not None:
+            # Keep the earliest first_synced_timestamp via LEAST()
+            update_set["first_synced_timestamp"] = func.least(
+                DataSyncLog.first_synced_timestamp, normalized_first
+            )
+
+        stmt = pg_insert(DataSyncLog).values(**insert_values)
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_sync_ticker_timeframe",
+            set_=update_set,
+        ).returning(DataSyncLog.id)
+
+        result = self.session.execute(stmt)
+        sync_log_id = result.scalar_one()
         self.session.flush()
-        return sync_log
+
+        # Return the full ORM object
+        return self.session.query(DataSyncLog).get(sync_log_id)
 
     def get_all_sync_logs(
         self,

@@ -3,6 +3,7 @@
 import logging
 import os
 import sys
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -20,9 +21,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, Query
+from cachetools import TTLCache
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+from src.api.auth_middleware import get_current_user
 
 from config.settings import get_settings
 from src.utils.logging import setup_logging
@@ -245,30 +249,34 @@ def get_database_loader() -> DatabaseLoader:
     return DatabaseLoader(alpaca_loader=alpaca_loader, validate=True, auto_fetch=True)
 
 
-# Cache for loaded data and computed states
-_cache = {}
+# Thread-safe cache with TTL and size limits
+_cache = TTLCache(maxsize=500, ttl=300)
+_cache_lock = threading.RLock()
 
 
 def get_cached_data(key: str):
-    """Get data from cache."""
-    return _cache.get(key)
+    """Get data from cache (thread-safe)."""
+    with _cache_lock:
+        return _cache.get(key)
 
 
 def set_cached_data(key: str, data):
-    """Set data in cache."""
-    _cache[key] = data
+    """Set data in cache (thread-safe)."""
+    with _cache_lock:
+        _cache[key] = data
 
 
 def invalidate_cache_for_symbol(symbol: str):
-    """Remove all cached entries for a symbol so fresh data is read from DB."""
+    """Remove all cached entries for a symbol so fresh data is read from DB (thread-safe)."""
     upper = symbol.upper()
-    keys_to_remove = [k for k in _cache if upper in k.upper()]
-    for k in keys_to_remove:
-        del _cache[k]
+    with _cache_lock:
+        keys_to_remove = [k for k in _cache if upper in k.upper()]
+        for k in keys_to_remove:
+            del _cache[k]
 
 
 @app.get("/api/sources", response_model=list[DataSourceInfo])
-async def get_data_sources():
+async def get_data_sources(_user_id: int = Depends(get_current_user)):
     """Get list of available data sources."""
     sources = []
 
@@ -376,6 +384,7 @@ async def get_ohlcv_data(
     timeframe: str = Query("1Min", description="Bar timeframe (1Min, 5Min, 15Min, 1Hour, 1Day)"),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    _user_id: int = Depends(get_current_user),
 ):
     """Load OHLCV data for a ticker symbol.
 
@@ -407,6 +416,9 @@ async def get_ohlcv_data(
 
 # ---------------------------------------------------------------------------
 # Go-strats compatible endpoints (/api/bars, /api/indicators)
+# NOTE: These remain unauthenticated — the Go client is an internal service
+# that does not send JWT tokens. Consider adding API-key auth for
+# machine-to-machine calls if these are exposed externally.
 # ---------------------------------------------------------------------------
 
 @app.get("/api/bars")
@@ -542,45 +554,59 @@ async def get_indicators_for_go(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/features/{symbol}")
-async def get_features(
+async def _get_features_internal(
     symbol: str,
-    timeframe: str = Query("1Min", description="Bar timeframe"),
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None),
-):
-    """Compute and return features for the data."""
-    # First ensure OHLCV data is loaded
-    await get_ohlcv_data(symbol, timeframe, start_date, end_date)
+    timeframe: str = "1Min",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> dict:
+    """Internal helper to compute and return features.
+
+    Can be called from other endpoints without FastAPI dependency issues.
+    """
+    await _load_ohlcv_internal(symbol, timeframe, start_date, end_date)
 
     cache_key = f"features_{symbol}_{timeframe}_{start_date}_{end_date}"
     cached = get_cached_data(cache_key)
     if cached is not None:
         return cached
 
+    df = get_cached_data(f"df_{symbol.upper()}")
+    if df is None:
+        raise HTTPException(status_code=400, detail="OHLCV data not loaded")
+
+    # Compute features
+    pipeline = FeaturePipeline.default()
+    features_df = pipeline.compute(df)
+
+    # Store for regime computation
+    set_cached_data(f"features_df_{symbol.upper()}", features_df)
+
+    # Convert to response format
+    response = {
+        "timestamps": features_df.index.strftime("%Y-%m-%dT%H:%M:%SZ").tolist(),
+        "features": {col: features_df[col].replace([np.inf, -np.inf], np.nan).fillna(0).tolist()
+                    for col in features_df.columns},
+        "feature_names": features_df.columns.tolist(),
+    }
+
+    set_cached_data(cache_key, response)
+    return response
+
+
+@app.get("/api/features/{symbol}")
+async def get_features(
+    symbol: str,
+    timeframe: str = Query("1Min", description="Bar timeframe"),
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+    _user_id: int = Depends(get_current_user),
+):
+    """Compute and return features for the data."""
     try:
-        df = get_cached_data(f"df_{symbol.upper()}")
-        if df is None:
-            raise HTTPException(status_code=400, detail="OHLCV data not loaded")
-
-        # Compute features
-        pipeline = FeaturePipeline.default()
-        features_df = pipeline.compute(df)
-
-        # Store for regime computation
-        set_cached_data(f"features_df_{symbol.upper()}", features_df)
-
-        # Convert to response format
-        response = {
-            "timestamps": features_df.index.strftime("%Y-%m-%dT%H:%M:%SZ").tolist(),
-            "features": {col: features_df[col].replace([np.inf, -np.inf], np.nan).fillna(0).tolist()
-                        for col in features_df.columns},
-            "feature_names": features_df.columns.tolist(),
-        }
-
-        set_cached_data(cache_key, response)
-        return response
-
+        return await _get_features_internal(symbol, timeframe, start_date, end_date)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -592,6 +618,7 @@ async def get_regimes(
     model_id: str = Query(None, description="Model ID (default: latest)"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    _user_id: int = Depends(get_current_user),
 ):
     """Get HMM regime states for a symbol.
 
@@ -599,7 +626,7 @@ async def get_regimes(
     to return state assignments with semantic labels.
     """
     # First ensure features are computed
-    await get_features(symbol, timeframe, start_date, end_date)
+    await _get_features_internal(symbol, timeframe, start_date, end_date)
 
     cache_key = f"regimes_{symbol.upper()}_{timeframe}_{model_id}_{start_date}_{end_date}"
     cached = get_cached_data(cache_key)
@@ -757,10 +784,11 @@ async def get_statistics(
     timeframe: str = Query("1Min", description="Bar timeframe"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    _user_id: int = Depends(get_current_user),
 ):
     """Get comprehensive statistics summary."""
     # Load data first
-    await get_ohlcv_data(symbol, timeframe, start_date, end_date)
+    await _load_ohlcv_internal(symbol, timeframe, start_date, end_date)
 
     try:
         df = get_cached_data(f"df_{symbol.upper()}")
@@ -809,10 +837,11 @@ async def get_statistics(
         # Regime statistics (if computed)
         regime_stats = {}
         regime_cache_key = None
-        for key in _cache.keys():
-            if key.startswith(f"regimes_{symbol.upper()}"):
-                regime_cache_key = key
-                break
+        with _cache_lock:
+            for key in list(_cache.keys()):
+                if key.startswith(f"regimes_{symbol.upper()}"):
+                    regime_cache_key = key
+                    break
 
         if regime_cache_key:
             regime_data = get_cached_data(regime_cache_key)
@@ -834,10 +863,10 @@ async def get_statistics(
 
 
 @app.delete("/api/cache")
-async def clear_cache():
+async def clear_cache(_user_id: int = Depends(get_current_user)):
     """Clear the data cache."""
-    global _cache
-    _cache = {}
+    with _cache_lock:
+        _cache.clear()
     return {"message": "Cache cleared"}
 
 
@@ -847,7 +876,7 @@ async def clear_cache():
 
 
 @app.get("/api/tickers", response_model=list[TickerInfo])
-async def list_tickers():
+async def list_tickers(_user_id: int = Depends(get_current_user)):
     """List all tickers stored in the database."""
     try:
         db_loader = get_database_loader()
@@ -867,7 +896,7 @@ async def list_tickers():
 
 
 @app.get("/api/tickers/{symbol}/summary", response_model=DataSummaryResponse)
-async def get_ticker_summary(symbol: str):
+async def get_ticker_summary(symbol: str, _user_id: int = Depends(get_current_user)):
     """Get data summary for a specific ticker."""
     try:
         db_loader = get_database_loader()
@@ -892,7 +921,7 @@ async def get_ticker_summary(symbol: str):
 
 
 @app.get("/api/sync-status/{symbol}", response_model=list[SyncStatusResponse])
-async def get_sync_status(symbol: str):
+async def get_sync_status(symbol: str, _user_id: int = Depends(get_current_user)):
     """Get synchronization status for a symbol."""
     try:
         db_loader = get_database_loader()
@@ -914,6 +943,7 @@ async def trigger_sync(
     timeframe: str = Query("1Min", description="Timeframe to sync"),
     start_date: Optional[str] = Query(None, description="Start date for historical sync"),
     end_date: Optional[str] = Query(None, description="End date (defaults to now)"),
+    _user_id: int = Depends(get_current_user),
 ):
     """Trigger data synchronization for a symbol.
 
@@ -984,110 +1014,109 @@ class ComputeFeaturesResponse(BaseModel):
     message: str
 
 
-@app.post("/api/compute-features/{symbol}")
-async def compute_features(symbol: str, force: bool = False):
-    """Compute all features for all timeframes of a ticker.
+async def _compute_features_internal(symbol: str, force: bool = False) -> ComputeFeaturesResponse:
+    """Internal helper to compute features for all timeframes of a ticker.
 
-    This computes the full feature set including returns, volatility, volume,
-    intrabar, anchor, time-of-day, and TA-Lib indicators (68 features total).
-
-    Args:
-        symbol: Ticker symbol
-        force: If True, recompute features for all bars (overwrites existing)
+    Can be called from other endpoints without FastAPI dependency issues.
     """
-    try:
-        from src.data.database.market_repository import OHLCVRepository
-        from src.features import FeaturePipeline
+    from src.data.database.market_repository import OHLCVRepository
+    from src.features import FeaturePipeline
 
-        # Use full FeaturePipeline for all 68 features
-        pipeline = FeaturePipeline.default()
+    # Use full FeaturePipeline for all 68 features
+    pipeline = FeaturePipeline.default()
 
-        db_manager = get_db_manager()
-        stats = {
-            "timeframes_processed": 0,
-            "timeframes_skipped": 0,
-            "features_stored": 0,
-        }
+    db_manager = get_db_manager()
+    stats = {
+        "timeframes_processed": 0,
+        "timeframes_skipped": 0,
+        "features_stored": 0,
+    }
 
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+    with db_manager.get_session() as session:
+        repo = OHLCVRepository(session)
 
-            # Get ticker
-            ticker = repo.get_or_create_ticker(symbol.upper())
+        # Get ticker
+        ticker = repo.get_or_create_ticker(symbol.upper())
 
-            for timeframe in VALID_TIMEFRAMES:
-                # Get OHLCV data
-                df = repo.get_bars(symbol.upper(), timeframe)
-                if df.empty:
-                    continue
+        for timeframe in VALID_TIMEFRAMES:
+            # Get OHLCV data
+            df = repo.get_bars(symbol.upper(), timeframe)
+            if df.empty:
+                continue
 
-                # Check existing features (skip if force=True)
-                if force:
-                    missing_timestamps = set(
-                        ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
-                        for ts in df.index
-                    )
-                    logger.info(f"  {timeframe}: Force recomputing features for {len(df)} bars")
-                else:
-                    existing_timestamps = repo.get_existing_feature_timestamps(
-                        ticker_id=ticker.id,
-                        timeframe=timeframe,
-                    )
-
-                    df_timestamps = set(
-                        ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
-                        for ts in df.index
-                    )
-                    missing_timestamps = df_timestamps - existing_timestamps
-
-                    if not missing_timestamps:
-                        stats["timeframes_skipped"] += 1
-                        logger.info(f"  {timeframe}: All {len(df)} bars already have features")
-                        continue
-
-                    logger.info(
-                        f"  {timeframe}: Computing features for {len(missing_timestamps)} bars "
-                        f"(out of {len(df)} total)"
-                    )
-
-                # Compute all features using FeaturePipeline
-                features_df = pipeline.compute(df)
-                if features_df.empty:
-                    continue
-
-                # Filter to only store new features
-                features_df_filtered = features_df[
-                    features_df.index.map(
-                        lambda ts: (ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts)
-                        in missing_timestamps
-                    )
-                ]
-
-                if features_df_filtered.empty:
-                    continue
-
-                # Store features
-                rows_stored = repo.store_features(
-                    features_df=features_df_filtered,
+            # Check existing features (skip if force=True)
+            if force:
+                missing_timestamps = set(
+                    ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                    for ts in df.index
+                )
+                logger.info(f"  {timeframe}: Force recomputing features for {len(df)} bars")
+            else:
+                existing_timestamps = repo.get_existing_feature_timestamps(
                     ticker_id=ticker.id,
                     timeframe=timeframe,
-                    version="v1.0",
                 )
 
-                stats["timeframes_processed"] += 1
-                stats["features_stored"] += rows_stored
-                logger.info(f"  {timeframe}: Stored {rows_stored} feature rows")
+                df_timestamps = set(
+                    ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts
+                    for ts in df.index
+                )
+                missing_timestamps = df_timestamps - existing_timestamps
 
-            session.commit()
+                if not missing_timestamps:
+                    stats["timeframes_skipped"] += 1
+                    logger.info(f"  {timeframe}: All {len(df)} bars already have features")
+                    continue
 
-        return ComputeFeaturesResponse(
-            symbol=symbol.upper(),
-            timeframes_processed=stats["timeframes_processed"],
-            timeframes_skipped=stats["timeframes_skipped"],
-            features_stored=stats["features_stored"],
-            message=f"Computed features for {symbol.upper()}: {stats['features_stored']} rows stored"
-        )
+                logger.info(
+                    f"  {timeframe}: Computing features for {len(missing_timestamps)} bars "
+                    f"(out of {len(df)} total)"
+                )
 
+            # Compute all features using FeaturePipeline
+            features_df = pipeline.compute(df)
+            if features_df.empty:
+                continue
+
+            # Filter to only store new features
+            features_df_filtered = features_df[
+                features_df.index.map(
+                    lambda ts: (ts.replace(tzinfo=None) if hasattr(ts, 'tzinfo') and ts.tzinfo else ts)
+                    in missing_timestamps
+                )
+            ]
+
+            if features_df_filtered.empty:
+                continue
+
+            # Store features
+            rows_stored = repo.store_features(
+                features_df=features_df_filtered,
+                ticker_id=ticker.id,
+                timeframe=timeframe,
+                version="v1.0",
+            )
+
+            stats["timeframes_processed"] += 1
+            stats["features_stored"] += rows_stored
+            logger.info(f"  {timeframe}: Stored {rows_stored} feature rows")
+
+        session.commit()
+
+    return ComputeFeaturesResponse(
+        symbol=symbol.upper(),
+        timeframes_processed=stats["timeframes_processed"],
+        timeframes_skipped=stats["timeframes_skipped"],
+        features_stored=stats["features_stored"],
+        message=f"Computed features for {symbol.upper()}: {stats['features_stored']} rows stored"
+    )
+
+
+@app.post("/api/compute-features/{symbol}")
+async def compute_features(symbol: str, force: bool = False, _user_id: int = Depends(get_current_user)):
+    """Compute all features for all timeframes of a ticker."""
+    try:
+        return await _compute_features_internal(symbol, force)
     except HTTPException:
         raise
     except Exception as e:
@@ -1100,6 +1129,7 @@ async def import_data(
     symbol: str = Query(..., description="Symbol to import as"),
     file_path: str = Query(..., description="Path to CSV or Parquet file"),
     timeframe: str = Query("1Min", description="Timeframe of the data"),
+    _user_id: int = Depends(get_current_user),
 ):
     """Import data from a local file into the database."""
     if timeframe not in VALID_TIMEFRAMES:
@@ -1145,6 +1175,7 @@ class AnalyzeResponse(BaseModel):
 async def analyze_symbol(
     symbol: str,
     timeframe: str = Query("1Min", description="Timeframe to analyze"),
+    _user_id: int = Depends(get_current_user),
 ):
     """Analyze a symbol: compute features, train model if needed, compute states.
 
@@ -1196,7 +1227,7 @@ async def analyze_symbol(
 
         # Step 1: Compute features for bars that don't have them
         logger.info(f"[Analyze] Step 1: Computing features for {symbol}/{timeframe}")
-        features_result = await compute_features(symbol, force=False)
+        features_result = await _compute_features_internal(symbol, force=False)
         result["features_computed"] = features_result.features_stored
         if features_result.features_stored > 0:
             messages.append(f"Computed {features_result.features_stored} features")
@@ -1421,6 +1452,7 @@ async def analyze_symbol_pca(
     timeframe: str = Query("1Min", description="Timeframe to analyze"),
     n_components: Optional[int] = Query(None, description="Number of PCA components (auto if not specified)"),
     n_states: Optional[int] = Query(None, description="Number of K-means clusters (auto if not specified)"),
+    _user_id: int = Depends(get_current_user),
 ):
     """Analyze a symbol using PCA + K-means state computation.
 
@@ -1479,7 +1511,7 @@ async def analyze_symbol_pca(
 
         # Step 1: Ensure features are computed
         logger.info(f"[PCA Analyze] Step 1: Computing features for {symbol}/{timeframe}")
-        features_result = await compute_features(symbol, force=False)
+        features_result = await _compute_features_internal(symbol, force=False)
         result["features_computed"] = features_result.features_stored
         if features_result.features_stored > 0:
             messages.append(f"Computed {features_result.features_stored} features")
@@ -1611,6 +1643,7 @@ async def get_pca_regimes(
     model_id: str = Query("pca_v001", description="Model ID"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    _user_id: int = Depends(get_current_user),
 ):
     """Get PCA-based regime states for a symbol."""
     from src.features.state.pca import PCAStateEngine, get_pca_model_path, list_pca_models

@@ -210,6 +210,8 @@ class DatabaseConfig(BaseSettings):
     password: str = Field(default="", description="Database password")
     pool_size: int = Field(default=5, description="Connection pool size")
     max_overflow: int = Field(default=10, description="Max pool overflow connections")
+    pool_recycle: int = Field(default=3600, description="Recycle connections after N seconds (avoids stale connections)")
+    pool_timeout: int = Field(default=30, description="Seconds to wait for a connection from pool before timeout")
     echo: bool = Field(default=False, description="Echo SQL statements for debugging")
 
     @property

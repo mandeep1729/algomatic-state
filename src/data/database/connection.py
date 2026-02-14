@@ -37,14 +37,17 @@ class DatabaseManager:
         """Get or create the database engine with connection pooling."""
         if self._engine is None:
             logger.info(
-                "Creating database engine (pool_size=%d, max_overflow=%d)",
+                "Creating database engine (pool_size=%d, max_overflow=%d, pool_recycle=%d, pool_timeout=%d)",
                 self.config.pool_size, self.config.max_overflow,
+                self.config.pool_recycle, self.config.pool_timeout,
             )
             self._engine = create_engine(
                 self.config.url,
                 poolclass=QueuePool,
                 pool_size=self.config.pool_size,
                 max_overflow=self.config.max_overflow,
+                pool_recycle=self.config.pool_recycle,
+                pool_timeout=self.config.pool_timeout,
                 pool_pre_ping=True,  # Enable connection health checks
                 echo=self.config.echo,
             )
