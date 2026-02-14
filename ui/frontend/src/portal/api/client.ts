@@ -35,6 +35,7 @@ import type {
   TradeSummary,
   CampaignSummary,
   CampaignDetail,
+  CampaignCheck,
   DecisionContext,
   TickerPnlSummary,
   PnlTimeseries,
@@ -317,6 +318,7 @@ interface BackendCampaignDetail {
   campaign: CampaignDetail['campaign'];
   legs: CampaignDetail['legs'];
   contextsByLeg: Record<string, DecisionContext | undefined>;
+  checksByLeg: Record<string, CampaignCheck[]>;
 }
 
 export async function fetchCampaigns(
@@ -383,6 +385,7 @@ export async function fetchCampaignDetail(campaignId: string): Promise<CampaignD
     evaluationCampaign: emptyBundle,
     evaluationByLeg: {},
     contextsByLeg: raw.contextsByLeg ?? {},
+    checksByLeg: raw.checksByLeg ?? {},
   };
 }
 

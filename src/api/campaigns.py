@@ -24,6 +24,7 @@ from src.data.database.trading_repository import TradingBuddyRepository
 from src.data.database.trade_lifecycle_models import (
     PositionCampaign,
     CampaignLeg,
+    CampaignCheck,
     DecisionContext,
 )
 from src.data.database.strategy_models import Strategy
@@ -119,11 +120,28 @@ class DecisionContextResponse(BaseModel):
     updatedAt: str
 
 
+class CampaignCheckResponse(BaseModel):
+    """A single behavioral nudge check attached to a campaign leg."""
+    checkId: str
+    legId: str
+    checkType: str
+    code: str
+    severity: str
+    passed: bool
+    nudgeText: Optional[str] = None
+    details: Optional[dict] = None
+    checkPhase: str
+    checkedAt: str
+    acknowledged: Optional[bool] = None
+    traderAction: Optional[str] = None
+
+
 class CampaignDetailResponse(BaseModel):
     """Full campaign detail response."""
     campaign: CampaignMetaResponse
     legs: List[CampaignLegResponse]
     contextsByLeg: dict
+    checksByLeg: dict
 
 
 class SaveContextRequest(BaseModel):
@@ -248,6 +266,26 @@ def _leg_to_response(leg, campaign_id: str) -> CampaignLegResponse:
         avgPrice=leg.avg_price or 0,
         startedAt=_format_dt(leg.started_at),
         endedAt=_format_dt(leg.ended_at),
+    )
+
+
+def _check_to_response(check) -> CampaignCheckResponse:
+    """Convert a CampaignCheck ORM model to a response."""
+    details = check.details or {}
+    code = details.get("code") or check.check_type
+    return CampaignCheckResponse(
+        checkId=str(check.id),
+        legId=str(check.leg_id),
+        checkType=check.check_type,
+        code=code,
+        severity=check.severity,
+        passed=check.passed,
+        nudgeText=check.nudge_text,
+        details=check.details,
+        checkPhase=check.check_phase,
+        checkedAt=_format_dt(check.checked_at),
+        acknowledged=check.acknowledged,
+        traderAction=check.trader_action,
     )
 
 
@@ -951,6 +989,22 @@ async def get_campaign_detail(
         key = str(ctx.leg_id) if ctx.leg_id else "campaign"
         contexts_by_leg[key] = _context_to_response(ctx)
 
+    # Query checks for all legs and group by leg_id
+    leg_ids = [leg.id for leg in legs]
+    checks_by_leg: dict[str, list] = {}
+    if leg_ids:
+        checks = (
+            db.query(CampaignCheck)
+            .filter(CampaignCheck.leg_id.in_(leg_ids))
+            .order_by(CampaignCheck.checked_at.asc())
+            .all()
+        )
+        for check in checks:
+            key = str(check.leg_id)
+            if key not in checks_by_leg:
+                checks_by_leg[key] = []
+            checks_by_leg[key].append(_check_to_response(check))
+
     campaign_meta = CampaignMetaResponse(
         campaignId=campaign_id_str,
         symbol=campaign.symbol,
@@ -969,6 +1023,7 @@ async def get_campaign_detail(
         campaign=campaign_meta,
         legs=legs_response,
         contextsByLeg=contexts_by_leg,
+        checksByLeg=checks_by_leg,
     )
 
 

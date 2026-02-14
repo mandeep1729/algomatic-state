@@ -379,6 +379,25 @@ export interface EvaluationBundle {
   dimensions: EvaluationDimension[];
 }
 
+// --- Campaign Checks (behavioral nudges) ---
+
+export type CheckSeverity = 'info' | 'warn' | 'block' | 'danger';
+
+export interface CampaignCheck {
+  checkId: string;
+  legId: string;
+  checkType: string;
+  code: string;
+  severity: CheckSeverity;
+  passed: boolean;
+  nudgeText: string | null;
+  details: Record<string, unknown> | null;
+  checkPhase: string;
+  checkedAt: string;
+  acknowledged: boolean | null;
+  traderAction: string | null;
+}
+
 export interface DecisionContext {
   contextId: string;
   scope: 'campaign' | 'leg' | 'idea';
@@ -401,6 +420,7 @@ export interface CampaignDetail {
   evaluationCampaign: EvaluationBundle;
   evaluationByLeg: Record<string, EvaluationBundle>;
   contextsByLeg: Record<string, DecisionContext | undefined>;
+  checksByLeg: Record<string, CampaignCheck[]>;
 }
 
 // --- Broker (re-export from existing types for convenience) ---

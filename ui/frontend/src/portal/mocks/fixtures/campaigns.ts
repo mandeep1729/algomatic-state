@@ -244,6 +244,7 @@ export const MOCK_CAMPAIGN_DETAILS: Record<string, CampaignDetail> = {
       l2: undefined,
       l3: undefined,
     },
+    checksByLeg: {},
   },
 
   c2: {
@@ -348,5 +349,6 @@ export const MOCK_CAMPAIGN_DETAILS: Record<string, CampaignDetail> = {
       },
       l5: undefined,
     },
+    checksByLeg: {},
   },
 };

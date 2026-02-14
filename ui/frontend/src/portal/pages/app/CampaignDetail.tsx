@@ -5,12 +5,12 @@ import { USE_MOCKS } from '../../mocks/enable';
 import { fetchMockCampaignOHLCVData } from '../../mocks/mockApi';
 import { fetchCampaignOHLCVData } from '../../api';
 import { Timeline } from '../../components/campaigns/Timeline';
-import { EvaluationGrid } from '../../components/campaigns/EvaluationGrid';
+import { ChecksSummary } from '../../components/campaigns/ChecksSummary';
 import { ContextPanel } from '../../components/campaigns/ContextPanel';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
 import { CampaignPricePnlChart } from '../../components/campaigns/CampaignPricePnlChart';
 import type { LegMarker } from '../../components/campaigns/CampaignPricePnlChart';
-import type { CampaignDetail as CampaignDetailType, DecisionContext, EvaluationBundle } from '../../types';
+import type { CampaignDetail as CampaignDetailType, CampaignCheck, DecisionContext } from '../../types';
 import { computeCampaignRunningPnl } from '../../utils/campaignPnl';
 
 type TabKey = 'campaign' | string;
@@ -181,12 +181,18 @@ export default function CampaignDetail() {
     ? detail.legs.find((l) => l.legId === tab)
     : undefined;
 
-  // Resolve evaluation bundle for the current tab
-  const currentBundle: EvaluationBundle | null = useMemo(() => {
-    if (!detail) return null;
-    if (isCampaignTab) return detail.evaluationCampaign;
-    if (selectedLeg) return detail.evaluationByLeg[selectedLeg.legId] ?? null;
-    return null;
+  // Resolve checks for the current tab
+  const currentChecks: CampaignCheck[] = useMemo(() => {
+    if (!detail) return [];
+    const checksByLeg = detail.checksByLeg ?? {};
+    if (isCampaignTab) {
+      // Flatten all checks from all legs
+      return Object.values(checksByLeg).flat();
+    }
+    if (selectedLeg) {
+      return checksByLeg[selectedLeg.legId] ?? [];
+    }
+    return [];
   }, [detail, isCampaignTab, selectedLeg]);
 
   // Determine context type based on leg type
@@ -370,18 +376,18 @@ export default function CampaignDetail() {
 
       {/* Content: 2-column layout */}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* Left column: Evaluation */}
+        {/* Left column: Checks */}
         <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
           <h2 className="mb-4 text-sm font-medium text-[var(--text-primary)]">
             {isCampaignTab
-              ? 'Evaluation (Campaign)'
-              : `Evaluation (${selectedLeg?.legType.toUpperCase() ?? 'Leg'})`}
+              ? 'Checks (Campaign)'
+              : `Checks (${selectedLeg?.legType.toUpperCase() ?? 'Leg'})`}
           </h2>
-          {currentBundle ? (
-            <EvaluationGrid bundle={currentBundle} />
+          {currentChecks.length > 0 ? (
+            <ChecksSummary checks={currentChecks} />
           ) : (
             <p className="text-sm text-[var(--text-secondary)]">
-              No evaluation data available for this selection.
+              No checks available for this selection.
             </p>
           )}
         </div>
