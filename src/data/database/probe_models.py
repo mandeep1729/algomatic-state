@@ -113,6 +113,7 @@ class StrategyProbeResult(Base):
         ),
         Index("ix_probe_strat_tf_risk", "strategy_id", "timeframe", "risk_profile"),
         Index("ix_probe_symbol_run", "symbol", "run_id"),
+        Index("ix_probe_results_open_day", "open_day"),
     )
 
     def __repr__(self) -> str:
