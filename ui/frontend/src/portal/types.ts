@@ -316,6 +316,8 @@ export interface CampaignSummary {
   strategies: string[];
   /** Broker order IDs from trade fills */
   orderIds?: string[];
+  /** Realized PnL for closed campaigns */
+  pnlRealized?: number;
 }
 
 export interface Campaign {

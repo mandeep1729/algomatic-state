@@ -132,6 +132,29 @@ const columns: Column<CampaignSummary>[] = [
     ),
   },
   {
+    key: 'pnl',
+    header: 'PnL',
+    filterFn: (campaign, filterText) => {
+      if (campaign.status !== 'closed' || campaign.pnlRealized == null) return false;
+      return `$${campaign.pnlRealized.toFixed(2)}`.includes(filterText);
+    },
+    render: (campaign) => {
+      if (campaign.status !== 'closed' || campaign.pnlRealized == null) {
+        return <span className="text-[var(--text-secondary)]">-</span>;
+      }
+      const isPositive = campaign.pnlRealized >= 0;
+      return (
+        <span
+          className={`font-medium ${
+            isPositive ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'
+          }`}
+        >
+          {isPositive ? '+' : ''}${campaign.pnlRealized.toFixed(2)}
+        </span>
+      );
+    },
+  },
+  {
     key: 'evaluation',
     header: 'Evaluation',
     filterFn: (campaign, filterText) => {

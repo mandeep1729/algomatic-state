@@ -76,6 +76,7 @@ class CampaignSummaryResponse(BaseModel):
     keyFlags: List[str]
     strategies: List[str] = []
     orderIds: List[str] = []
+    pnlRealized: Optional[float] = None
 
 
 class CampaignLegResponse(BaseModel):
@@ -268,6 +269,7 @@ def _campaign_to_summary(
         keyFlags=key_flags,
         strategies=strategies,
         orderIds=order_ids,
+        pnlRealized=campaign.realized_pnl,
     )
 
 
