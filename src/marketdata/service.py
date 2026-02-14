@@ -33,10 +33,9 @@ class MarketDataService:
     that downstream readers (``ContextPackBuilder``, API endpoints, etc.)
     can query fresh rows.
 
-    The gap-detection and aggregation logic mirrors
-    ``DatabaseLoader._sync_missing_data()`` but is extracted here so
-    that the pub/sub orchestrator can call it without instantiating a
-    ``DatabaseLoader``.
+    ``DatabaseLoader._sync_missing_data()`` delegates to this service
+    for all fetch/insert/aggregation work so that there is a single
+    canonical implementation of gap detection and data persistence.
     """
 
     def __init__(
