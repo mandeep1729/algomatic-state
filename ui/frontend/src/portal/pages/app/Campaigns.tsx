@@ -48,6 +48,14 @@ const columns: Column<CampaignSummary>[] = [
     key: 'campaign',
     header: 'Campaign',
     hideable: false,
+    filterFn: (campaign, filterText) => {
+      const text = filterText.toLowerCase();
+      return (
+        campaign.symbol.toLowerCase().includes(text) ||
+        campaign.direction.toLowerCase().includes(text) ||
+        formatDateRange(campaign.openedAt, campaign.closedAt).toLowerCase().includes(text)
+      );
+    },
     render: (campaign) => (
       <div>
         <div className="font-medium text-[var(--text-primary)]">
@@ -71,6 +79,8 @@ const columns: Column<CampaignSummary>[] = [
   {
     key: 'legs',
     header: 'Legs',
+    filterFn: (campaign, filterText) =>
+      String(campaign.legsCount).includes(filterText),
     render: (campaign) => (
       <span className="text-[var(--text-secondary)]">{campaign.legsCount}</span>
     ),
@@ -78,6 +88,8 @@ const columns: Column<CampaignSummary>[] = [
   {
     key: 'qty',
     header: 'Qty',
+    filterFn: (campaign, filterText) =>
+      formatQtyWithLegs(campaign.legQuantities).includes(filterText),
     render: (campaign) => (
       <span className="text-[var(--text-secondary)]">
         {formatQtyWithLegs(campaign.legQuantities)}
@@ -102,6 +114,13 @@ const columns: Column<CampaignSummary>[] = [
   {
     key: 'evaluation',
     header: 'Evaluation',
+    filterFn: (campaign, filterText) => {
+      const text = filterText.toLowerCase();
+      return (
+        campaign.overallLabel.toLowerCase().includes(text) ||
+        campaign.keyFlags.some((f) => f.replace(/_/g, ' ').toLowerCase().includes(text))
+      );
+    },
     render: (campaign) => (
       <div className="flex flex-wrap items-center gap-1.5">
         <OverallLabelBadge label={campaign.overallLabel} />
@@ -119,6 +138,11 @@ const columns: Column<CampaignSummary>[] = [
   {
     key: 'strategy',
     header: 'Strategy',
+    filterFn: (campaign, filterText) => {
+      if (!campaign.strategies || campaign.strategies.length === 0) return false;
+      const text = filterText.toLowerCase();
+      return campaign.strategies.some((s) => s.toLowerCase().includes(text));
+    },
     render: (campaign) => {
       if (!campaign.strategies || campaign.strategies.length === 0) {
         return <span className="text-[var(--text-secondary)]">-</span>;
