@@ -107,9 +107,22 @@ class ProbeRunner:
                     df.index.min(), df.index.max(),
                 )
 
-                df = self._ensure_indicators(df, symbol, timeframe, all_required)
+                df, unavailable_indicators = self._ensure_indicators(
+                    df, symbol, timeframe, all_required,
+                )
 
                 for strat in strategies:
+                    # Skip strategies that need unavailable indicators
+                    if unavailable_indicators:
+                        strat_missing = set(strat.required_indicators) & unavailable_indicators
+                        if strat_missing:
+                            logger.error(
+                                "SKIPPING strategy '%s' for %s/%s: missing indicators %s",
+                                strat.name, symbol, timeframe, sorted(strat_missing),
+                            )
+                            combo_count += len(self.config.risk_profiles)
+                            continue
+
                     for risk_name in self.config.risk_profiles:
                         combo_count += 1
                         risk_profile = RISK_PROFILES[risk_name]
@@ -137,6 +150,7 @@ class ProbeRunner:
                                     run_id=run_id,
                                     period_start=self.config.start or df.index.min(),
                                     period_end=self.config.end or df.index.max(),
+                                    strategy_version=strat.version,
                                 )
 
                                 if records:
@@ -279,7 +293,7 @@ class ProbeRunner:
         symbol: str,
         timeframe: str,
         required_indicators: set[str],
-    ) -> pd.DataFrame:
+    ) -> tuple[pd.DataFrame, set[str]]:
         """Compute missing indicators if any required columns are absent.
 
         Checks required_indicators against df.columns. If all present, returns
@@ -294,10 +308,11 @@ class ProbeRunner:
             required_indicators: Union of all strategy required_indicators.
 
         Returns:
-            DataFrame with indicator columns added (if any were missing).
+            Tuple of (DataFrame with indicator columns added, set of
+            indicators that remain unavailable after computation).
         """
         if not required_indicators:
-            return df
+            return df, set()
 
         missing = required_indicators - set(df.columns)
         if not missing:
@@ -305,7 +320,7 @@ class ProbeRunner:
                 "All %d required indicators present for %s/%s",
                 len(required_indicators), symbol, timeframe,
             )
-            return df
+            return df, set()
 
         logger.warning(
             "Missing %d indicators for %s/%s: %s — computing via TALib",
@@ -329,15 +344,16 @@ class ProbeRunner:
 
         still_missing = required_indicators - set(df.columns)
         if still_missing:
-            logger.warning(
-                "%d indicators still missing after computation for %s/%s: %s",
+            logger.error(
+                "%d indicators STILL MISSING after TALib computation for %s/%s: %s "
+                "— strategies requiring these indicators will be SKIPPED",
                 len(still_missing), symbol, timeframe, sorted(still_missing),
             )
 
         # Persist to DB for future runs (non-fatal if it fails)
         self._save_features_to_db(features_df, symbol, timeframe)
 
-        return df
+        return df, still_missing
 
     def _save_features_to_db(
         self,

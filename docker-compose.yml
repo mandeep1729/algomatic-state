@@ -55,6 +55,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "indicator-engine"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   marketdata-service:
@@ -76,12 +81,17 @@ services:
       - SERVICE_INTERVAL_MINUTES=${MARKETDATA_INTERVAL_MINUTES:-5}
       - SERVICE_LOG_FILE=/var/log/marketdata-service/service.log
     volumes:
-      - /home/mandeep/projects/algomatic/logs/marketdata-service:/var/log/marketdata-service
+      - ${LOGS_DIR:-./logs}/marketdata-service:/var/log/marketdata-service
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "marketdata-service"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   reviewer-service:
@@ -102,6 +112,11 @@ services:
       redis:
         condition: service_healthy
     command: python -m src.reviewer.main
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "src.reviewer.main"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     restart: unless-stopped
 
   # Optional: pgAdmin for database management (start with --profile tools)

@@ -41,6 +41,7 @@ class ProbeStrategy(Base):
     strategy_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     direction: Mapped[str] = mapped_column(String(15), nullable=False)
     details: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow, nullable=False,
@@ -75,6 +76,8 @@ class StrategyProbeResult(Base):
     )
     period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    strategy_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     # Dimensions
     timeframe: Mapped[str] = mapped_column(String(10), nullable=False)

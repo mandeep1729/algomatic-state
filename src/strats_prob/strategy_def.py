@@ -46,6 +46,7 @@ class StrategyDef:
     category: str  # trend, mean_reversion, breakout, volume_flow, pattern, regime
     tags: list[str]
     direction: str  # long_short, long_only, short_only
+    version: int = 1  # Bump when strategy logic changes
 
     # Entry conditions: all must be True to trigger entry
     entry_long: list[ConditionFn] = field(default_factory=list)
@@ -76,4 +77,5 @@ class StrategyDef:
             "strategy_type": self.category,
             "direction": self.direction,
             "details": self.details,
+            "version": self.version,
         }

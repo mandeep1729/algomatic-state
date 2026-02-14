@@ -29,6 +29,7 @@ from src.data.database.trade_lifecycle_models import (
     LotClosure as LotClosureModel,
     PositionCampaign as PositionCampaignModel,
     CampaignLeg as CampaignLegModel,
+    CampaignCheck as CampaignCheckModel,
     LegFillMap as LegFillMapModel,
     DecisionContext as DecisionContextModel,
 )

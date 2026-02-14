@@ -59,6 +59,17 @@ class ProbeEngine:
             logger.warning("Empty DataFrame passed to ProbeEngine.run()")
             return []
 
+        # Validate required indicators are present in the DataFrame
+        if self.strategy.required_indicators:
+            missing = set(self.strategy.required_indicators) - set(df.columns)
+            if missing:
+                logger.error(
+                    "Strategy '%s' requires indicators not present in DataFrame: %s "
+                    "— returning no trades",
+                    self.strategy.name, sorted(missing),
+                )
+                return []
+
         trades: list[ProbeTradeResult] = []
         n_bars = len(df)
 

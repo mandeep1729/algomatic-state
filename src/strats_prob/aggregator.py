@@ -23,6 +23,7 @@ def aggregate_trades(
     run_id: str,
     period_start,
     period_end,
+    strategy_version: int = 1,
 ) -> list[dict]:
     """Aggregate trade results into probe records grouped by dimensions.
 
@@ -42,6 +43,7 @@ def aggregate_trades(
         run_id: Unique run identifier.
         period_start: Start of the evaluation period.
         period_end: End of the evaluation period.
+        strategy_version: Version of the strategy definition used.
 
     Returns:
         List of dicts ready for ProbeRepository.bulk_insert_results().
@@ -78,6 +80,7 @@ def aggregate_trades(
             "run_id": run_id,
             "symbol": symbol.upper(),
             "strategy_id": strategy_id,
+            "strategy_version": strategy_version,
             "period_start": period_start,
             "period_end": period_end,
             "timeframe": timeframe,

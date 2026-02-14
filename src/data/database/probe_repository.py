@@ -100,6 +100,7 @@ class ProbeRepository:
                 "strategy_type": stmt.excluded.strategy_type,
                 "direction": stmt.excluded.direction,
                 "details": stmt.excluded.details,
+                "version": stmt.excluded.version,
                 "is_active": True,
             },
         )

@@ -241,6 +241,7 @@ class RedisMessageBus(MessageBusBase):
         """Background loop: subscribe to all event channels and dispatch."""
         import redis as redis_lib
 
+        reconnect_attempts = 0
         try:
             conn = self._get_connection()
             pubsub = conn.pubsub()
@@ -264,11 +265,19 @@ class RedisMessageBus(MessageBusBase):
                 except redis_lib.ConnectionError:
                     if self._shutdown_event.is_set():
                         break
-                    logger.warning("Redis connection lost, reconnecting in 1s...")
-                    self._shutdown_event.wait(1.0)
+                    backoff = min(1.0 * (2 ** reconnect_attempts), 30.0)
+                    reconnect_attempts += 1
+                    logger.warning(
+                        "Redis connection lost, reconnecting in %.1fs (attempt %d)...",
+                        backoff,
+                        reconnect_attempts,
+                    )
+                    self._shutdown_event.wait(backoff)
                     try:
                         pubsub = conn.pubsub()
                         pubsub.subscribe(*channels.keys())
+                        reconnect_attempts = 0  # Reset on successful reconnect
+                        logger.info("Redis reconnected successfully")
                     except Exception:
                         logger.warning("Redis reconnect failed", exc_info=True)
 

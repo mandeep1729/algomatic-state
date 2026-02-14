@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
 
@@ -316,6 +316,18 @@ class AuthConfig(BaseSettings):
     jwt_expiry_hours: int = Field(default=24, description="JWT token expiry in hours")
     dev_mode: bool = Field(default=False, description="Bypass OAuth and use dev user (user_id=1)")
 
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def validate_jwt_secret(cls, v: str) -> str:
+        """Warn if using default JWT secret (production safety check)."""
+        if v == "change-me-in-production":
+            import logging
+            logging.getLogger(__name__).warning(
+                "AUTH_JWT_SECRET_KEY is set to the default value. "
+                "Set a strong secret in .env for production use."
+            )
+        return v
+
 
 class ServerConfig(BaseSettings):
     """Backend server configuration."""
@@ -355,6 +367,20 @@ class Settings(BaseSettings):
     reviewer: ReviewerConfig = Field(default_factory=ReviewerConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+
+    @model_validator(mode="after")
+    def validate_production_safety(self) -> "Settings":
+        """Enforce safety invariants for production environments."""
+        if self.environment == "production":
+            if self.auth.jwt_secret_key == "change-me-in-production":
+                raise ValueError(
+                    "AUTH_JWT_SECRET_KEY must be changed from the default in production"
+                )
+            if self.auth.dev_mode:
+                raise ValueError(
+                    "AUTH_DEV_MODE must not be True in production"
+                )
+        return self
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Settings":

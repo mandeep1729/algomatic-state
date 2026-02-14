@@ -27,8 +27,20 @@ def register_strategies(strategies: list[StrategyDef]) -> int:
     """
     count = 0
     for s in strategies:
+        # Detect ID collisions
         if s.id in _strategies_by_id:
-            logger.debug("Overwriting strategy id=%d name=%s", s.id, s.name)
+            existing = _strategies_by_id[s.id]
+            raise ValueError(
+                f"Duplicate strategy ID {s.id}: "
+                f"new='{s.name}' collides with existing='{existing.name}'"
+            )
+        # Detect name collisions
+        if s.name in _strategies_by_name:
+            existing = _strategies_by_name[s.name]
+            raise ValueError(
+                f"Duplicate strategy name '{s.name}': "
+                f"new id={s.id} collides with existing id={existing.id}"
+            )
         _strategies_by_id[s.id] = s
         _strategies_by_name[s.name] = s
         count += 1
