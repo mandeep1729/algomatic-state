@@ -70,12 +70,12 @@ class TestRS001NoStopLoss:
     """Tests for the no-stop-loss check."""
 
     def test_no_intent_fails(self, checker, mock_leg):
-        """No intent at all → RS001 block."""
+        """No intent at all → RS001 critical."""
         results = checker.run(mock_leg, intent=None, atr=3.5, account_balance=50000)
         rs001 = next(r for r in results if r.code == "RS001")
 
         assert not rs001.passed
-        assert rs001.severity == "block"
+        assert rs001.severity == "critical"
         assert "No stop-loss" in rs001.nudge_text
 
     def test_intent_with_stop_passes(self, checker, mock_leg):
@@ -131,14 +131,14 @@ class TestRS002RiskPct:
         assert rs002.severity == "warn"
 
     def test_risk_exceeds_double_limit_blocks(self, checker, mock_leg):
-        """Risk of 5% → block (above 2×2% = 4%)."""
+        """Risk of 5% → critical (above 2×2% = 4%)."""
         # risk_per_share=5, position_size=500, total_risk=2500, 2500/50000=5%
         intent = make_intent(entry_price=100, stop_loss=95, position_size=500)
         results = checker.run(mock_leg, intent=intent, atr=None, account_balance=50000)
         rs002 = next(r for r in results if r.code == "RS002")
 
         assert not rs002.passed
-        assert rs002.severity == "block"
+        assert rs002.severity == "critical"
 
     def test_no_balance_skips(self, checker, mock_leg):
         """No account balance → passes with skip note."""
@@ -198,14 +198,14 @@ class TestRS003RRRatio:
         assert rs003.severity == "warn"
 
     def test_rr_below_one_blocks(self, checker, mock_leg):
-        """R:R of 0.5 (below 1.0) → block."""
+        """R:R of 0.5 (below 1.0) → critical."""
         # risk=10, reward=5 → R:R=0.5
         intent = make_intent(entry_price=100, stop_loss=90, profit_target=105)
         results = checker.run(mock_leg, intent=intent, atr=None, account_balance=50000)
         rs003 = next(r for r in results if r.code == "RS003")
 
         assert not rs003.passed
-        assert rs003.severity == "block"
+        assert rs003.severity == "critical"
 
     def test_rr_exactly_at_minimum_passes(self, checker, mock_leg):
         """R:R of exactly 1.5 → passes (boundary)."""
@@ -344,7 +344,7 @@ class TestSeverityOverrides:
     """Tests for configurable severity via severity_overrides."""
 
     def test_rs001_override_to_danger(self, mock_leg):
-        """RS001 severity can be changed from 'block' to 'danger'."""
+        """RS001 severity can be changed from 'critical' to 'danger'."""
         cfg = ChecksConfig(severity_overrides={"RS001": "danger"})
         checker = RiskSanityChecker(cfg)
 
@@ -444,7 +444,7 @@ class TestSeverityOverrides:
         cfg = ChecksConfig(severity_overrides={
             "RS002": "danger",
             "RS003": "danger",
-            "RS004": "block",
+            "RS004": "critical",
         })
         checker = RiskSanityChecker(cfg)
 
@@ -465,13 +465,13 @@ class TestSeverityOverrides:
 
         assert rs002.severity == "danger"
         assert rs003.severity == "danger"
-        assert rs004.severity == "block"
+        assert rs004.severity == "critical"
 
     def test_default_severities_when_no_overrides(self, mock_leg):
         """Without overrides, built-in defaults are used."""
         cfg = ChecksConfig()  # no severity_overrides
         checker = RiskSanityChecker(cfg)
 
-        # RS001 fails → default "block"
+        # RS001 fails → default "critical"
         results = checker.run(mock_leg, intent=None, atr=None, account_balance=None)
-        assert results[0].severity == "block"
+        assert results[0].severity == "critical"

@@ -34,6 +34,7 @@ export const MOCK_CAMPAIGN_SUMMARIES: CampaignSummary[] = [
     overallLabel: 'mixed',
     keyFlags: ['exit_early', 'add_late', 'vol_high'],
     strategies: ['pullback', 'momentum'],
+    pnlRealized: 460.0,
   },
   {
     campaignId: 'c2',
@@ -48,6 +49,7 @@ export const MOCK_CAMPAIGN_SUMMARIES: CampaignSummary[] = [
     overallLabel: 'fragile',
     keyFlags: ['regime_mismatch', 'rushed_trade'],
     strategies: ['mean-reversion', 'gap-fade'],
+    pnlRealized: -135.50,
   },
 ];
 
@@ -244,6 +246,7 @@ export const MOCK_CAMPAIGN_DETAILS: Record<string, CampaignDetail> = {
       l2: undefined,
       l3: undefined,
     },
+    checksByLeg: {},
   },
 
   c2: {
@@ -348,5 +351,6 @@ export const MOCK_CAMPAIGN_DETAILS: Record<string, CampaignDetail> = {
       },
       l5: undefined,
     },
+    checksByLeg: {},
   },
 };

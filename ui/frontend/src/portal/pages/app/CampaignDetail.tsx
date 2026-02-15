@@ -5,12 +5,12 @@ import { USE_MOCKS } from '../../mocks/enable';
 import { fetchMockCampaignOHLCVData } from '../../mocks/mockApi';
 import { fetchCampaignOHLCVData } from '../../api';
 import { Timeline } from '../../components/campaigns/Timeline';
-import { EvaluationGrid } from '../../components/campaigns/EvaluationGrid';
+import { ChecksSummary } from '../../components/campaigns/ChecksSummary';
 import { ContextPanel } from '../../components/campaigns/ContextPanel';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
 import { CampaignPricePnlChart } from '../../components/campaigns/CampaignPricePnlChart';
 import type { LegMarker } from '../../components/campaigns/CampaignPricePnlChart';
-import type { CampaignDetail as CampaignDetailType, DecisionContext, EvaluationBundle } from '../../types';
+import type { CampaignDetail as CampaignDetailType, CampaignCheck, DecisionContext } from '../../types';
 import { computeCampaignRunningPnl } from '../../utils/campaignPnl';
 
 type TabKey = 'campaign' | string;
@@ -176,17 +176,41 @@ export default function CampaignDetail() {
     ];
   }, [detail]);
 
+  // Count critical check failures per leg for badge display
+  const CRITICAL_SEVERITIES = new Set(['block', 'danger', 'critical']);
+  const criticalCountByLeg = useMemo(() => {
+    if (!detail) return {} as Record<string, number>;
+    const checksByLeg = detail.checksByLeg ?? {};
+    const counts: Record<string, number> = {};
+    for (const leg of detail.legs) {
+      const checks = checksByLeg[leg.legId] ?? [];
+      const criticalCount = checks.filter(
+        (c) => CRITICAL_SEVERITIES.has(c.severity) && !c.passed,
+      ).length;
+      if (criticalCount > 0) {
+        counts[leg.legId] = criticalCount;
+      }
+    }
+    return counts;
+  }, [detail]);
+
   const isCampaignTab = tab === 'campaign';
   const selectedLeg = !isCampaignTab && detail
     ? detail.legs.find((l) => l.legId === tab)
     : undefined;
 
-  // Resolve evaluation bundle for the current tab
-  const currentBundle: EvaluationBundle | null = useMemo(() => {
-    if (!detail) return null;
-    if (isCampaignTab) return detail.evaluationCampaign;
-    if (selectedLeg) return detail.evaluationByLeg[selectedLeg.legId] ?? null;
-    return null;
+  // Resolve checks for the current tab
+  const currentChecks: CampaignCheck[] = useMemo(() => {
+    if (!detail) return [];
+    const checksByLeg = detail.checksByLeg ?? {};
+    if (isCampaignTab) {
+      // Flatten all checks from all legs
+      return Object.values(checksByLeg).flat();
+    }
+    if (selectedLeg) {
+      return checksByLeg[selectedLeg.legId] ?? [];
+    }
+    return [];
   }, [detail, isCampaignTab, selectedLeg]);
 
   // Determine context type based on leg type
@@ -350,18 +374,24 @@ export default function CampaignDetail() {
         <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border-color)] pt-4">
           {tabs.map((t) => {
             const isActive = tab === t.key;
+            const criticalCount = criticalCountByLeg[t.key] ?? 0;
             return (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => handleTabClick(t.key)}
-                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`relative rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                   isActive
                     ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
                     : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 {t.label}
+                {criticalCount > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent-red)] px-1 text-[10px] font-bold leading-none text-white">
+                    {criticalCount}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -370,18 +400,48 @@ export default function CampaignDetail() {
 
       {/* Content: 2-column layout */}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* Left column: Evaluation */}
+        {/* Left column: Checks */}
         <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
           <h2 className="mb-4 text-sm font-medium text-[var(--text-primary)]">
             {isCampaignTab
-              ? 'Evaluation (Campaign)'
-              : `Evaluation (${selectedLeg?.legType.toUpperCase() ?? 'Leg'})`}
+              ? 'Checks (Campaign)'
+              : `Checks (${selectedLeg?.legType.toUpperCase() ?? 'Leg'})`}
           </h2>
-          {currentBundle ? (
-            <EvaluationGrid bundle={currentBundle} />
+          {isCampaignTab ? (
+            (() => {
+              const checksByLeg = detail.checksByLeg ?? {};
+              const legsWithChecks = detail.legs.filter(
+                (leg) => (checksByLeg[leg.legId] ?? []).length > 0,
+              );
+              if (legsWithChecks.length === 0) {
+                return (
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    No checks available for this campaign.
+                  </p>
+                );
+              }
+              return (
+                <div className="grid gap-6">
+                  {legsWithChecks.map((leg) => {
+                    const legIndex = detail.legs.indexOf(leg);
+                    const label = `L${legIndex + 1}: ${leg.legType}`;
+                    return (
+                      <ChecksSummary
+                        key={leg.legId}
+                        checks={checksByLeg[leg.legId]}
+                        legLabel={label}
+                        showSummary={false}
+                      />
+                    );
+                  })}
+                </div>
+              );
+            })()
+          ) : currentChecks.length > 0 ? (
+            <ChecksSummary checks={currentChecks} />
           ) : (
             <p className="text-sm text-[var(--text-secondary)]">
-              No evaluation data available for this selection.
+              No checks available for this selection.
             </p>
           )}
         </div>
