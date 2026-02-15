@@ -262,13 +262,13 @@ class ChecksConfig(BaseSettings):
     """Behavioral checks configuration for campaign leg evaluation.
 
     severity_overrides maps check codes to custom severity labels.
-    Supported severities: info, warn, block, danger.
+    Supported severities: info, warn, critical.
     Escalated variants use the suffix '_escalated' (e.g. RS002_escalated).
 
     Defaults when no override is set:
-        RS001        = block
-        RS002        = warn      (RS002_escalated = block)
-        RS003        = warn      (RS003_escalated = block)
+        RS001        = critical
+        RS002        = warn      (RS002_escalated = critical)
+        RS003        = warn      (RS003_escalated = critical)
         RS004        = warn
     """
 
@@ -288,7 +288,7 @@ class ChecksConfig(BaseSettings):
         default_factory=dict,
         description=(
             "Override severity per check code, e.g. "
-            '{"RS001": "danger", "RS002_escalated": "danger"}'
+            '{"RS001": "critical", "RS002_escalated": "critical"}'
         ),
     )
 

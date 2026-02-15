@@ -59,7 +59,7 @@ class RiskSanityChecker(BaseChecker):
             code: Check code, optionally with '_escalated' suffix
 
         Returns:
-            Severity string (e.g. "warn", "critical", "danger")
+            Severity string (e.g. "warn", "critical")
         """
         overrides = self.config.severity_overrides
         if code in overrides:

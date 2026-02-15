@@ -69,7 +69,7 @@ class RegimeFitEvaluator(Evaluator):
 
         regime = context.primary_regime
         if regime is None:
-            logger.debug("RegimeFit evaluate: no regime data available")
+            logger.warning("RegimeFit evaluate: no regime data available (skipping all REG checks)")
             return items
 
         logger.debug(

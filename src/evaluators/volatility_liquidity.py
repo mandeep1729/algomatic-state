@@ -115,7 +115,7 @@ class VolatilityLiquidityEvaluator(Evaluator):
         """Check VL002: Extended candle (high range z-score)."""
         range_z = context.get_feature("range_z_60")
         if range_z is None:
-            logger.debug("VL002 skipped: range_z_60 feature not available")
+            logger.warning("VL002 skipped: range_z_60 feature not available (feature not computed/stored)")
             return None
 
         zscore_threshold = config.get_threshold(

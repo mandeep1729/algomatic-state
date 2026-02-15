@@ -2,23 +2,153 @@
 
 Provides the ContextPack data container and ContextPackBuilder
 for assembling market context data used by evaluators.
+
+The ``MarketDataReader`` protocol decouples the builder from the
+database layer.  The default implementation (``RepositoryMarketDataReader``)
+delegates to ``OHLCVRepository`` so existing behaviour is preserved.
 """
 
 import logging
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from functools import lru_cache
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any, Optional, Protocol, runtime_checkable
 
-import numpy as np
 import pandas as pd
 
-from src.data.database.connection import get_db_manager
-from src.data.database.market_repository import OHLCVRepository
-from src.features.state.hmm.contracts import Timeframe, VALID_TIMEFRAMES
+from src.features.state.hmm.contracts import VALID_TIMEFRAMES
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Market data abstraction
+# ---------------------------------------------------------------------------
+
+
+@runtime_checkable
+class MarketDataReader(Protocol):
+    """Protocol for reading market data consumed by ``ContextPackBuilder``.
+
+    Implementations may read from a database, REST API, in-memory cache,
+    or any other data source.  The three methods mirror the subset of
+    ``OHLCVRepository`` that the builder actually uses.
+    """
+
+    def get_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+        limit: Optional[int] = None,
+    ) -> pd.DataFrame:
+        """Return OHLCV bars as a DataFrame with a datetime index.
+
+        Args:
+            symbol: Ticker symbol.
+            timeframe: Bar timeframe (e.g. ``"5Min"``, ``"1Day"``).
+            start: Optional start bound (inclusive).
+            end: Optional end bound (inclusive).
+            limit: Optional maximum number of bars.
+
+        Returns:
+            DataFrame with columns ``open, high, low, close, volume``
+            and a datetime index.  An empty DataFrame when no data
+            is available.
+        """
+        ...
+
+    def get_features(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> pd.DataFrame:
+        """Return computed features as a DataFrame with a datetime index.
+
+        Args:
+            symbol: Ticker symbol.
+            timeframe: Bar timeframe.
+            start: Optional start bound.
+            end: Optional end bound.
+
+        Returns:
+            DataFrame with feature columns and a datetime index, or an
+            empty DataFrame when no features are available.
+        """
+        ...
+
+    def get_latest_states(
+        self,
+        symbol: str,
+        timeframe: str,
+    ) -> pd.DataFrame:
+        """Return the most recent HMM state row for a symbol/timeframe.
+
+        Args:
+            symbol: Ticker symbol.
+            timeframe: Bar timeframe.
+
+        Returns:
+            Single-row DataFrame with columns ``state_id, state_prob,
+            log_likelihood, model_id`` (or empty).
+        """
+        ...
+
+
+class RepositoryMarketDataReader:
+    """Default ``MarketDataReader`` backed by ``OHLCVRepository``.
+
+    Creates a short-lived DB session per call via ``get_db_manager()``.
+    This preserves the original behaviour of ``ContextPackBuilder``
+    which opened a session inside ``build()``.
+    """
+
+    def get_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+        limit: Optional[int] = None,
+    ) -> pd.DataFrame:
+        from src.data.database.connection import get_db_manager
+        from src.data.database.market_repository import OHLCVRepository
+
+        db_manager = get_db_manager()
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+            return repo.get_bars(symbol, timeframe, start=start, end=end, limit=limit)
+
+    def get_features(
+        self,
+        symbol: str,
+        timeframe: str,
+        start: Optional[datetime] = None,
+        end: Optional[datetime] = None,
+    ) -> pd.DataFrame:
+        from src.data.database.connection import get_db_manager
+        from src.data.database.market_repository import OHLCVRepository
+
+        db_manager = get_db_manager()
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+            return repo.get_features(symbol, timeframe, start=start, end=end)
+
+    def get_latest_states(
+        self,
+        symbol: str,
+        timeframe: str,
+    ) -> pd.DataFrame:
+        from src.data.database.connection import get_db_manager
+        from src.data.database.market_repository import OHLCVRepository
+
+        db_manager = get_db_manager()
+        with db_manager.get_session() as session:
+            repo = OHLCVRepository(session)
+            return repo.get_latest_states(symbol, timeframe)
 
 
 @dataclass
@@ -299,8 +429,9 @@ class ContextPack:
 class ContextPackBuilder:
     """Builder for assembling ContextPack from data sources.
 
-    Integrates with OHLCVRepository for OHLCV and features,
-    and optionally with InferenceEngine for regime data.
+    Reads bars, features, and regime states through a
+    ``MarketDataReader``.  The default reader delegates to
+    ``OHLCVRepository`` so existing behaviour is preserved.
 
     Usage:
         builder = ContextPackBuilder()
@@ -309,6 +440,10 @@ class ContextPackBuilder:
             timeframe="5Min",
             lookback_bars=100,
         )
+
+    For testing or alternative data sources, inject a custom reader::
+
+        builder = ContextPackBuilder(reader=my_custom_reader)
     """
 
     # Cache TTL in seconds
@@ -316,6 +451,7 @@ class ContextPackBuilder:
 
     def __init__(
         self,
+        reader: Optional[MarketDataReader] = None,
         include_features: bool = True,
         include_regimes: bool = True,
         include_key_levels: bool = True,
@@ -325,6 +461,8 @@ class ContextPackBuilder:
         """Initialize builder.
 
         Args:
+            reader: Market data reader to use.  Defaults to
+                ``RepositoryMarketDataReader`` which reads from the DB.
             include_features: Whether to include technical indicators
             include_regimes: Whether to include regime data
             include_key_levels: Whether to compute key levels
@@ -333,6 +471,7 @@ class ContextPackBuilder:
                 the messaging bus before reading from the DB so that stale
                 data is refreshed.
         """
+        self._reader = reader or RepositoryMarketDataReader()
         self.include_features = include_features
         self.include_regimes = include_regimes
         self.include_key_levels = include_key_levels
@@ -389,50 +528,46 @@ class ContextPackBuilder:
         features: dict[str, pd.DataFrame] = {}
         regimes: dict[str, RegimeContext] = {}
 
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        # Use as_of as end bound for point-in-time queries
+        end_filter = as_of if point_in_time else None
 
-            # Use as_of as end bound for point-in-time queries
-            end_filter = as_of if point_in_time else None
+        for tf in timeframes:
+            # Get OHLCV bars
+            df = self._reader.get_bars(symbol, tf, end=end_filter, limit=lookback_bars)
+            if not df.empty:
+                bars[tf] = df
 
-            for tf in timeframes:
-                # Get OHLCV bars
-                df = repo.get_bars(symbol, tf, end=end_filter, limit=lookback_bars)
-                if not df.empty:
-                    bars[tf] = df
+            # Get features
+            if self.include_features:
+                features_df = self._reader.get_features(symbol, tf, end=end_filter)
+                if not features_df.empty:
+                    # Align with bars
+                    if tf in bars:
+                        features_df = features_df[features_df.index.isin(bars[tf].index)]
+                    features[tf] = features_df.tail(lookback_bars)
 
-                # Get features
-                if self.include_features:
-                    features_df = repo.get_features(symbol, tf, end=end_filter)
-                    if not features_df.empty:
-                        # Align with bars
-                        if tf in bars:
-                            features_df = features_df[features_df.index.isin(bars[tf].index)]
-                        features[tf] = features_df.tail(lookback_bars)
+            # Get regime states
+            if self.include_regimes:
+                states_df = self._reader.get_latest_states(symbol, tf)
+                if not states_df.empty:
+                    latest = states_df.iloc[0]
+                    state_id = int(latest.get("state_id", -1))
+                    state_prob = float(latest.get("state_prob", 0.0))
+                    model_id = latest.get("model_id")
 
-                # Get regime states
-                if self.include_regimes:
-                    states_df = repo.get_latest_states(symbol, tf)
-                    if not states_df.empty:
-                        latest = states_df.iloc[0]
-                        state_id = int(latest.get("state_id", -1))
-                        state_prob = float(latest.get("state_prob", 0.0))
-                        model_id = latest.get("model_id")
+                    state_label, transition_risk, entropy = self._load_regime_enrichment(
+                        symbol, tf, state_id, state_prob, model_id
+                    )
 
-                        state_label, transition_risk, entropy = self._load_regime_enrichment(
-                            symbol, tf, state_id, state_prob, model_id
-                        )
-
-                        regimes[tf] = RegimeContext(
-                            timeframe=tf,
-                            state_id=state_id,
-                            state_prob=state_prob,
-                            state_label=state_label,
-                            entropy=entropy,
-                            transition_risk=transition_risk,
-                            is_ood=state_id == -1,
-                        )
+                    regimes[tf] = RegimeContext(
+                        timeframe=tf,
+                        state_id=state_id,
+                        state_prob=state_prob,
+                        state_label=state_label,
+                        entropy=entropy,
+                        transition_risk=transition_risk,
+                        is_ood=state_id == -1,
+                    )
 
         # Compute key levels
         key_levels = None

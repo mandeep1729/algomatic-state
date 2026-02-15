@@ -11,18 +11,23 @@ interface ChecksSummaryProps {
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = {
   critical: 0,
-  danger: 0,
-  block: 1,
-  warn: 2,
-  info: 3,
+  warn: 1,
+  info: 2,
 };
 
-const SEVERITY_STYLES: Record<CheckSeverity, { badge: string }> = {
-  info: { badge: 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]' },
-  warn: { badge: 'bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)]' },
-  block: { badge: 'bg-[var(--accent-red)]/10 text-[var(--accent-red)]' },
-  danger: { badge: 'bg-red-900/20 text-red-400' },
-  critical: { badge: 'bg-red-900/20 text-red-400' },
+const SEVERITY_STYLES: Record<CheckSeverity, { badge: string; dot: string }> = {
+  info: {
+    badge: 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]',
+    dot: 'bg-[var(--accent-blue)]',
+  },
+  warn: {
+    badge: 'bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)]',
+    dot: 'bg-[var(--accent-yellow)]',
+  },
+  critical: {
+    badge: 'bg-[var(--accent-red)]/10 text-[var(--accent-red)]',
+    dot: 'bg-[var(--accent-red)]',
+  },
 };
 
 /** Severities that count as "critical" for badge/blocker purposes. */
@@ -32,7 +37,7 @@ function sortChecks(checks: CampaignCheck[]): CampaignCheck[] {
   return [...checks].sort((a, b) => {
     // Failed checks first
     if (a.passed !== b.passed) return a.passed ? 1 : -1;
-    // Then by severity (danger > block > warn > info)
+    // Then by severity (critical > warn > info)
     return SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity];
   });
 }
@@ -114,7 +119,7 @@ export function ChecksSummary({ checks, legLabel, showSummary = true }: ChecksSu
   const passed = checks.filter((c) => c.passed).length;
   const failed = checks.filter((c) => !c.passed).length;
   const warnings = checks.filter((c) => c.severity === 'warn' && !c.passed).length;
-  const blockers = checks.filter((c) => CRITICAL_SEVERITIES.has(c.severity) && !c.passed).length;
+  const blockers = checks.filter((c) => c.severity === 'critical' && !c.passed).length;
 
   const sorted = sortChecks(checks);
 

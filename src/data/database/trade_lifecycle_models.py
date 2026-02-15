@@ -506,7 +506,7 @@ class CampaignCheck(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "severity IN ('info', 'warn', 'critical', 'danger')",
+            "severity IN ('info', 'warn', 'critical')",
             name="ck_check_severity",
         ),
         CheckConstraint(

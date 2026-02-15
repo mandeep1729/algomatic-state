@@ -55,7 +55,7 @@ class MTFAEvaluator(Evaluator):
 
         mtfa = context.mtfa
         if mtfa is None or mtfa.alignment_score is None:
-            logger.debug("MTFA evaluate: no mtfa data available")
+            logger.warning("MTFA evaluate: no mtfa data available (skipping all MTFA checks)")
             return items
 
         logger.debug(

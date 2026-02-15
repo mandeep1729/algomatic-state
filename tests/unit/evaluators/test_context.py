@@ -1,15 +1,20 @@
-"""Tests for context infrastructure — MTFAContext, KeyLevels VWAP, and ContextPackBuilder helpers."""
+"""Tests for context infrastructure — MTFAContext, KeyLevels VWAP, ContextPackBuilder helpers,
+and MarketDataReader dependency injection."""
 
 import math
 from datetime import datetime
+from typing import Optional
 
+import pandas as pd
 import pytest
 
 from src.evaluators.context import (
     ContextPackBuilder,
     KeyLevels,
+    MarketDataReader,
     MTFAContext,
     RegimeContext,
+    RepositoryMarketDataReader,
 )
 
 
@@ -261,3 +266,278 @@ class TestComputeMTFA:
         result = builder._compute_mtfa(regimes, "5Min")
         # Both fall back to "state_1", so perfect alignment
         assert result.alignment_score == 1.0
+
+
+# ---------------------------------------------------------------------------
+# In-memory MarketDataReader for testing
+# ---------------------------------------------------------------------------
+
+
+class StubMarketDataReader:
+    """In-memory reader that returns pre-loaded data.
+
+    Satisfies the ``MarketDataReader`` protocol without touching the DB.
+    """
+
+    def __init__(
+        self,
+        bars: Optional[dict[str, pd.DataFrame]] = None,
+        features: Optional[dict[str, pd.DataFrame]] = None,
+        states: Optional[dict[str, pd.DataFrame]] = None,
+    ):
+        self._bars = bars or {}
+        self._features = features or {}
+        self._states = states or {}
+
+    def get_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start=None,
+        end=None,
+        limit=None,
+    ) -> pd.DataFrame:
+        key = f"{symbol.upper()}_{timeframe}"
+        df = self._bars.get(key, pd.DataFrame(columns=["open", "high", "low", "close", "volume"]))
+        if limit is not None and not df.empty:
+            df = df.tail(limit)
+        return df
+
+    def get_features(
+        self,
+        symbol: str,
+        timeframe: str,
+        start=None,
+        end=None,
+    ) -> pd.DataFrame:
+        key = f"{symbol.upper()}_{timeframe}"
+        return self._features.get(key, pd.DataFrame())
+
+    def get_latest_states(
+        self,
+        symbol: str,
+        timeframe: str,
+    ) -> pd.DataFrame:
+        key = f"{symbol.upper()}_{timeframe}"
+        return self._states.get(key, pd.DataFrame(columns=["state_id", "state_prob", "log_likelihood", "model_id"]))
+
+
+def _make_bars_df(n: int = 5, base_price: float = 100.0) -> pd.DataFrame:
+    """Create a simple OHLCV DataFrame with ``n`` bars."""
+    timestamps = pd.date_range("2025-01-01", periods=n, freq="5min")
+    data = {
+        "open": [base_price + i for i in range(n)],
+        "high": [base_price + i + 1 for i in range(n)],
+        "low": [base_price + i - 1 for i in range(n)],
+        "close": [base_price + i + 0.5 for i in range(n)],
+        "volume": [1000 * (i + 1) for i in range(n)],
+    }
+    return pd.DataFrame(data, index=timestamps)
+
+
+def _make_features_df(n: int = 5, base_price: float = 100.0) -> pd.DataFrame:
+    """Create a simple features DataFrame aligned with ``_make_bars_df``."""
+    timestamps = pd.date_range("2025-01-01", periods=n, freq="5min")
+    data = {
+        "atr_14": [1.5 + 0.1 * i for i in range(n)],
+        "sma_20": [base_price + i for i in range(n)],
+        "vwap_60": [base_price + i + 0.2 for i in range(n)],
+    }
+    return pd.DataFrame(data, index=timestamps)
+
+
+def _make_states_df(state_id: int = 2, state_prob: float = 0.85) -> pd.DataFrame:
+    """Create a single-row states DataFrame."""
+    ts = pd.Timestamp("2025-01-01 00:20:00")
+    return pd.DataFrame(
+        {
+            "state_id": [state_id],
+            "state_prob": [state_prob],
+            "log_likelihood": [-42.0],
+            "model_id": ["test_model_v1"],
+        },
+        index=pd.DatetimeIndex([ts]),
+    )
+
+
+class TestMarketDataReaderProtocol:
+    """Verify the MarketDataReader protocol is satisfied by implementations."""
+
+    def test_stub_reader_satisfies_protocol(self):
+        """StubMarketDataReader should satisfy the runtime-checkable protocol."""
+        reader = StubMarketDataReader()
+        assert isinstance(reader, MarketDataReader)
+
+    def test_repository_reader_satisfies_protocol(self):
+        """RepositoryMarketDataReader should satisfy the protocol."""
+        reader = RepositoryMarketDataReader()
+        assert isinstance(reader, MarketDataReader)
+
+
+class TestContextPackBuilderWithReader:
+    """Tests for ContextPackBuilder.build() using an injected MarketDataReader."""
+
+    def test_build_with_bars_only(self):
+        """Builder returns bars when reader provides them."""
+        reader = StubMarketDataReader(
+            bars={"AAPL_5Min": _make_bars_df()},
+        )
+        builder = ContextPackBuilder(
+            reader=reader,
+            include_features=False,
+            include_regimes=False,
+            include_key_levels=False,
+            cache_enabled=False,
+        )
+
+        ctx = builder.build("AAPL", "5Min", lookback_bars=100)
+
+        assert ctx.symbol == "AAPL"
+        assert ctx.primary_timeframe == "5Min"
+        assert ctx.has_bars
+        assert not ctx.has_features
+        assert not ctx.has_regimes
+        assert ctx.current_price == pytest.approx(104.5)
+        assert ctx.current_volume == 5000
+
+    def test_build_with_features(self):
+        """Builder includes features when reader provides them."""
+        bars_df = _make_bars_df()
+        features_df = _make_features_df()
+        reader = StubMarketDataReader(
+            bars={"AAPL_5Min": bars_df},
+            features={"AAPL_5Min": features_df},
+        )
+        builder = ContextPackBuilder(
+            reader=reader,
+            include_features=True,
+            include_regimes=False,
+            include_key_levels=False,
+            cache_enabled=False,
+        )
+
+        ctx = builder.build("AAPL", "5Min")
+
+        assert ctx.has_features
+        assert ctx.atr == pytest.approx(1.9)  # Last atr_14 value
+        assert ctx.get_feature("sma_20") is not None
+
+    def test_build_with_regimes(self):
+        """Builder includes regimes when reader provides state data."""
+        reader = StubMarketDataReader(
+            bars={"AAPL_5Min": _make_bars_df()},
+            states={"AAPL_5Min": _make_states_df(state_id=2, state_prob=0.85)},
+        )
+        builder = ContextPackBuilder(
+            reader=reader,
+            include_features=False,
+            include_regimes=True,
+            include_key_levels=False,
+            cache_enabled=False,
+        )
+
+        ctx = builder.build("AAPL", "5Min")
+
+        assert ctx.has_regimes
+        regime = ctx.primary_regime
+        assert regime is not None
+        assert regime.state_id == 2
+        assert regime.state_prob == 0.85
+        assert not regime.is_ood
+
+    def test_build_no_data_returns_empty_context(self):
+        """Builder works gracefully when reader has no data at all."""
+        reader = StubMarketDataReader()
+        builder = ContextPackBuilder(
+            reader=reader,
+            include_features=True,
+            include_regimes=True,
+            include_key_levels=True,
+            cache_enabled=False,
+        )
+
+        ctx = builder.build("AAPL", "5Min")
+
+        assert ctx.symbol == "AAPL"
+        assert not ctx.has_bars
+        assert not ctx.has_features
+        assert not ctx.has_regimes
+        assert ctx.current_price is None
+        assert ctx.current_volume is None
+        assert ctx.atr is None
+
+    def test_build_with_key_levels_from_daily(self):
+        """Key levels are computed from daily bars when available."""
+        daily_bars = _make_bars_df(n=10, base_price=200.0)
+        # Re-create with daily frequency
+        daily_bars.index = pd.date_range("2025-01-01", periods=10, freq="D")
+        reader = StubMarketDataReader(
+            bars={
+                "AAPL_5Min": _make_bars_df(),
+                "AAPL_1Day": daily_bars,
+            },
+        )
+        builder = ContextPackBuilder(
+            reader=reader,
+            include_features=False,
+            include_regimes=False,
+            include_key_levels=True,
+            cache_enabled=False,
+        )
+
+        ctx = builder.build("AAPL", "5Min", additional_timeframes=["1Day"])
+
+        assert ctx.key_levels is not None
+        assert ctx.key_levels.prior_day_high is not None
+        assert ctx.key_levels.pivot is not None
+
+    def test_build_vwap_populated_from_features(self):
+        """VWAP in key_levels is populated from the vwap_60 feature column."""
+        daily_bars = _make_bars_df(n=10, base_price=200.0)
+        daily_bars.index = pd.date_range("2025-01-01", periods=10, freq="D")
+        bars_5min = _make_bars_df()
+        features_5min = _make_features_df()
+
+        reader = StubMarketDataReader(
+            bars={
+                "AAPL_5Min": bars_5min,
+                "AAPL_1Day": daily_bars,
+            },
+            features={"AAPL_5Min": features_5min},
+        )
+        builder = ContextPackBuilder(
+            reader=reader,
+            include_features=True,
+            include_regimes=False,
+            include_key_levels=True,
+            cache_enabled=False,
+        )
+
+        ctx = builder.build("AAPL", "5Min", additional_timeframes=["1Day"])
+
+        assert ctx.key_levels is not None
+        assert ctx.key_levels.vwap == pytest.approx(104.2)  # Last vwap_60 value
+
+    def test_build_symbol_uppercased(self):
+        """Symbol is normalised to uppercase regardless of input case."""
+        reader = StubMarketDataReader(bars={"AAPL_5Min": _make_bars_df()})
+        builder = ContextPackBuilder(
+            reader=reader,
+            include_features=False,
+            include_regimes=False,
+            include_key_levels=False,
+            cache_enabled=False,
+        )
+
+        ctx = builder.build("aapl", "5Min")
+        assert ctx.symbol == "AAPL"
+
+    def test_default_builder_uses_repository_reader(self):
+        """Builder created without explicit reader uses RepositoryMarketDataReader."""
+        builder = ContextPackBuilder(
+            include_features=False,
+            include_regimes=False,
+            include_key_levels=False,
+            cache_enabled=False,
+        )
+        assert isinstance(builder._reader, RepositoryMarketDataReader)

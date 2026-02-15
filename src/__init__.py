@@ -31,6 +31,8 @@ from src.trade.evaluation import (
 from src.evaluators.context import (
     ContextPack,
     ContextPackBuilder,
+    MarketDataReader,
+    RepositoryMarketDataReader,
     RegimeContext,
     KeyLevels,
     get_context_builder,
@@ -61,6 +63,8 @@ __all__ = [
     # Context
     "ContextPack",
     "ContextPackBuilder",
+    "MarketDataReader",
+    "RepositoryMarketDataReader",
     "RegimeContext",
     "KeyLevels",
     "get_context_builder",
