@@ -176,7 +176,8 @@ export default function CampaignDetail() {
     ];
   }, [detail]);
 
-  // Count critical (block/danger) check failures per leg for badge display
+  // Count critical check failures per leg for badge display
+  const CRITICAL_SEVERITIES = new Set(['block', 'danger', 'critical']);
   const criticalCountByLeg = useMemo(() => {
     if (!detail) return {} as Record<string, number>;
     const checksByLeg = detail.checksByLeg ?? {};
@@ -184,7 +185,7 @@ export default function CampaignDetail() {
     for (const leg of detail.legs) {
       const checks = checksByLeg[leg.legId] ?? [];
       const criticalCount = checks.filter(
-        (c) => (c.severity === 'block' || c.severity === 'danger') && !c.passed,
+        (c) => CRITICAL_SEVERITIES.has(c.severity) && !c.passed,
       ).length;
       if (criticalCount > 0) {
         counts[leg.legId] = criticalCount;

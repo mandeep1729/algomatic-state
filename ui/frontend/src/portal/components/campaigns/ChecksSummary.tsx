@@ -10,6 +10,7 @@ interface ChecksSummaryProps {
 }
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = {
+  critical: 0,
   danger: 0,
   block: 1,
   warn: 2,
@@ -21,7 +22,11 @@ const SEVERITY_STYLES: Record<CheckSeverity, { badge: string }> = {
   warn: { badge: 'bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)]' },
   block: { badge: 'bg-[var(--accent-red)]/10 text-[var(--accent-red)]' },
   danger: { badge: 'bg-red-900/20 text-red-400' },
+  critical: { badge: 'bg-red-900/20 text-red-400' },
 };
+
+/** Severities that count as "critical" for badge/blocker purposes. */
+const CRITICAL_SEVERITIES: ReadonlySet<CheckSeverity> = new Set(['block', 'danger', 'critical']);
 
 function sortChecks(checks: CampaignCheck[]): CampaignCheck[] {
   return [...checks].sort((a, b) => {
@@ -109,7 +114,7 @@ export function ChecksSummary({ checks, legLabel, showSummary = true }: ChecksSu
   const passed = checks.filter((c) => c.passed).length;
   const failed = checks.filter((c) => !c.passed).length;
   const warnings = checks.filter((c) => c.severity === 'warn' && !c.passed).length;
-  const blockers = checks.filter((c) => (c.severity === 'block' || c.severity === 'danger') && !c.passed).length;
+  const blockers = checks.filter((c) => CRITICAL_SEVERITIES.has(c.severity) && !c.passed).length;
 
   const sorted = sortChecks(checks);
 
