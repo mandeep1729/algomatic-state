@@ -343,20 +343,20 @@ class TestCheckMetadata:
 class TestSeverityOverrides:
     """Tests for configurable severity via severity_overrides."""
 
-    def test_rs001_override_to_danger(self, mock_leg):
-        """RS001 severity can be changed from 'critical' to 'danger'."""
-        cfg = ChecksConfig(severity_overrides={"RS001": "danger"})
+    def test_rs001_override_to_warn(self, mock_leg):
+        """RS001 severity can be changed from 'critical' to 'warn'."""
+        cfg = ChecksConfig(severity_overrides={"RS001": "warn"})
         checker = RiskSanityChecker(cfg)
 
         results = checker.run(mock_leg, intent=None, atr=None, account_balance=None)
         rs001 = results[0]
 
         assert not rs001.passed
-        assert rs001.severity == "danger"
+        assert rs001.severity == "warn"
 
     def test_rs002_base_override(self, mock_leg):
         """RS002 base severity (non-escalated) can be overridden."""
-        cfg = ChecksConfig(severity_overrides={"RS002": "danger"})
+        cfg = ChecksConfig(severity_overrides={"RS002": "critical"})
         checker = RiskSanityChecker(cfg)
 
         # 3% risk on 2% limit → base (not escalated) failure
@@ -365,11 +365,11 @@ class TestSeverityOverrides:
         rs002 = next(r for r in results if r.code == "RS002")
 
         assert not rs002.passed
-        assert rs002.severity == "danger"
+        assert rs002.severity == "critical"
 
     def test_rs002_escalated_override(self, mock_leg):
         """RS002 escalated severity (>2× threshold) can be overridden."""
-        cfg = ChecksConfig(severity_overrides={"RS002_escalated": "danger"})
+        cfg = ChecksConfig(severity_overrides={"RS002_escalated": "warn"})
         checker = RiskSanityChecker(cfg)
 
         # 5% risk on 2% limit → escalated failure (>2×2%=4%)
@@ -378,11 +378,11 @@ class TestSeverityOverrides:
         rs002 = next(r for r in results if r.code == "RS002")
 
         assert not rs002.passed
-        assert rs002.severity == "danger"
+        assert rs002.severity == "warn"
 
     def test_rs003_base_override(self, mock_leg):
         """RS003 base severity (R:R between 1.0 and min) can be overridden."""
-        cfg = ChecksConfig(severity_overrides={"RS003": "danger"})
+        cfg = ChecksConfig(severity_overrides={"RS003": "critical"})
         checker = RiskSanityChecker(cfg)
 
         # R:R of 1.2 → base failure (above 1.0 but below 1.5 min)
@@ -391,11 +391,11 @@ class TestSeverityOverrides:
         rs003 = next(r for r in results if r.code == "RS003")
 
         assert not rs003.passed
-        assert rs003.severity == "danger"
+        assert rs003.severity == "critical"
 
     def test_rs003_escalated_override(self, mock_leg):
         """RS003 escalated severity (R:R < 1.0) can be overridden."""
-        cfg = ChecksConfig(severity_overrides={"RS003_escalated": "danger"})
+        cfg = ChecksConfig(severity_overrides={"RS003_escalated": "warn"})
         checker = RiskSanityChecker(cfg)
 
         # R:R of 0.5 → escalated failure
@@ -404,11 +404,11 @@ class TestSeverityOverrides:
         rs003 = next(r for r in results if r.code == "RS003")
 
         assert not rs003.passed
-        assert rs003.severity == "danger"
+        assert rs003.severity == "warn"
 
     def test_rs004_override(self, mock_leg):
         """RS004 severity can be overridden."""
-        cfg = ChecksConfig(severity_overrides={"RS004": "danger"})
+        cfg = ChecksConfig(severity_overrides={"RS004": "critical"})
         checker = RiskSanityChecker(cfg)
 
         # Tight stop: 0.29× ATR
@@ -417,15 +417,15 @@ class TestSeverityOverrides:
         rs004 = next(r for r in results if r.code == "RS004")
 
         assert not rs004.passed
-        assert rs004.severity == "danger"
+        assert rs004.severity == "critical"
 
     def test_passing_checks_unaffected_by_overrides(self, mock_leg):
         """Passing checks always use 'info' regardless of overrides."""
         cfg = ChecksConfig(severity_overrides={
-            "RS001": "danger",
-            "RS002": "danger",
-            "RS003": "danger",
-            "RS004": "danger",
+            "RS001": "critical",
+            "RS002": "critical",
+            "RS003": "critical",
+            "RS004": "critical",
         })
         checker = RiskSanityChecker(cfg)
 
@@ -442,8 +442,8 @@ class TestSeverityOverrides:
     def test_multiple_overrides_at_once(self, mock_leg):
         """Multiple codes can be overridden simultaneously."""
         cfg = ChecksConfig(severity_overrides={
-            "RS002": "danger",
-            "RS003": "danger",
+            "RS002": "critical",
+            "RS003": "info",
             "RS004": "critical",
         })
         checker = RiskSanityChecker(cfg)
@@ -463,8 +463,8 @@ class TestSeverityOverrides:
         rs003 = next(r for r in results if r.code == "RS003")
         rs004 = next(r for r in results if r.code == "RS004")
 
-        assert rs002.severity == "danger"
-        assert rs003.severity == "danger"
+        assert rs002.severity == "critical"
+        assert rs003.severity == "info"
         assert rs004.severity == "critical"
 
     def test_default_severities_when_no_overrides(self, mock_leg):

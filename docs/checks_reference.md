@@ -18,8 +18,7 @@ Trading Buddy runs two categories of checks against trades:
 |----------|-------------------|-------------------|---------|
 | info     | info              | INFO              | Informational, no action needed |
 | warn     | warn              | WARNING           | Caution advised, review recommended |
-| critical | critical          | CRITICAL          | Significant concern, strongly reconsider |
-| danger   | danger            | BLOCKER           | Must be resolved before proceeding |
+| critical | critical          | CRITICAL          | Must be resolved before proceeding |
 
 ---
 
@@ -363,7 +362,7 @@ Defined in `config/settings.py`. Environment prefix: `CHECKS_`.
 | `min_rr_ratio` | 1.5 | Minimum risk:reward ratio |
 | `max_risk_per_trade_pct` | 2.0 | Max risk as % of account |
 | `min_stop_atr_multiple` | 0.5 | Min stop distance in ATR multiples |
-| `severity_overrides` | {} | Per-code severity customization (e.g. `{"RS001": "danger"}`) |
+| `severity_overrides` | {} | Per-code severity customization (e.g. `{"RS001": "critical"}`) |
 
 ### EvaluatorConfig (Evaluator Checks)
 

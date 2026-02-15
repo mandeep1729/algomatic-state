@@ -383,7 +383,7 @@ export interface EvaluationBundle {
 
 // --- Campaign Checks (behavioral nudges) ---
 
-export type CheckSeverity = 'info' | 'warn' | 'block' | 'danger';
+export type CheckSeverity = 'info' | 'warn' | 'critical';
 
 export interface CampaignCheck {
   checkId: string;
