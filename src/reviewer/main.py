@@ -30,11 +30,12 @@ def main() -> None:
     """Bootstrap and run the reviewer service."""
     settings = get_settings()
 
-    # Configure logging
+    # Configure logging — LOG_FILE env var overrides the default path
+    log_file = settings.logging.file or PROJECT_ROOT / "logs" / "reviewer-service.log"
     setup_logging(
         level=settings.logging.level,
         format="text",
-        file=PROJECT_ROOT / "logs" / "reviewer-service.log",
+        file=log_file,
         rotate_size_mb=settings.logging.rotate_size_mb,
         retain_count=settings.logging.retain_count,
     )

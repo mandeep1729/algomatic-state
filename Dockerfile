@@ -29,8 +29,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Create logs directory (writable by runtime user)
-RUN mkdir -p /app/logs && chmod 777 /app/logs
+# Create logs directories (writable by runtime user)
+RUN mkdir -p /app/logs /var/log/reviewer-service && chmod 777 /app/logs /var/log/reviewer-service
 
 # User is set at runtime via docker-compose (user: "${UID}:${GID}")
 CMD ["python", "-m", "src.agent.main"]

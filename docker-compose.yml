@@ -106,6 +106,9 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MESSAGING_BACKEND=redis
+      - LOG_FILE=/var/log/reviewer-service/reviewer-service.log
+    volumes:
+      - ${LOGS_DIR:-./logs}/reviewer-service:/var/log/reviewer-service
     depends_on:
       postgres:
         condition: service_healthy
