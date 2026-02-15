@@ -83,7 +83,7 @@ class StructureAwarenessEvaluator(Evaluator):
     ) -> list[EvaluationItem]:
         """Check SA001 (buying into resistance) and SA002 (shorting into support)."""
         if context.key_levels is None:
-            logger.debug("SA001/SA002 skipped: no key_levels")
+            logger.warning("SA001/SA002 skipped: no key_levels available (no daily bars in database)")
             return []
 
         proximity_pct = config.get_threshold(
@@ -214,7 +214,7 @@ class StructureAwarenessEvaluator(Evaluator):
     ) -> Optional[EvaluationItem]:
         """Check SA004: Trade direction against higher-timeframe trend."""
         if context.mtfa is None or context.mtfa.htf_trend is None:
-            logger.debug("SA004 skipped: no HTF trend data")
+            logger.warning("SA004 skipped: no HTF trend data (no HMM regime states for higher timeframes)")
             return None
 
         htf_trend = context.mtfa.htf_trend.lower()
