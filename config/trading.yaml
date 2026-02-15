@@ -79,9 +79,9 @@ backtest:
   walk_forward_test_days: 30
 
 # Logging configuration
+# Log file path is set per deployment via LOG_FILE env var
 logging:
   level: INFO
   format: json
-  file: logs/app.log
   rotate_size_mb: 10
   retain_count: 5
