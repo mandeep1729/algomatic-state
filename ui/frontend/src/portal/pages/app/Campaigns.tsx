@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, AlertTriangle, X, Loader2, ExternalLink, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Search, AlertTriangle, X, Loader2, ExternalLink, ChevronDown, ChevronRight } from 'lucide-react';
 import api from '../../api';
-import { bulkUpdateLegStrategy, deleteCampaign, fetchOrphanedLegs } from '../../api';
+import { bulkUpdateLegStrategy, fetchOrphanedLegs } from '../../api';
 import { fetchStrategies } from '../../api/client';
 import { DataTable, type Column } from '../../components/DataTable';
 import { OverallLabelBadge } from '../../components/campaigns/OverallLabelBadge';
@@ -85,8 +85,6 @@ export default function Campaigns() {
   // Orphaned legs state
   const [orphanedGroups, setOrphanedGroups] = useState<OrphanedLegGroup[]>([]);
   const [expandedOrphanGroups, setExpandedOrphanGroups] = useState<Set<string>>(new Set());
-  const [deletingCampaign, setDeletingCampaign] = useState<string | null>(null);
-
   const hasSelection = selectedLegIds.size > 0;
 
   // Define table columns (memoized to access expansion state for orderIds visibility)
@@ -414,40 +412,6 @@ export default function Campaigns() {
     }
   }, [bulkStrategyId, selectedLegIds, strategies, detailCache, expandedCampaignIds, fetchDetail, loadCampaigns]);
 
-  // Delete campaign handler
-  const handleDeleteCampaign = useCallback(async (campaignId: string) => {
-    if (!window.confirm('Delete this campaign? Legs will be preserved as orphaned legs.')) {
-      return;
-    }
-
-    setDeletingCampaign(campaignId);
-    try {
-      await deleteCampaign(campaignId);
-
-      // Remove from detail cache
-      setDetailCache((prev) => {
-        const next = { ...prev };
-        delete next[campaignId];
-        return next;
-      });
-
-      // Collapse it
-      setExpandedCampaignIds((prev) => {
-        const next = new Set(prev);
-        next.delete(campaignId);
-        return next;
-      });
-
-      // Refresh campaigns + orphaned legs
-      await loadCampaigns();
-    } catch (err) {
-      console.error('[Campaigns] Delete failed:', err);
-      setBulkError(err instanceof Error ? err.message : 'Failed to delete campaign');
-    } finally {
-      setDeletingCampaign(null);
-    }
-  }, [loadCampaigns]);
-
   // Toggle leg selection
   const toggleLegSelection = useCallback((legId: string) => {
     setSelectedLegIds((prev) => {
@@ -514,7 +478,6 @@ export default function Campaigns() {
   const renderExpandedRow = useCallback((campaign: CampaignSummary) => {
     const isLoading = detailLoading.has(campaign.campaignId);
     const detail = detailCache[campaign.campaignId];
-    const isDeleting = deletingCampaign === campaign.campaignId;
 
     if (isLoading || !detail) {
       return (
@@ -602,7 +565,7 @@ export default function Campaigns() {
           </tbody>
         </table>
 
-        {/* Action row: View detail + Delete */}
+        {/* Action row: View detail */}
         <div className="mt-2 flex items-center gap-4 px-2">
           <button
             type="button"
@@ -612,24 +575,10 @@ export default function Campaigns() {
             View full detail
             <ExternalLink size={11} />
           </button>
-
-          <button
-            type="button"
-            onClick={() => handleDeleteCampaign(campaign.campaignId)}
-            disabled={isDeleting}
-            className="inline-flex items-center gap-1 text-xs text-[var(--accent-red)] hover:underline disabled:opacity-50"
-          >
-            {isDeleting ? (
-              <Loader2 size={11} className="animate-spin" />
-            ) : (
-              <Trash2 size={11} />
-            )}
-            Delete campaign
-          </button>
         </div>
       </div>
     );
-  }, [detailCache, detailLoading, selectedLegIds, toggleLegSelection, toggleAllLegsForCampaign, navigate, handleDeleteCampaign, deletingCampaign]);
+  }, [detailCache, detailLoading, selectedLegIds, toggleLegSelection, toggleAllLegsForCampaign, navigate]);
 
   const totalOrphanedLegs = orphanedGroups.reduce((sum, g) => sum + g.legs.length, 0);
 
