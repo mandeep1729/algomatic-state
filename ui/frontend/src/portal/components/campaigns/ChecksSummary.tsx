@@ -14,23 +14,11 @@ const SEVERITY_ORDER: Record<CheckSeverity, number> = {
   info: 3,
 };
 
-const SEVERITY_STYLES: Record<CheckSeverity, { badge: string; dot: string }> = {
-  info: {
-    badge: 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]',
-    dot: 'bg-[var(--accent-blue)]',
-  },
-  warn: {
-    badge: 'bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)]',
-    dot: 'bg-[var(--accent-yellow)]',
-  },
-  block: {
-    badge: 'bg-[var(--accent-red)]/10 text-[var(--accent-red)]',
-    dot: 'bg-[var(--accent-red)]',
-  },
-  danger: {
-    badge: 'bg-red-900/20 text-red-400',
-    dot: 'bg-red-400',
-  },
+const SEVERITY_STYLES: Record<CheckSeverity, { badge: string }> = {
+  info: { badge: 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]' },
+  warn: { badge: 'bg-[var(--accent-yellow)]/10 text-[var(--accent-yellow)]' },
+  block: { badge: 'bg-[var(--accent-red)]/10 text-[var(--accent-red)]' },
+  danger: { badge: 'bg-red-900/20 text-red-400' },
 };
 
 function sortChecks(checks: CampaignCheck[]): CampaignCheck[] {
@@ -54,13 +42,8 @@ function CheckCard({ check }: { check: CampaignCheck }) {
         className="flex w-full items-start justify-between gap-3 p-4 text-left"
       >
         <div className="flex items-start gap-3 min-w-0">
-          {/* Severity dot + pass/fail */}
-          <div className="flex flex-col items-center gap-1 pt-0.5">
-            <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} />
-            <span className={`text-[10px] font-medium ${check.passed ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'}`}>
-              {check.passed ? 'PASS' : 'FAIL'}
-            </span>
-          </div>
+          {/* Pass/fail dot */}
+          <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${check.passed ? 'bg-[var(--accent-green)]' : 'bg-[var(--accent-red)]'}`} />
 
           <div className="min-w-0">
             <div className="text-sm font-medium text-[var(--text-primary)]">
