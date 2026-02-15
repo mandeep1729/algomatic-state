@@ -185,6 +185,7 @@ class StateWriter:
             List of written Parquet file paths
         """
         if not self._buffer:
+            logger.debug("No buffered state records to flush")
             return []
 
         grouped: dict[tuple[str, date], list[StateRecord]] = {}
@@ -287,6 +288,7 @@ class StateReader:
                 break
 
         if not dfs:
+            logger.warning("No state data found for %s between %s and %s", symbol, start_date, end_date)
             return pd.DataFrame()
 
         result = pd.concat(dfs, ignore_index=True)

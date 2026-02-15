@@ -227,6 +227,9 @@ class FeaturePipeline:
 
         # Filter to requested columns
         available = [col for col in feature_names if col in all_features.columns]
+        missing = set(feature_names) - set(available)
+        if missing:
+            logger.warning("Requested features not available: %s", sorted(missing))
         return all_features[available]
 
 

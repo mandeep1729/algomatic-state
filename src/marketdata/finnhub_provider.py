@@ -77,6 +77,7 @@ class FinnhubProvider(MarketDataProvider):
                 all_data.append(chunk_df)
 
         if not all_data:
+            logger.warning("Finnhub returned no data for %s (%s to %s)", symbol, start, end)
             return pd.DataFrame()
 
         df = pd.concat(all_data)
@@ -99,6 +100,7 @@ class FinnhubProvider(MarketDataProvider):
             data = self.client.stock_candles(symbol, resolution, start_ts, end_ts)
 
             if data.get("s") == "no_data" or "t" not in data:
+                logger.debug("Finnhub returned no_data for %s chunk", symbol)
                 return pd.DataFrame()
 
             df = pd.DataFrame({

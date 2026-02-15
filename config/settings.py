@@ -1,5 +1,6 @@
 """Pydantic settings for configuration management."""
 
+import logging
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -7,6 +8,8 @@ from typing import Any, Literal
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
+
+logger = logging.getLogger(__name__)
 
 
 class FinnhubConfig(BaseSettings):
@@ -394,10 +397,15 @@ class Settings(BaseSettings):
         """
         path = Path(path)
         if not path.exists():
+            logger.debug("Config file not found: %s, using defaults", path)
             return cls()
 
-        with open(path) as f:
-            config_dict = yaml.safe_load(f) or {}
+        try:
+            with open(path) as f:
+                config_dict = yaml.safe_load(f) or {}
+        except Exception:
+            logger.error("Failed to load config from %s", path, exc_info=True)
+            return cls()
 
         return cls(**config_dict)
 
@@ -429,6 +437,8 @@ def get_settings() -> Settings:
     # Try to load from config file first
     config_path = Path("config/trading.yaml")
     if config_path.exists():
+        logger.info("Loading settings from %s", config_path)
         return Settings.from_yaml(config_path)
 
+    logger.debug("No config file found, using environment variables and defaults")
     return Settings()

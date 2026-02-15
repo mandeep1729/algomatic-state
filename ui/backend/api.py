@@ -344,14 +344,14 @@ async def health_check():
         db_manager = get_db_manager()
         health["database"] = db_manager.health_check()
     except Exception as e:
-        logger.warning("Database health check failed: %s", e)
+        logger.error("Database health check failed: %s", e)
 
     try:
         from src.messaging.bus import get_message_bus
         bus = get_message_bus()
         health["redis"] = bus.health_check()
     except Exception as e:
-        logger.warning("Redis health check failed: %s", e)
+        logger.error("Redis health check failed: %s", e)
 
     if os.environ.get("ALPACA_API_KEY") and os.environ.get("ALPACA_SECRET_KEY"):
         health["alpaca"] = True

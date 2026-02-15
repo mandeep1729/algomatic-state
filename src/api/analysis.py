@@ -152,6 +152,7 @@ async def analyze_symbol(
 
                 features_df = repo.get_features(symbol, timeframe)
                 if features_df.empty or len(features_df) < 200:
+                    logger.warning("Insufficient features for %s: %d bars available, 200 required", symbol, len(features_df))
                     raise HTTPException(
                         status_code=400,
                         detail=f"Insufficient data for training. Need at least 200 bars, have {len(features_df)}"

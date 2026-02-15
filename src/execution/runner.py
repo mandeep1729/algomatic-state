@@ -226,24 +226,27 @@ class TradingRunner:
                     end=end,
                 )
 
-                if not df.empty:
-                    # Keep only required warmup bars
-                    df = df.tail(self._config.warmup_bars)
-                    self._data_cache[symbol] = df
+                if df.empty:
+                    logger.warning("No warmup data for %s, skipping", symbol)
+                    continue
 
-                    # Compute features
-                    features = self._feature_pipeline.compute(df)
-                    self._features_cache[symbol] = features.dropna()
+                # Keep only required warmup bars
+                df = df.tail(self._config.warmup_bars)
+                self._data_cache[symbol] = df
 
-                    self._last_bar_time[symbol] = df.index[-1]
+                # Compute features
+                features = self._feature_pipeline.compute(df)
+                self._features_cache[symbol] = features.dropna()
 
-                    logger.info(
-                        f"Loaded warmup data for {symbol}",
-                        extra={
-                            "bars": len(df),
-                            "features": len(self._features_cache[symbol]),
-                        },
-                    )
+                self._last_bar_time[symbol] = df.index[-1]
+
+                logger.info(
+                    f"Loaded warmup data for {symbol}",
+                    extra={
+                        "bars": len(df),
+                        "features": len(self._features_cache[symbol]),
+                    },
+                )
 
             except Exception as e:
                 logger.error(f"Failed to load warmup data for {symbol}", extra={"error": str(e)})
@@ -328,6 +331,7 @@ class TradingRunner:
             try:
                 last_time = self._last_bar_time.get(symbol)
                 if last_time is None:
+                    logger.debug("No last bar time for %s, skipping fetch", symbol)
                     continue
 
                 # Fetch new bars since last known time
@@ -344,6 +348,7 @@ class TradingRunner:
                 )
 
                 if df.empty:
+                    logger.debug("No new bars returned for %s", symbol)
                     continue
 
                 # Append to cache

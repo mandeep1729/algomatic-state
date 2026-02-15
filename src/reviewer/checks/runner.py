@@ -151,6 +151,7 @@ class CheckRunner:
         try:
             campaign = leg.campaign
             if campaign is None:
+                logger.debug("No campaign found for leg %s, skipping ATR fetch", leg.id)
                 return None
 
             from src.data.database.models import FeatureRow
@@ -192,6 +193,7 @@ class CheckRunner:
         try:
             campaign = leg.campaign
             if campaign is None:
+                logger.debug("No campaign found for leg %s, skipping balance lookup", leg.id)
                 return None
 
             profile = self.session.query(UserProfileModel).filter(

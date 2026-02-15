@@ -450,6 +450,7 @@ class DatabaseLoader(BaseDataLoader):
             if get_settings().messaging.backend != "redis":
                 return False
         except Exception:
+            logger.debug("Could not load settings for Redis indicator check", exc_info=True)
             return False
 
         try:

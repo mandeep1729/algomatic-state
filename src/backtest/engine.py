@@ -289,6 +289,7 @@ class BacktestEngine:
                     current_bars[symbol] = df.loc[timestamp]
 
             if not current_bars:
+                logger.debug("No bars at timestamp %s, skipping", timestamp)
                 continue
 
             # 2. Execute pending orders from previous bar
@@ -570,6 +571,7 @@ class BacktestEngine:
         # Check if we have enough cash
         required_cash = size_dollars + commission
         if required_cash > self._cash:
+            logger.debug("Insufficient cash for %s: need %.2f, have %.2f", symbol, required_cash, self._cash)
             # Reduce size to fit available cash
             available_for_position = self._cash - commission
             if available_for_position <= 0:

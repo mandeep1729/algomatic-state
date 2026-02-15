@@ -45,6 +45,7 @@ async def get_sync_status(symbol: str, _user_id: int = Depends(get_current_user)
         statuses = db_loader.get_sync_status(symbol.upper())
 
         if not statuses:
+            logger.debug("No sync statuses found for symbol %s", symbol.upper())
             return []
 
         return [SyncStatusResponse(**status) for status in statuses]

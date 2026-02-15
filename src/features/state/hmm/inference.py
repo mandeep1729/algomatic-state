@@ -170,7 +170,7 @@ class InferenceEngine:
 
         if np.isnan(log_lik) or log_lik < self.ood_threshold:
             self._state.dwell_count += 1
-            logger.debug(f"[{symbol}] OOD detected at {timestamp}: log_lik={log_lik:.2f} < threshold={self.ood_threshold}")
+            logger.info("[%s] OOD detected at %s: log_lik=%.2f < threshold=%s", symbol, timestamp, log_lik, self.ood_threshold)
             return HMMOutput.unknown(
                 symbol=symbol,
                 timestamp=timestamp,

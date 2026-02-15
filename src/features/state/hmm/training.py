@@ -329,7 +329,7 @@ class TrainingPipeline:
             mapping = match_states_hungarian(previous_hmm.means, hmm.means)
             logger.info(f"State mapping from previous model: {mapping}")
         except Exception as e:
-            logger.warning(f"Could not apply state matching: {e}")
+            logger.error("Could not match states with previous model: %s. Using default state ordering.", e)
 
     def _compute_metrics(
         self,
@@ -587,7 +587,10 @@ class HyperparameterTuner:
                             "metrics": result.metrics,
                         })
                     except Exception as e:
-                        logger.warning(f"Training failed: {e}")
+                        logger.error(
+                            "Training failed for latent_dim=%d, n_states=%d, cov=%s: %s",
+                            latent_dim, n_states, cov_type, e,
+                        )
                         continue
 
         if not results:

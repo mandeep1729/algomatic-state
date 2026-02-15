@@ -568,8 +568,10 @@ class OHLCVRepository:
 
         # 2. Prepare records
         records = []
+        skipped = 0
         for timestamp, row in features_df.iterrows():
             if timestamp not in timestamp_map:
+                skipped += 1
                 continue  # Skip features for missing bars
 
             # Convert row to dict, handling NaN/Inf (JSON doesn't support these)
@@ -587,6 +589,12 @@ class OHLCVRepository:
                 "features": feature_data,
                 "feature_version": version,
             })
+
+        if skipped:
+            logger.warning(
+                "Skipped %d features for missing bars (ticker_id=%s/%s)",
+                skipped, ticker_id, timeframe,
+            )
 
         if not records:
             logger.debug(f"No features to store for ticker_id={ticker_id}/{timeframe}")
@@ -706,6 +714,7 @@ class OHLCVRepository:
         """
         ticker = self.get_ticker(symbol)
         if ticker is None:
+            logger.debug("No ticker found for %s, returning empty summary", symbol)
             return {}
 
         summary = {}

@@ -102,7 +102,8 @@ async def connect_broker(
     """
     logger.debug("connect_broker: user_id=%d, broker=%s, force=%s", user_id, request.broker, request.force)
     if not client.client:
-         raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
+        logger.error("SnapTrade client not available for user %s", user_id)
+        raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
 
 
     # 1. Check if user exists
@@ -118,7 +119,8 @@ async def connect_broker(
 
         registration = client.register_user(snap_user_id)
         if not registration:
-             raise HTTPException(status_code=500, detail="Failed to register user with SnapTrade")
+            logger.error("Failed to register SnapTrade user for user_id=%s", user_id)
+            raise HTTPException(status_code=500, detail="Failed to register user with SnapTrade")
         
         snap_user = SnapTradeUser(
             user_account_id=user_id,
@@ -152,7 +154,8 @@ async def sync_data(
     """Sync trades and accounts from connected brokers."""
     logger.debug("sync_data: user_id=%d", user_id)
     if not client.client:
-         raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
+        logger.error("SnapTrade client not available for user %s", user_id)
+        raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
 
     snap_user = db.query(SnapTradeUser).filter(
         SnapTradeUser.user_account_id == user_id
@@ -252,6 +255,7 @@ async def sync_data(
             if trade_date_str:
                 executed_at = datetime.fromisoformat(trade_date_str.replace("Z", "+00:00"))
             else:
+                logger.warning("No trade date for activity %s, using current time", activity.get("id", "unknown"))
                 executed_at = datetime.utcnow()
 
             # Create Trade
@@ -485,7 +489,7 @@ async def get_connection_status(
                         name = acc.get("institution_name") or acc.get("name") or "Unknown"
                         brokerages.append(name)
                 except Exception as e:
-                    logger.warning(f"Error parsing account: {e}")
+                    logger.warning("Error parsing account data: %s", e, exc_info=True)
                     continue
             return ConnectionStatusResponse(connected=len(brokerages) > 0, brokerages=list(set(brokerages)))
 

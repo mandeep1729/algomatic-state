@@ -54,9 +54,12 @@ class DatabaseManager:
             # Set timezone to UTC for all connections
             @event.listens_for(self._engine, "connect")
             def set_timezone(dbapi_connection, connection_record):
-                cursor = dbapi_connection.cursor()
-                cursor.execute("SET timezone = 'UTC'")
-                cursor.close()
+                try:
+                    cursor = dbapi_connection.cursor()
+                    cursor.execute("SET timezone = 'UTC'")
+                    cursor.close()
+                except Exception:
+                    logger.error("Failed to set timezone to UTC on new connection", exc_info=True)
         return self._engine
 
     @property
@@ -92,7 +95,7 @@ class DatabaseManager:
             yield session
             session.commit()
         except Exception:
-            logger.warning("Database session error, rolling back")
+            logger.warning("Database session error, rolling back", exc_info=True)
             session.rollback()
             raise
         finally:

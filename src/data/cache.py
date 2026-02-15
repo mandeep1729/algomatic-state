@@ -92,7 +92,7 @@ class DataCache:
             except Exception:
                 logger.warning(
                     "Corrupted cache file for %s, removing %s",
-                    symbol, cache_path,
+                    symbol, cache_path, exc_info=True,
                 )
                 cache_path.unlink(missing_ok=True)
                 return None
@@ -174,6 +174,7 @@ class DataCache:
                     "size_kb": f.stat().st_size / 1024,
                 })
             except Exception:
+                logger.debug("Failed to read cache file %s, skipping", f, exc_info=True)
                 continue
 
         return entries

@@ -51,6 +51,7 @@ def list_pca_models(
     base_path = models_root / f"ticker={symbol}" / f"timeframe={timeframe}"
 
     if not base_path.exists():
+        logger.debug("PCA models directory does not exist: %s", base_path)
         return []
 
     model_ids = []

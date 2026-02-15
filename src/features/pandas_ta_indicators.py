@@ -151,7 +151,10 @@ class PandasTAIndicatorCalculator(BaseFeatureCalculator):
                 for col in group_df.columns:
                     result[col] = group_df[col]
             except Exception as e:
-                logger.warning(f"Error computing {compute_func.__name__}: {e}")
+                logger.error(
+                    "Failed to compute %s indicator group: %s. Output will lack these features.",
+                    compute_func.__name__, e, exc_info=True,
+                )
 
         return result
 

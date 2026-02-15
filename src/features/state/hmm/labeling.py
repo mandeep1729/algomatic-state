@@ -272,7 +272,7 @@ class StateLabelingEngine:
             logger.debug(f"Inverse-transformed centroids shape: {scaled_centroids.shape}")
         except (ValueError, AttributeError) as e:
             # If inverse transform fails, return unknown labels
-            logger.warning(f"Failed to inverse transform centroids: {e}. Using unknown labels.")
+            logger.error("Failed to classify states via inverse transform: %s. All states marked as 'unknown'.", e)
             return {
                 i: StateLabel(
                     state_id=i,
@@ -314,6 +314,7 @@ class StateLabelingEngine:
         try:
             scaled_centroids = self._inverse_transform_centroids()
         except (ValueError, AttributeError):
+            logger.warning("Could not compute state statistics: inverse transform failed")
             return {}
 
         stats = {}

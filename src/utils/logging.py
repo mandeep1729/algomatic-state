@@ -384,16 +384,19 @@ def setup_logging(
 
     # File handler (if specified)
     if file:
-        file_path = Path(file)
-        file_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            file_path = Path(file)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
 
-        file_handler = RotatingFileHandler(
-            file_path,
-            maxBytes=rotate_size_mb * 1024 * 1024,
-            backupCount=retain_count,
-        )
-        file_handler.setFormatter(formatter)
-        root_logger.addHandler(file_handler)
+            file_handler = RotatingFileHandler(
+                file_path,
+                maxBytes=rotate_size_mb * 1024 * 1024,
+                backupCount=retain_count,
+            )
+            file_handler.setFormatter(formatter)
+            root_logger.addHandler(file_handler)
+        except Exception as e:
+            print(f"WARNING: Failed to set up file logging to {file}: {e}", file=sys.stderr)
 
     # Configure uvicorn loggers to propagate to root (so they go to file handler)
     for uvicorn_logger_name in ("uvicorn", "uvicorn.access", "uvicorn.error"):

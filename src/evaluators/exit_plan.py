@@ -250,6 +250,7 @@ class ExitPlanEvaluator(Evaluator):
         levels = context.key_levels
 
         if not levels:
+            logger.debug("No key levels available for %s, skipping level proximity checks", intent.symbol)
             return items
 
         proximity_threshold = config.get_threshold(

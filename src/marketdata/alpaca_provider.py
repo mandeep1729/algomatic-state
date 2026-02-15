@@ -88,6 +88,7 @@ class AlpacaProvider(MarketDataProvider):
                         continue
 
         if not all_data:
+            logger.warning("Alpaca returned no data for %s (%s to %s)", symbol, start, end)
             return pd.DataFrame()
 
         df = pd.concat(all_data)
@@ -115,6 +116,7 @@ class AlpacaProvider(MarketDataProvider):
             bars = self.client.get_stock_bars(request)
 
             if symbol not in bars.data or not bars.data[symbol]:
+                logger.debug("No bars in Alpaca response for %s chunk", symbol)
                 return pd.DataFrame()
 
             df = bars.df

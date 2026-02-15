@@ -110,7 +110,7 @@ class PCAStateEngine:
 
         # Check for NaN values
         if np.isnan(feature_vector).any():
-            logger.debug(f"NaN in features for {symbol} at {timestamp}")
+            logger.warning("NaN values in feature vector for %s at %s, marking output as OOD", symbol, timestamp)
             return PCAStateOutput(
                 symbol=symbol,
                 timestamp=timestamp,

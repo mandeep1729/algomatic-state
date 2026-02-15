@@ -23,7 +23,7 @@ class SnapTradeClient:
         self.consumer_key = os.environ.get("SNAPTRADE_CONSUMER_KEY")
 
         if not self.client_id or not self.consumer_key:
-            logger.warning("SnapTrade credentials not found in environment variables.")
+            logger.error("SnapTrade credentials not found in environment variables.")
 
         try:
             self.client = SnapTrade(
@@ -34,7 +34,7 @@ class SnapTradeClient:
             # status = self.client.api_status.check() 
             # logger.info(f"SnapTrade API Status: {status}")
         except Exception as e:
-            logger.error(f"Failed to initialize SnapTrade client: {e}")
+            logger.error(f"Failed to initialize SnapTrade client: {e}", exc_info=True)
             self.client = None
 
     def register_user(self, user_id: str) -> Optional[Dict[str, str]]:
@@ -49,6 +49,7 @@ class SnapTradeClient:
             Dict containing 'user_id' and 'user_secret' or None if failed.
         """
         if not self.client:
+            logger.debug("SnapTrade client not initialized, skipping %s", "register_user")
             return None
 
         try:
@@ -101,6 +102,7 @@ class SnapTradeClient:
             Redirect URI string or None.
         """
         if not self.client:
+            logger.debug("SnapTrade client not initialized, skipping %s", "generate_connection_link")
             return None
 
         try:
@@ -130,6 +132,7 @@ class SnapTradeClient:
             List of holdings or None.
         """
         if not self.client:
+            logger.debug("SnapTrade client not initialized, skipping %s", "get_holdings")
             return None
 
         try:
@@ -166,6 +169,7 @@ class SnapTradeClient:
             List of activities or None.
         """
         if not self.client:
+            logger.debug("SnapTrade client not initialized, skipping %s", "get_activities")
             return None
 
         try:
@@ -190,8 +194,9 @@ class SnapTradeClient:
     def get_accounts(self, user_id: str, user_secret: str) -> Optional[List[Dict[str, Any]]]:
         """List connected brokerage accounts."""
         if not self.client:
-             return None
-        
+            logger.debug("SnapTrade client not initialized, skipping %s", "get_accounts")
+            return None
+
         try:
             response = self.client.account_information.list_user_accounts(
                 user_id=user_id,

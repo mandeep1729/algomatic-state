@@ -375,6 +375,7 @@ class ContextPack:
         if features_df is None or features_df.empty:
             return None
         if name not in features_df.columns:
+            logger.debug("Feature '%s' not available in context", name)
             return None
         value = features_df[name].iloc[-1]
         return float(value) if not pd.isna(value) else None

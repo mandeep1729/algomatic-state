@@ -281,7 +281,7 @@ def sync_alpaca_fills_background(user_id: int) -> None:
                         )
                 except Exception as pop_err:
                     # Log but don't fail the sync for population errors
-                    logger.error(f"Background campaign population failed: {pop_err}")
+                    logger.error("Background campaign population failed for user %s: %s", user_id, pop_err)
 
     except Exception as e:
         logger.error(f"Background Alpaca sync failed for user {user_id}: {e}")
