@@ -60,187 +60,6 @@ function getLegStrategy(detail: CampaignDetail, legId: string): string {
   return ctx.strategyTags.join(', ');
 }
 
-// Define table columns
-const columns: Column<CampaignSummary>[] = [
-  {
-    key: 'campaign',
-    header: 'Campaign',
-    hideable: false,
-    filterFn: (campaign, filterText) => {
-      const text = filterText.toLowerCase();
-      return (
-        campaign.symbol.toLowerCase().includes(text) ||
-        campaign.direction.toLowerCase().includes(text) ||
-        formatDateRange(campaign.openedAt, campaign.closedAt).toLowerCase().includes(text)
-      );
-    },
-    render: (campaign) => (
-      <div>
-        <div className="font-medium text-[var(--text-primary)]">
-          {campaign.symbol}{' '}
-          <span
-            className={`text-xs font-medium ${
-              campaign.direction === 'long'
-                ? 'text-[var(--accent-green)]'
-                : 'text-[var(--accent-red)]'
-            }`}
-          >
-            {campaign.direction.toUpperCase()}
-          </span>
-        </div>
-        <div className="mt-0.5 text-xs text-[var(--text-secondary)]">
-          {formatDateRange(campaign.openedAt, campaign.closedAt)}
-        </div>
-      </div>
-    ),
-  },
-  {
-    key: 'legs',
-    header: 'Legs',
-    filterFn: (campaign, filterText) =>
-      String(campaign.legsCount).includes(filterText),
-    render: (campaign) => (
-      <span className="text-[var(--text-secondary)]">{campaign.legsCount}</span>
-    ),
-  },
-  {
-    key: 'qty',
-    header: 'Qty',
-    filterFn: (campaign, filterText) =>
-      formatQtyWithLegs(campaign.legQuantities).includes(filterText),
-    render: (campaign) => (
-      <span className="text-[var(--text-secondary)]">
-        {formatQtyWithLegs(campaign.legQuantities)}
-      </span>
-    ),
-  },
-  {
-    key: 'status',
-    header: 'Status',
-    filterFn: (campaign, filterText) =>
-      campaign.status.toLowerCase().includes(filterText.toLowerCase()),
-    render: (campaign) => (
-      <span
-        className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${
-          campaign.status === 'open'
-            ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
-            : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
-        }`}
-      >
-        {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}
-      </span>
-    ),
-  },
-  {
-    key: 'pnl',
-    header: 'PnL',
-    filterFn: (campaign, filterText) => {
-      if (campaign.status !== 'closed' || campaign.pnlRealized == null) return false;
-      return `$${campaign.pnlRealized.toFixed(2)}`.includes(filterText);
-    },
-    render: (campaign) => {
-      if (campaign.status !== 'closed' || campaign.pnlRealized == null) {
-        return <span className="text-[var(--text-secondary)]">-</span>;
-      }
-      const isPositive = campaign.pnlRealized >= 0;
-      return (
-        <span
-          className={`font-medium ${
-            isPositive ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'
-          }`}
-        >
-          {isPositive ? '+' : ''}${campaign.pnlRealized.toFixed(2)}
-        </span>
-      );
-    },
-  },
-  {
-    key: 'evaluation',
-    header: 'Evaluation',
-    filterFn: (campaign, filterText) => {
-      const text = filterText.toLowerCase();
-      return (
-        campaign.overallLabel.toLowerCase().includes(text) ||
-        campaign.keyFlags.some((f) => f.replace(/_/g, ' ').toLowerCase().includes(text))
-      );
-    },
-    render: (campaign) => (
-      <div className="flex flex-wrap items-center gap-1.5">
-        <OverallLabelBadge label={campaign.overallLabel} />
-        {campaign.keyFlags.slice(0, 2).map((flag) => (
-          <span
-            key={flag}
-            className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]"
-          >
-            {flag.replace(/_/g, ' ')}
-          </span>
-        ))}
-      </div>
-    ),
-  },
-  {
-    key: 'strategy',
-    header: 'Strategy',
-    filterFn: (campaign, filterText) => {
-      if (!campaign.strategies || campaign.strategies.length === 0) return false;
-      const text = filterText.toLowerCase();
-      return campaign.strategies.some((s) => s.toLowerCase().includes(text));
-    },
-    render: (campaign) => {
-      if (!campaign.strategies || campaign.strategies.length === 0) {
-        return <span className="text-[var(--text-secondary)]">-</span>;
-      }
-      return (
-        <div className="flex flex-wrap items-center gap-1">
-          {campaign.strategies.map((strategy) => (
-            <span
-              key={strategy}
-              className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-[var(--accent-green)]/10 text-[var(--accent-green)]"
-            >
-              {strategy}
-            </span>
-          ))}
-        </div>
-      );
-    },
-  },
-  {
-    key: 'campaignId',
-    header: 'Campaign ID',
-    filterFn: (campaign, filterText) =>
-      campaign.campaignId.includes(filterText),
-    render: (campaign) => (
-      <span className="text-[11px] text-[var(--text-secondary)]/50 font-mono">
-        {campaign.campaignId}
-      </span>
-    ),
-  },
-  {
-    key: 'orderIds',
-    header: 'Order IDs',
-    filterFn: (campaign, filterText) => {
-      const ids = campaign.orderIds ?? [];
-      const text = filterText.toLowerCase();
-      return ids.some((id) => id.toLowerCase().includes(text));
-    },
-    render: (campaign) => {
-      const ids = campaign.orderIds ?? [];
-      if (ids.length === 0) {
-        return <span className="text-[11px] text-[var(--text-secondary)]/50">-</span>;
-      }
-      return (
-        <div className="flex flex-col gap-0.5">
-          {ids.map((id) => (
-            <span key={id} className="text-[11px] text-[var(--text-secondary)]/50 font-mono truncate max-w-[140px]" title={id}>
-              {id}
-            </span>
-          ))}
-        </div>
-      );
-    },
-  },
-];
-
 export default function Campaigns() {
   const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
@@ -269,6 +88,191 @@ export default function Campaigns() {
   const [deletingCampaign, setDeletingCampaign] = useState<string | null>(null);
 
   const hasSelection = selectedLegIds.size > 0;
+
+  // Define table columns (memoized to access expansion state for orderIds visibility)
+  const columns: Column<CampaignSummary>[] = useMemo(() => [
+    {
+      key: 'campaign',
+      header: 'Campaign',
+      hideable: false,
+      filterFn: (campaign, filterText) => {
+        const text = filterText.toLowerCase();
+        return (
+          campaign.symbol.toLowerCase().includes(text) ||
+          campaign.direction.toLowerCase().includes(text) ||
+          formatDateRange(campaign.openedAt, campaign.closedAt).toLowerCase().includes(text)
+        );
+      },
+      render: (campaign) => (
+        <div>
+          <div className="font-medium text-[var(--text-primary)]">
+            {campaign.symbol}{' '}
+            <span
+              className={`text-xs font-medium ${
+                campaign.direction === 'long'
+                  ? 'text-[var(--accent-green)]'
+                  : 'text-[var(--accent-red)]'
+              }`}
+            >
+              {campaign.direction.toUpperCase()}
+            </span>
+          </div>
+          <div className="mt-0.5 text-xs text-[var(--text-secondary)]">
+            {formatDateRange(campaign.openedAt, campaign.closedAt)}
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'legs',
+      header: 'Legs',
+      filterFn: (campaign, filterText) =>
+        String(campaign.legsCount).includes(filterText),
+      render: (campaign) => (
+        <span className="text-[var(--text-secondary)]">{campaign.legsCount}</span>
+      ),
+    },
+    {
+      key: 'qty',
+      header: 'Qty',
+      filterFn: (campaign, filterText) =>
+        formatQtyWithLegs(campaign.legQuantities).includes(filterText),
+      render: (campaign) => (
+        <span className="text-[var(--text-secondary)]">
+          {formatQtyWithLegs(campaign.legQuantities)}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      filterFn: (campaign, filterText) =>
+        campaign.status.toLowerCase().includes(filterText.toLowerCase()),
+      render: (campaign) => (
+        <span
+          className={`inline-block rounded-full px-2.5 py-1 text-xs font-medium ${
+            campaign.status === 'open'
+              ? 'bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
+              : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
+          }`}
+        >
+          {campaign.status.charAt(0).toUpperCase() + campaign.status.slice(1)}
+        </span>
+      ),
+    },
+    {
+      key: 'pnl',
+      header: 'PnL',
+      filterFn: (campaign, filterText) => {
+        if (campaign.status !== 'closed' || campaign.pnlRealized == null) return false;
+        return `$${campaign.pnlRealized.toFixed(2)}`.includes(filterText);
+      },
+      render: (campaign) => {
+        if (campaign.status !== 'closed' || campaign.pnlRealized == null) {
+          return <span className="text-[var(--text-secondary)]">-</span>;
+        }
+        const isPositive = campaign.pnlRealized >= 0;
+        return (
+          <span
+            className={`font-medium ${
+              isPositive ? 'text-[var(--accent-green)]' : 'text-[var(--accent-red)]'
+            }`}
+          >
+            {isPositive ? '+' : ''}${campaign.pnlRealized.toFixed(2)}
+          </span>
+        );
+      },
+    },
+    {
+      key: 'evaluation',
+      header: 'Evaluation',
+      filterFn: (campaign, filterText) => {
+        const text = filterText.toLowerCase();
+        return (
+          campaign.overallLabel.toLowerCase().includes(text) ||
+          campaign.keyFlags.some((f) => f.replace(/_/g, ' ').toLowerCase().includes(text))
+        );
+      },
+      render: (campaign) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <OverallLabelBadge label={campaign.overallLabel} />
+          {campaign.keyFlags.slice(0, 2).map((flag) => (
+            <span
+              key={flag}
+              className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]"
+            >
+              {flag.replace(/_/g, ' ')}
+            </span>
+          ))}
+        </div>
+      ),
+    },
+    {
+      key: 'strategy',
+      header: 'Strategy',
+      filterFn: (campaign, filterText) => {
+        if (!campaign.strategies || campaign.strategies.length === 0) return false;
+        const text = filterText.toLowerCase();
+        return campaign.strategies.some((s) => s.toLowerCase().includes(text));
+      },
+      render: (campaign) => {
+        if (!campaign.strategies || campaign.strategies.length === 0) {
+          return <span className="text-[var(--text-secondary)]">-</span>;
+        }
+        return (
+          <div className="flex flex-wrap items-center gap-1">
+            {campaign.strategies.map((strategy) => (
+              <span
+                key={strategy}
+                className="inline-block rounded px-2 py-0.5 text-[10px] font-medium bg-[var(--accent-green)]/10 text-[var(--accent-green)]"
+              >
+                {strategy}
+              </span>
+            ))}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'campaignId',
+      header: 'Campaign ID',
+      filterFn: (campaign, filterText) =>
+        campaign.campaignId.includes(filterText),
+      render: (campaign) => (
+        <span className="text-[11px] text-[var(--text-secondary)]/50 font-mono">
+          {campaign.campaignId}
+        </span>
+      ),
+    },
+    {
+      key: 'orderIds',
+      header: 'Order IDs',
+      filterFn: (campaign, filterText) => {
+        const ids = campaign.orderIds ?? [];
+        const text = filterText.toLowerCase();
+        return ids.some((id) => id.toLowerCase().includes(text));
+      },
+      render: (campaign) => {
+        // Only show order IDs when campaign row is expanded (legs visible)
+        if (!expandedCampaignIds.has(campaign.campaignId)) {
+          return null;
+        }
+        const ids = campaign.orderIds ?? [];
+        if (ids.length === 0) {
+          return <span className="text-[11px] text-[var(--text-secondary)]/50">-</span>;
+        }
+        return (
+          <div className="flex flex-col gap-0.5">
+            {ids.map((id) => (
+              <span key={id} className="text-[11px] text-[var(--text-secondary)]/50 font-mono truncate max-w-[140px]" title={id}>
+                {id}
+              </span>
+            ))}
+          </div>
+        );
+      },
+    },
+  ], [expandedCampaignIds]);
 
   // Load campaigns + orphaned legs
   const loadCampaigns = useCallback(async () => {
