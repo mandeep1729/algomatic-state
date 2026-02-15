@@ -176,6 +176,23 @@ export default function CampaignDetail() {
     ];
   }, [detail]);
 
+  // Count critical (block/danger) check failures per leg for badge display
+  const criticalCountByLeg = useMemo(() => {
+    if (!detail) return {} as Record<string, number>;
+    const checksByLeg = detail.checksByLeg ?? {};
+    const counts: Record<string, number> = {};
+    for (const leg of detail.legs) {
+      const checks = checksByLeg[leg.legId] ?? [];
+      const criticalCount = checks.filter(
+        (c) => (c.severity === 'block' || c.severity === 'danger') && !c.passed,
+      ).length;
+      if (criticalCount > 0) {
+        counts[leg.legId] = criticalCount;
+      }
+    }
+    return counts;
+  }, [detail]);
+
   const isCampaignTab = tab === 'campaign';
   const selectedLeg = !isCampaignTab && detail
     ? detail.legs.find((l) => l.legId === tab)
@@ -356,18 +373,24 @@ export default function CampaignDetail() {
         <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border-color)] pt-4">
           {tabs.map((t) => {
             const isActive = tab === t.key;
+            const criticalCount = criticalCountByLeg[t.key] ?? 0;
             return (
               <button
                 key={t.key}
                 type="button"
                 onClick={() => handleTabClick(t.key)}
-                className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`relative rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
                   isActive
                     ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
                     : 'border-[var(--border-color)] text-[var(--text-secondary)] hover:border-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 {t.label}
+                {criticalCount > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent-red)] px-1 text-[10px] font-bold leading-none text-white">
+                    {criticalCount}
+                  </span>
+                )}
               </button>
             );
           })}
