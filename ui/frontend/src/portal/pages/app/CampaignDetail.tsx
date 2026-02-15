@@ -429,6 +429,7 @@ export default function CampaignDetail() {
                         key={leg.legId}
                         checks={checksByLeg[leg.legId]}
                         legLabel={label}
+                        showSummary={false}
                       />
                     );
                   })}

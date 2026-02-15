@@ -5,6 +5,8 @@ interface ChecksSummaryProps {
   checks: CampaignCheck[];
   /** Optional label displayed above the summary counts (e.g. "L1: open") */
   legLabel?: string;
+  /** Optional flag to show/hide summary counts (default: true) */
+  showSummary?: boolean;
 }
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = {
@@ -103,7 +105,7 @@ function CheckCard({ check }: { check: CampaignCheck }) {
   );
 }
 
-export function ChecksSummary({ checks, legLabel }: ChecksSummaryProps) {
+export function ChecksSummary({ checks, legLabel, showSummary = true }: ChecksSummaryProps) {
   const passed = checks.filter((c) => c.passed).length;
   const failed = checks.filter((c) => !c.passed).length;
   const warnings = checks.filter((c) => c.severity === 'warn' && !c.passed).length;
@@ -119,26 +121,28 @@ export function ChecksSummary({ checks, legLabel }: ChecksSummaryProps) {
         </h3>
       )}
       {/* Summary counts */}
-      <div className="mb-4 flex flex-wrap gap-3 text-xs">
-        <span className="text-[var(--accent-green)]">
-          {passed} passed
-        </span>
-        {warnings > 0 && (
-          <span className="text-[var(--accent-yellow)]">
-            {warnings} warning{warnings !== 1 ? 's' : ''}
+      {showSummary && (
+        <div className="mb-4 flex flex-wrap gap-3 text-xs">
+          <span className="text-[var(--accent-green)]">
+            {passed} passed
           </span>
-        )}
-        {blockers > 0 && (
-          <span className="text-[var(--accent-red)]">
-            {blockers} blocker{blockers !== 1 ? 's' : ''}
-          </span>
-        )}
-        {failed > 0 && failed !== warnings + blockers && (
-          <span className="text-[var(--accent-red)]">
-            {failed} failed
-          </span>
-        )}
-      </div>
+          {warnings > 0 && (
+            <span className="text-[var(--accent-yellow)]">
+              {warnings} warning{warnings !== 1 ? 's' : ''}
+            </span>
+          )}
+          {blockers > 0 && (
+            <span className="text-[var(--accent-red)]">
+              {blockers} blocker{blockers !== 1 ? 's' : ''}
+            </span>
+          )}
+          {failed > 0 && failed !== warnings + blockers && (
+            <span className="text-[var(--accent-red)]">
+              {failed} failed
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Check cards */}
       <div className="grid gap-3">
