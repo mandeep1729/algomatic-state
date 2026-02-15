@@ -23,7 +23,7 @@ class CheckResult:
     Attributes:
         check_type: Category of check (e.g. "risk_sanity")
         code: Unique code for this sub-check (e.g. "RS001")
-        severity: "info" | "warn" | "block"
+        severity: "info" | "warn" | "critical"
         passed: Whether the check passed
         details: Structured metrics for JSONB storage
         nudge_text: Human-readable message for the trader

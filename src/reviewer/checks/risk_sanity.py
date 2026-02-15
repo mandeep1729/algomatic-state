@@ -30,11 +30,11 @@ CHECK_PHASE = "at_entry"
 
 # Default severities per check code.  Escalated variants use '_escalated'.
 _DEFAULT_SEVERITIES: dict[str, str] = {
-    "RS001": "block",
+    "RS001": "critical",
     "RS002": "warn",
-    "RS002_escalated": "block",
+    "RS002_escalated": "critical",
     "RS003": "warn",
-    "RS003_escalated": "block",
+    "RS003_escalated": "critical",
     "RS004": "warn",
 }
 
@@ -59,7 +59,7 @@ class RiskSanityChecker(BaseChecker):
             code: Check code, optionally with '_escalated' suffix
 
         Returns:
-            Severity string (e.g. "warn", "block", "danger")
+            Severity string (e.g. "warn", "critical", "danger")
         """
         overrides = self.config.severity_overrides
         if code in overrides:
