@@ -897,6 +897,7 @@ export default function Campaigns() {
         loading={loading}
         emptyMessage="No campaigns match your search."
         getRowKey={(campaign) => campaign.campaignId}
+        onRowClick={(campaign) => navigate(`/app/campaigns/${campaign.campaignId}`)}
         expandedKeys={expandedCampaignIds}
         onExpandChange={handleExpandChange}
         renderExpandedRow={renderExpandedRow}
