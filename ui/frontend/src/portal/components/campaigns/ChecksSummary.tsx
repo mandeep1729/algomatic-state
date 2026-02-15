@@ -30,9 +30,6 @@ const SEVERITY_STYLES: Record<CheckSeverity, { badge: string; dot: string }> = {
   },
 };
 
-/** Severities that count as "critical" for badge/blocker purposes. */
-const CRITICAL_SEVERITIES: ReadonlySet<CheckSeverity> = new Set(['block', 'danger', 'critical']);
-
 function sortChecks(checks: CampaignCheck[]): CampaignCheck[] {
   return [...checks].sort((a, b) => {
     // Failed checks first
