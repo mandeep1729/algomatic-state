@@ -20,6 +20,7 @@ from src.data.database.trading_buddy_models import (
     UserAccount as UserAccountModel,
     UserProfile as UserProfileModel,
     UserRule as UserRuleModel,
+    Waitlist as WaitlistModel,
 )
 from src.data.database.broker_models import TradeFill as TradeFillModel
 from src.data.database.strategy_models import Strategy as StrategyModel
@@ -111,6 +112,55 @@ class TradingBuddyRepository:
         if account is None:
             account = self.create_account(external_user_id, name, email=email, **kwargs)
         return account
+
+    # -------------------------------------------------------------------------
+    # Waitlist Operations
+    # -------------------------------------------------------------------------
+
+    def get_waitlist_entry_by_email(self, email: str) -> Optional[WaitlistModel]:
+        """Get a waitlist entry by email."""
+        return self.session.query(WaitlistModel).filter(
+            WaitlistModel.email == email
+        ).first()
+
+    def is_email_approved(self, email: str) -> bool:
+        """Check if an email is approved on the waitlist."""
+        entry = self.get_waitlist_entry_by_email(email)
+        return entry is not None and entry.status == "approved"
+
+    def create_waitlist_entry(
+        self,
+        name: str,
+        email: str,
+        referral_source: Optional[str] = None,
+    ) -> WaitlistModel:
+        """Create a new waitlist entry."""
+        entry = WaitlistModel(
+            name=name,
+            email=email,
+            referral_source=referral_source,
+        )
+        self.session.add(entry)
+        self.session.flush()
+        logger.info("Created waitlist entry id=%s email=%s", entry.id, email)
+        return entry
+
+    def get_or_create_waitlist_entry(
+        self,
+        name: str,
+        email: str,
+        referral_source: Optional[str] = None,
+    ) -> tuple[WaitlistModel, bool]:
+        """Get existing waitlist entry or create a new one.
+
+        Returns:
+            Tuple of (entry, created) where created is True if new.
+        """
+        existing = self.get_waitlist_entry_by_email(email)
+        if existing is not None:
+            return existing, False
+        entry = self.create_waitlist_entry(name, email, referral_source)
+        return entry, True
 
     # -------------------------------------------------------------------------
     # User Profile Operations

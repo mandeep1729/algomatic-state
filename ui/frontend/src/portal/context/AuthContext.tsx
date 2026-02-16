@@ -1,6 +1,14 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { apiUrl } from '../../config';
 
+/** Thrown when the backend returns 403 — user is not yet approved. */
+export class WaitlistError extends Error {
+  constructor(public detail: string) {
+    super(detail);
+    this.name = 'WaitlistError';
+  }
+}
+
 interface AuthUser {
   id: number;
   name: string;
@@ -67,6 +75,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ credential }),
     });
+
+    if (res.status === 403) {
+      const body = await res.json().catch(() => ({ detail: 'Account pending approval' }));
+      throw new WaitlistError(body.detail || 'Account pending approval');
+    }
 
     if (!res.ok) {
       const body = await res.text().catch(() => '');

@@ -64,6 +64,7 @@ from src.api.alpaca import router as alpaca_router
 from src.api.campaigns import router as campaigns_router
 from src.api.strategies import router as strategies_router
 from src.api.journal import router as journal_router
+from src.api.waitlist import router as waitlist_router
 from src.api.strategy_probe import router as strategy_probe_router
 from src.api.ohlcv import router as ohlcv_router
 from src.api.features_api import router as features_router
@@ -155,6 +156,7 @@ def _shutdown_orchestrators():
 # ---------------------------------------------------------------------------
 
 app.include_router(auth_router)
+app.include_router(waitlist_router)
 app.include_router(user_profile_router)
 app.include_router(trading_buddy_router)
 app.include_router(broker_router)
