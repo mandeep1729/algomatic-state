@@ -102,7 +102,6 @@ class ReviewerOrchestrator:
         from src.data.database.trade_lifecycle_models import DecisionContext
         from src.data.database.broker_models import TradeFill
         from src.reviewer.checks.runner import CheckRunner
-        from src.reviewer.evaluator_runner import EvaluatorRunner
 
         settings = get_settings()
         if not settings.reviewer.enabled:
@@ -142,31 +141,15 @@ class ReviewerOrchestrator:
                     fill_id, passed, failed, correlation_id,
                 )
 
-                # --- Evaluator checks (isolated from behavioral checks) ---
-                evaluation = None
-                try:
-                    eval_runner = EvaluatorRunner(session)
-                    evaluation = eval_runner.run_evaluations(leg)
-                except Exception:
-                    logger.exception(
-                        "Evaluator checks failed for leg_id=%s (correlation_id=%s)",
-                        leg_id, correlation_id,
-                    )
-
-                # Publish completion event with evaluation metadata
-                payload = {
-                    "leg_id": leg_id,
-                    "check_count": len(checks),
-                    "passed": passed,
-                    "failed": failed,
-                }
-                if evaluation is not None:
-                    payload["evaluation_id"] = evaluation.id
-                    payload["evaluation_score"] = evaluation.score
-
+                # Publish completion event
                 self._bus.publish(Event(
                     event_type=EventType.REVIEW_COMPLETE,
-                    payload=payload,
+                    payload={
+                        "fill_id": fill_id,
+                        "check_count": len(checks),
+                        "passed": passed,
+                        "failed": failed,
+                    },
                     source="ReviewerOrchestrator",
                     correlation_id=correlation_id,
                 ))
