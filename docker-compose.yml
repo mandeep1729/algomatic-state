@@ -67,6 +67,7 @@ services:
       context: ./marketdata-service
       dockerfile: Dockerfile
     container_name: algomatic-marketdata-service
+    user: "${DOCKER_UID}:${DOCKER_GID}"
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
@@ -97,6 +98,7 @@ services:
   reviewer-service:
     build: .
     container_name: algomatic-reviewer-service
+    user: "${DOCKER_UID}:${DOCKER_GID}"
     environment:
       - DB_HOST=postgres
       - DB_PORT=5432
