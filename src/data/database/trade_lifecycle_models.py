@@ -3,8 +3,7 @@
 Defines tables for:
 - DecisionContext: Trader's context/feelings attached 1-to-1 with a fill.
 - CampaignCheck: Behavioral nudge checks attached to decision contexts.
-- Campaign: Derived campaign grouping (flat-to-flat).
-- CampaignFill: Junction table linking campaigns to fills.
+- CampaignFill: Self-contained campaign grouping (group_id = first fill_id).
 """
 
 from datetime import datetime
@@ -175,26 +174,21 @@ class CampaignCheck(Base):
         )
 
 
-class Campaign(Base):
-    """Derived campaign grouping — a flat-to-flat trade journey.
+class CampaignFill(Base):
+    """Self-contained campaign grouping linking fills to campaign groups.
 
-    Campaigns are computed from fills + decision_contexts. They are
-    cheap derived data: delete and rebuild is the update strategy.
+    group_id is the first fill_id in the campaign (deterministic, unique per campaign).
+    A fill can appear in two groups when a zero-crossing flip occurs.
     """
 
-    __tablename__ = "campaigns"
+    __tablename__ = "campaign_fills"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    account_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey("user_accounts.id", ondelete="CASCADE"),
+    group_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    fill_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("trade_fills.id", ondelete="CASCADE"),
         nullable=False,
-    )
-    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
-    strategy_id: Mapped[Optional[int]] = mapped_column(
-        Integer,
-        ForeignKey("strategies.id", ondelete="SET NULL"),
-        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -203,44 +197,13 @@ class Campaign(Base):
     )
 
     # Relationships
-    account: Mapped["UserAccount"] = relationship("UserAccount")
-    strategy: Mapped[Optional["Strategy"]] = relationship("Strategy")
-    campaign_fills: Mapped[list["CampaignFill"]] = relationship(
-        "CampaignFill",
-        back_populates="campaign",
-        cascade="all, delete-orphan",
-    )
-
-    __table_args__ = (
-        Index("ix_campaigns_account_symbol_strategy", "account_id", "symbol", "strategy_id"),
-    )
-
-    def __repr__(self) -> str:
-        return (
-            f"<Campaign(id={self.id}, symbol='{self.symbol}', "
-            f"strategy_id={self.strategy_id})>"
-        )
-
-
-class CampaignFill(Base):
-    """Junction table linking campaigns to trade fills."""
-
-    __tablename__ = "campaign_fills"
-
-    campaign_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("campaigns.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-    fill_id: Mapped[int] = mapped_column(
-        BigInteger,
-        ForeignKey("trade_fills.id", ondelete="CASCADE"),
-        primary_key=True,
-    )
-
-    # Relationships
-    campaign: Mapped["Campaign"] = relationship("Campaign", back_populates="campaign_fills")
     fill: Mapped["TradeFill"] = relationship("TradeFill")
 
+    __table_args__ = (
+        UniqueConstraint("group_id", "fill_id", name="uq_campaign_fills_group_fill"),
+        Index("ix_campaign_fills_group_id", "group_id"),
+        Index("ix_campaign_fills_fill_id", "fill_id"),
+    )
+
     def __repr__(self) -> str:
-        return f"<CampaignFill(campaign_id={self.campaign_id}, fill_id={self.fill_id})>"
+        return f"<CampaignFill(group_id={self.group_id}, fill_id={self.fill_id})>"

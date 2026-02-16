@@ -24,8 +24,6 @@ from src.data.database.connection import get_db_manager
 from src.data.database.trading_repository import TradingBuddyRepository
 from src.data.database.broker_models import TradeFill
 from src.data.database.trade_lifecycle_models import (
-    Campaign,
-    CampaignFill,
     CampaignCheck,
     DecisionContext,
 )
@@ -375,11 +373,8 @@ async def get_pnl_by_ticker(
         total_pnl_pct = round(total_pnl / total_cost * 100, 2) if total_cost > 0 else 0.0
 
         # Count campaigns for this symbol
-        campaign_count = (
-            db.query(func.count(Campaign.id))
-            .filter(Campaign.account_id == user_id, Campaign.symbol == symbol)
-            .scalar() or 0
-        )
+        repo = TradingBuddyRepository(db)
+        campaign_count = repo.count_campaign_groups(user_id, symbol=symbol)
 
         tickers.append(TickerPnlResponse(
             symbol=symbol,
@@ -550,11 +545,8 @@ async def get_ticker_pnl(
     total_cost = total_bought_cost if total_bought_cost > 0 else 1.0
     total_pnl_pct = round(total_pnl / total_cost * 100, 2) if total_cost > 0 else 0.0
 
-    campaign_count = (
-        db.query(func.count(Campaign.id))
-        .filter(Campaign.account_id == user_id, Campaign.symbol == symbol.upper())
-        .scalar() or 0
-    )
+    repo = TradingBuddyRepository(db)
+    campaign_count = repo.count_campaign_groups(user_id, symbol=symbol.upper())
 
     return TickerPnlResponse(
         symbol=symbol.upper(),
@@ -599,18 +591,24 @@ async def list_campaigns(
 
     result = []
     for campaign in campaigns:
-        fills = repo.get_campaign_fills(campaign.id)
+        group_id = campaign["group_id"]
+        fills = repo.get_campaign_fills(group_id)
         agg = _compute_campaign_aggregates(fills)
 
+        # Derive strategy from first fill's decision context
         strategy_name = None
-        if campaign.strategy_id:
-            strategy = db.query(Strategy).filter(Strategy.id == campaign.strategy_id).first()
-            if strategy:
-                strategy_name = strategy.name
+        if fills:
+            ctx = db.query(DecisionContext).filter(
+                DecisionContext.fill_id == fills[0].id
+            ).first()
+            if ctx and ctx.strategy_id:
+                strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
+                if strategy:
+                    strategy_name = strategy.name
 
         result.append(CampaignSummaryResponse(
-            campaignId=str(campaign.id),
-            symbol=campaign.symbol,
+            campaignId=str(group_id),
+            symbol=fills[0].symbol if fills else "",
             direction=agg["direction"],
             status=agg["status"],
             openedAt=_format_dt(agg["opened_at"]),
@@ -628,29 +626,31 @@ async def list_campaigns(
     return result
 
 
-@router.get("/{campaign_id}", response_model=CampaignDetailResponse)
+@router.get("/{group_id}", response_model=CampaignDetailResponse)
 async def get_campaign_detail(
-    campaign_id: int,
+    group_id: int,
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Get full campaign detail including fills and decision contexts."""
     repo = TradingBuddyRepository(db)
-    campaign = repo.get_campaign(campaign_id)
 
-    if not campaign:
-        raise HTTPException(status_code=404, detail=f"Campaign {campaign_id} not found")
-    if campaign.account_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to view this campaign")
+    if not repo.campaign_group_exists(group_id, user_id):
+        raise HTTPException(status_code=404, detail=f"Campaign {group_id} not found")
 
-    fills = repo.get_campaign_fills(campaign.id)
+    fills = repo.get_campaign_fills(group_id)
     agg = _compute_campaign_aggregates(fills)
 
+    # Derive strategy from first fill's decision context
     strategy_name = None
-    if campaign.strategy_id:
-        strategy = db.query(Strategy).filter(Strategy.id == campaign.strategy_id).first()
-        if strategy:
-            strategy_name = strategy.name
+    if fills:
+        ctx = db.query(DecisionContext).filter(
+            DecisionContext.fill_id == fills[0].id
+        ).first()
+        if ctx and ctx.strategy_id:
+            strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
+            if strategy:
+                strategy_name = strategy.name
 
     # Build fill responses with context
     fill_responses = [_fill_to_response(f, db) for f in fills]
@@ -683,8 +683,8 @@ async def get_campaign_detail(
                 })
 
     return CampaignDetailResponse(
-        campaignId=str(campaign.id),
-        symbol=campaign.symbol,
+        campaignId=str(group_id),
+        symbol=fills[0].symbol if fills else "",
         direction=agg["direction"],
         status=agg["status"],
         openedAt=_format_dt(agg["opened_at"]),

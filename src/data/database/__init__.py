@@ -12,7 +12,6 @@ from src.data.database.strategy_models import Strategy
 from src.data.database.trade_lifecycle_models import (
     DecisionContext,
     CampaignCheck,
-    Campaign,
     CampaignFill,
 )
 from src.data.database.probe_models import ProbeStrategy, StrategyProbeResult
@@ -38,7 +37,6 @@ __all__ = [
     "TradeFill",
     "DecisionContext",
     "CampaignCheck",
-    "Campaign",
     "CampaignFill",
     # Probe system
     "ProbeStrategy",
