@@ -65,7 +65,7 @@ def _create_access_token(user_id: int) -> str:
     settings = get_settings()
     expire = datetime.now(timezone.utc) + timedelta(hours=settings.auth.jwt_expiry_hours)
     payload = {
-        "sub": user_id,
+        "sub": str(user_id),
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
