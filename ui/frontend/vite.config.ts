@@ -12,6 +12,9 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true, // Listen on all interfaces for LAN access
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+    },
     proxy: {
       '/api': {
         target: `http://localhost:${apiPort}`,
