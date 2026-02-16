@@ -15,7 +15,7 @@ from typing import Optional, List, Literal
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, distinct
+from sqlalchemy import case, func, distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -428,7 +428,7 @@ async def get_pnl_timeseries(
         date_trunc.label("period"),
         func.coalesce(
             func.sum(
-                func.case(
+                case(
                     (TradeFill.side == "sell", TradeFill.quantity * TradeFill.price),
                     else_=0.0,
                 )
@@ -437,7 +437,7 @@ async def get_pnl_timeseries(
         ).label("sell_proceeds"),
         func.coalesce(
             func.sum(
-                func.case(
+                case(
                     (TradeFill.side == "buy", TradeFill.quantity * TradeFill.price),
                     else_=0.0,
                 )
