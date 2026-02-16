@@ -53,12 +53,6 @@ function formatQtyWithLegs(legQuantities: number[]): string {
   return `${total} (${breakdown})`;
 }
 
-/** Get the strategy name for a leg from its decision context */
-function getLegStrategy(detail: CampaignDetail, legId: string): string {
-  const ctx = detail.contextsByLeg[legId];
-  if (!ctx?.strategyTags?.length) return '-';
-  return ctx.strategyTags.join(', ');
-}
 
 export default function Campaigns() {
   const navigate = useNavigate();
@@ -242,35 +236,7 @@ export default function Campaigns() {
         </span>
       ),
     },
-    {
-      key: 'orderIds',
-      header: 'Order IDs',
-      filterFn: (campaign, filterText) => {
-        const ids = campaign.orderIds ?? [];
-        const text = filterText.toLowerCase();
-        return ids.some((id) => id.toLowerCase().includes(text));
-      },
-      render: (campaign) => {
-        // Only show order IDs when campaign row is expanded (legs visible)
-        if (!expandedCampaignIds.has(campaign.campaignId)) {
-          return null;
-        }
-        const ids = campaign.orderIds ?? [];
-        if (ids.length === 0) {
-          return <span className="text-[11px] text-[var(--text-secondary)]/50">-</span>;
-        }
-        return (
-          <div className="flex flex-col gap-0.5">
-            {ids.map((id) => (
-              <span key={id} className="text-[11px] text-[var(--text-secondary)]/50 font-mono truncate max-w-[140px]" title={id}>
-                {id}
-              </span>
-            ))}
-          </div>
-        );
-      },
-    },
-  ], [expandedCampaignIds]);
+  ], []);
 
   // Load campaigns + orphaned legs
   const loadCampaigns = useCallback(async () => {
@@ -512,6 +478,7 @@ export default function Campaigns() {
               <th className="px-3 py-1.5">Price</th>
               <th className="px-3 py-1.5">Date</th>
               <th className="px-3 py-1.5">Strategy</th>
+              <th className="px-3 py-1.5">Order ID</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border-color)]/50">
@@ -557,7 +524,20 @@ export default function Campaigns() {
                     {formatLegDate(leg.startedAt)}
                   </td>
                   <td className="px-3 py-2 text-[var(--text-secondary)]">
-                    {getLegStrategy(detail, leg.legId)}
+                    {leg.strategyName ?? '-'}
+                  </td>
+                  <td className="px-3 py-2">
+                    {(leg.orderIds && leg.orderIds.length > 0) ? (
+                      <div className="flex flex-col gap-0.5">
+                        {leg.orderIds.map((id) => (
+                          <span key={id} className="text-[11px] text-[var(--text-secondary)]/50 font-mono truncate max-w-[140px]" title={id}>
+                            {id}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-[11px] text-[var(--text-secondary)]/50">-</span>
+                    )}
                   </td>
                 </tr>
               );

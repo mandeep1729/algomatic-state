@@ -345,6 +345,8 @@ export interface CampaignLeg {
   endedAt: string;
   symbol?: string;
   direction?: string;
+  orderIds?: string[];
+  strategyName?: string;
 }
 
 export interface OrphanedLegGroup {
