@@ -146,9 +146,13 @@ services:
 volumes:
   postgres_data:
     name: algomatic_postgres_data
+    external: true
   redis_data:
     name: algomatic_redis_data
+    external: true
   pgadmin_data:
     name: algomatic_pgadmin_data
+    external: true
   marketdata_logs:
     name: algomatic_marketdata_logs
+    external: true

@@ -1,7 +1,7 @@
 """Integration tests for the reviewer service event flow.
 
 Tests the end-to-end flow:
-  event publish → ReviewerOrchestrator → CheckRunner → result events
+  event publish → ReviewerOrchestrator → CheckRunner + EvaluatorRunner → result events
 """
 
 from unittest.mock import MagicMock, patch
@@ -42,6 +42,27 @@ def _mock_db_session(leg_id=42, campaign_id=10, account_id=1):
     return ctx_manager
 
 
+def _patch_runners(check_results=None, eval_result=None):
+    """Return context managers that patch both CheckRunner and EvaluatorRunner.
+
+    Args:
+        check_results: List of mock CampaignCheck records (default: one passed).
+        eval_result: Mock TradeEvaluationModel or None (default: None).
+
+    Returns:
+        Tuple of (check_runner_patch, evaluator_runner_patch) context managers.
+    """
+    if check_results is None:
+        mock_check = MagicMock()
+        mock_check.passed = True
+        check_results = [mock_check]
+
+    check_patch = patch("src.reviewer.checks.runner.CheckRunner")
+    eval_patch = patch("src.reviewer.evaluator_runner.EvaluatorRunner")
+
+    return check_patch, eval_patch, check_results, eval_result
+
+
 class TestLegCreatedToReviewComplete:
     """Full flow: REVIEW_LEG_CREATED → checks → REVIEW_COMPLETE."""
 
@@ -56,17 +77,23 @@ class TestLegCreatedToReviewComplete:
         completed_events = []
         bus.subscribe(EventType.REVIEW_COMPLETE, lambda e: completed_events.append(e))
 
-        with patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls:
+        with (
+            patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls,
+            patch("src.reviewer.evaluator_runner.EvaluatorRunner") as mock_eval_cls,
+        ):
             mock_runner = MagicMock()
             mock_check = MagicMock()
             mock_check.passed = True
             mock_runner.run_checks.return_value = [mock_check]
             mock_runner_cls.return_value = mock_runner
 
+            mock_eval_runner = MagicMock()
+            mock_eval_runner.run_evaluations.return_value = None
+            mock_eval_cls.return_value = mock_eval_runner
+
             orch = ReviewerOrchestrator(message_bus=bus)
             orch.start()
 
-            # Publish the trigger event
             bus.publish(Event(
                 event_type=EventType.REVIEW_LEG_CREATED,
                 payload={"leg_id": 42, "campaign_id": 10, "account_id": 1, "symbol": "AAPL"},
@@ -80,6 +107,52 @@ class TestLegCreatedToReviewComplete:
         assert evt.payload["leg_id"] == 42
         assert evt.payload["passed"] == 1
         assert evt.payload["failed"] == 0
+
+    @patch("config.settings.get_settings")
+    @patch("src.data.database.connection.get_db_manager")
+    def test_review_complete_includes_evaluation_metadata(
+        self, mock_db_mgr, mock_settings_fn, bus
+    ):
+        """When EvaluatorRunner returns a result, REVIEW_COMPLETE should include it."""
+        mock_settings_fn.return_value = _mock_settings(enabled=True)
+        mock_db_mgr.return_value.get_session.return_value = _mock_db_session(leg_id=42)
+
+        completed_events = []
+        bus.subscribe(EventType.REVIEW_COMPLETE, lambda e: completed_events.append(e))
+
+        with (
+            patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls,
+            patch("src.reviewer.evaluator_runner.EvaluatorRunner") as mock_eval_cls,
+        ):
+            mock_runner = MagicMock()
+            mock_check = MagicMock()
+            mock_check.passed = True
+            mock_runner.run_checks.return_value = [mock_check]
+            mock_runner_cls.return_value = mock_runner
+
+            # Simulate successful evaluator run
+            mock_evaluation = MagicMock()
+            mock_evaluation.id = 777
+            mock_evaluation.score = 85.0
+            mock_eval_runner = MagicMock()
+            mock_eval_runner.run_evaluations.return_value = mock_evaluation
+            mock_eval_cls.return_value = mock_eval_runner
+
+            orch = ReviewerOrchestrator(message_bus=bus)
+            orch.start()
+
+            bus.publish(Event(
+                event_type=EventType.REVIEW_LEG_CREATED,
+                payload={"leg_id": 42, "campaign_id": 10, "account_id": 1, "symbol": "AAPL"},
+                source="test",
+            ))
+
+            orch.stop()
+
+        assert len(completed_events) == 1
+        evt = completed_events[0]
+        assert evt.payload["evaluation_id"] == 777
+        assert evt.payload["evaluation_score"] == 85.0
 
 
 class TestCampaignsPopulatedFlow:
@@ -96,12 +169,19 @@ class TestCampaignsPopulatedFlow:
         completed_events = []
         bus.subscribe(EventType.REVIEW_COMPLETE, lambda e: completed_events.append(e))
 
-        with patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls:
+        with (
+            patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls,
+            patch("src.reviewer.evaluator_runner.EvaluatorRunner") as mock_eval_cls,
+        ):
             mock_runner = MagicMock()
             mock_check = MagicMock()
             mock_check.passed = True
             mock_runner.run_checks.return_value = [mock_check]
             mock_runner_cls.return_value = mock_runner
+
+            mock_eval_runner = MagicMock()
+            mock_eval_runner.run_evaluations.return_value = None
+            mock_eval_cls.return_value = mock_eval_runner
 
             orch = ReviewerOrchestrator(message_bus=bus)
             orch.start()
@@ -132,10 +212,17 @@ class TestContextUpdatedFlow:
         completed_events = []
         bus.subscribe(EventType.REVIEW_COMPLETE, lambda e: completed_events.append(e))
 
-        with patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls:
+        with (
+            patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls,
+            patch("src.reviewer.evaluator_runner.EvaluatorRunner") as mock_eval_cls,
+        ):
             mock_runner = MagicMock()
             mock_runner.run_checks.return_value = []
             mock_runner_cls.return_value = mock_runner
+
+            mock_eval_runner = MagicMock()
+            mock_eval_runner.run_evaluations.return_value = None
+            mock_eval_cls.return_value = mock_eval_runner
 
             orch = ReviewerOrchestrator(message_bus=bus)
             orch.start()
@@ -173,6 +260,60 @@ class TestContextUpdatedFlow:
         orch.stop()
 
         assert len(completed_events) == 0
+
+
+class TestEvaluatorFailureIsolated:
+    """Evaluator failures should not prevent behavioral check results from publishing."""
+
+    @patch("config.settings.get_settings")
+    @patch("src.data.database.connection.get_db_manager")
+    def test_evaluator_error_still_publishes_review_complete(
+        self, mock_db_mgr, mock_settings_fn, bus
+    ):
+        mock_settings_fn.return_value = _mock_settings(enabled=True)
+        mock_db_mgr.return_value.get_session.return_value = _mock_db_session(leg_id=42)
+
+        completed_events = []
+        failed_events = []
+        bus.subscribe(EventType.REVIEW_COMPLETE, lambda e: completed_events.append(e))
+        bus.subscribe(EventType.REVIEW_FAILED, lambda e: failed_events.append(e))
+
+        with (
+            patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls,
+            patch("src.reviewer.evaluator_runner.EvaluatorRunner") as mock_eval_cls,
+        ):
+            mock_runner = MagicMock()
+            mock_check = MagicMock()
+            mock_check.passed = True
+            mock_runner.run_checks.return_value = [mock_check]
+            mock_runner_cls.return_value = mock_runner
+
+            # Evaluator raises an exception
+            mock_eval_runner = MagicMock()
+            mock_eval_runner.run_evaluations.side_effect = RuntimeError("context build failed")
+            mock_eval_cls.return_value = mock_eval_runner
+
+            orch = ReviewerOrchestrator(message_bus=bus)
+            orch.start()
+
+            bus.publish(Event(
+                event_type=EventType.REVIEW_LEG_CREATED,
+                payload={"leg_id": 42, "campaign_id": 10, "account_id": 1, "symbol": "AAPL"},
+                source="test",
+            ))
+
+            orch.stop()
+
+        # REVIEW_COMPLETE still published (behavioral checks succeeded)
+        assert len(completed_events) == 1
+        evt = completed_events[0]
+        assert evt.payload["leg_id"] == 42
+        assert evt.payload["passed"] == 1
+        # No evaluation metadata since evaluator failed
+        assert "evaluation_id" not in evt.payload
+
+        # No REVIEW_FAILED — the overall flow succeeded
+        assert len(failed_events) == 0
 
 
 class TestReviewerDisabledFlow:

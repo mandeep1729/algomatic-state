@@ -378,7 +378,6 @@ Each evaluator accepts an optional `EvaluatorConfig` with:
 
 | Script | Table | Description |
 |--------|-------|-------------|
-| `scripts/run_checks_on_legs.py` | `campaign_checks` | Runs CheckRunner (RS001-RS004) on all legs |
-| `scripts/run_new_checks_on_legs.py` | `trade_evaluations` | Runs all 7 evaluators on all legs with point-in-time context |
+| `scripts/review_legs.py` | `campaign_checks`, `trade_evaluations` | Publishes `REVIEW_CAMPAIGNS_POPULATED` events so the reviewer service runs both behavioral checks (RS001-RS004) and all 7 evaluators |
 
-Both scripts support `--dry-run`, `--symbol`, and `--account-id` flags, and are idempotent (safe to re-run).
+The script supports `--dry-run`, `--symbol`, and `--account-id` flags. The reviewer service handles idempotent persistence.

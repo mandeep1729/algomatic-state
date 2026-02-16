@@ -13,12 +13,14 @@ consumes events via Redis pub/sub.
 from src.reviewer.checks.base import BaseChecker, CheckResult
 from src.reviewer.checks.risk_sanity import RiskSanityChecker
 from src.reviewer.checks.runner import CheckRunner
+from src.reviewer.evaluator_runner import EvaluatorRunner
 from src.reviewer.orchestrator import ReviewerOrchestrator
 
 __all__ = [
     "BaseChecker",
     "CheckResult",
     "CheckRunner",
+    "EvaluatorRunner",
     "ReviewerOrchestrator",
     "RiskSanityChecker",
 ]

@@ -42,6 +42,9 @@ def main() -> None:
 
     logger.info("Starting Reviewer Service")
 
+    # Trigger evaluator registration so get_evaluator() works
+    import src.evaluators  # noqa: F401
+
     # Ensure database is initialized
     from src.data.database.connection import get_db_manager
     db_manager = get_db_manager()
