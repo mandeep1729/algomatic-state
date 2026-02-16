@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { apiUrl } from '../../config';
 
 interface AuthUser {
   id: number;
@@ -26,21 +27,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   // On mount (or token change), validate authentication by calling /api/auth/me
-  // In dev mode (AUTH_DEV_MODE=true), backend returns user without token
   useEffect(() => {
     let cancelled = false;
 
     async function fetchMe() {
       try {
-        // First try without token (works if backend has AUTH_DEV_MODE=true)
-        let res = await fetch('/api/auth/me');
-
-        // If unauthorized and we have a token, try with it
-        if (res.status === 401 && token) {
-          res = await fetch('/api/auth/me', {
-            headers: { Authorization: `Bearer ${token}` },
-          });
+        const headers: Record<string, string> = {};
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
         }
+
+        const res = await fetch(apiUrl('/api/auth/me'), { headers });
 
         if (!res.ok) {
           // Token invalid/expired or no auth — clear it
@@ -65,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token]);
 
   const login = useCallback(async (credential: string) => {
-    const res = await fetch('/api/auth/google', {
+    const res = await fetch(apiUrl('/api/auth/google'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ credential }),
@@ -87,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setUser(null);
     // Fire-and-forget server logout
-    fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    fetch(apiUrl('/api/auth/logout'), { method: 'POST' }).catch(() => {});
   }, []);
 
   return (
