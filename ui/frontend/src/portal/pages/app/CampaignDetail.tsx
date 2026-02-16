@@ -177,7 +177,7 @@ export default function CampaignDetail() {
   }, [detail]);
 
   // Count critical check failures per leg for badge display
-  const CRITICAL_SEVERITIES = new Set(['block', 'danger', 'critical']);
+  const CRITICAL_SEVERITIES = new Set(['critical']);
   const criticalCountByLeg = useMemo(() => {
     if (!detail) return {} as Record<string, number>;
     const checksByLeg = detail.checksByLeg ?? {};
