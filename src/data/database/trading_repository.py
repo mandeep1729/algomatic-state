@@ -982,3 +982,50 @@ class TradingBuddyRepository:
         if symbol:
             query = query.filter(TradeFillModel.symbol == symbol)
         return query.scalar() or 0
+
+    def count_closed_campaign_groups(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+    ) -> int:
+        """Count campaign groups that are closed (net position = 0).
+
+        A closed campaign has equal buy and sell quantities across its fills.
+        """
+        from sqlalchemy import func
+
+        # Get all group_ids for this account/symbol
+        query = (
+            self.session.query(CampaignFillModel.group_id)
+            .join(TradeFillModel, TradeFillModel.id == CampaignFillModel.fill_id)
+            .filter(TradeFillModel.account_id == account_id)
+        )
+        if symbol:
+            query = query.filter(TradeFillModel.symbol == symbol)
+
+        group_ids = [row[0] for row in query.distinct().all()]
+
+        closed_count = 0
+        for gid in group_ids:
+            fills = self.get_campaign_fills(gid)
+            net_qty = 0.0
+            for fill in fills:
+                if fill.side.lower() == "buy":
+                    net_qty += fill.quantity
+                else:
+                    net_qty -= fill.quantity
+            if abs(net_qty) < 1e-9:
+                closed_count += 1
+
+        return closed_count
+
+    def count_grouped_fills(self, account_id: int) -> int:
+        """Count fills that are assigned to at least one campaign group."""
+        from sqlalchemy import func
+
+        return (
+            self.session.query(func.count(func.distinct(CampaignFillModel.fill_id)))
+            .join(TradeFillModel, TradeFillModel.id == CampaignFillModel.fill_id)
+            .filter(TradeFillModel.account_id == account_id)
+            .scalar()
+        ) or 0
