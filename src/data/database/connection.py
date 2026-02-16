@@ -91,15 +91,18 @@ class DatabaseManager:
             Exception: Re-raises any exception after rollback
         """
         session = self.session_factory()
+        logger.debug("Database session opened")
         try:
             yield session
             session.commit()
+            logger.debug("Database session committed")
         except Exception:
             logger.warning("Database session error, rolling back", exc_info=True)
             session.rollback()
             raise
         finally:
             session.close()
+            logger.debug("Database session closed")
 
     def create_tables(self) -> None:
         """Create all database tables.

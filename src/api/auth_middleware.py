@@ -83,4 +83,5 @@ def get_current_user(
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+    logger.debug("JWT validated successfully for user_id=%s", user_id)
     return int(user_id)

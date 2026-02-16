@@ -53,6 +53,7 @@ class TradingProfileUpdate(BaseModel):
 @router.get("/profile", response_model=TradingProfileResponse)
 async def get_profile(user_id: int = Depends(get_current_user)):
     """Get the authenticated user's trading profile."""
+    logger.debug("GET /api/user/profile for user_id=%d", user_id)
     db_manager = get_db_manager()
     with db_manager.get_session() as session:
         repo = TradingBuddyRepository(session)
@@ -134,6 +135,7 @@ class RiskPreferencesUpdate(BaseModel):
 @router.get("/risk-preferences", response_model=RiskPreferencesResponse)
 async def get_risk_preferences(user_id: int = Depends(get_current_user)):
     """Get the authenticated user's risk preferences (frontend format)."""
+    logger.debug("GET /api/user/risk-preferences for user_id=%d", user_id)
     db_manager = get_db_manager()
     with db_manager.get_session() as session:
         repo = TradingBuddyRepository(session)
@@ -232,6 +234,7 @@ class EvaluationControlsUpdate(BaseModel):
 @router.get("/evaluation-controls", response_model=EvaluationControlsResponse)
 async def get_evaluation_controls(user_id: int = Depends(get_current_user)):
     """Get the authenticated user's evaluation controls."""
+    logger.debug("GET /api/user/evaluation-controls for user_id=%d", user_id)
     db_manager = get_db_manager()
     with db_manager.get_session() as session:
         repo = TradingBuddyRepository(session)
@@ -281,6 +284,7 @@ class SitePrefsUpdate(BaseModel):
 @router.get("/site-prefs", response_model=SitePrefsResponse)
 async def get_site_prefs(user_id: int = Depends(get_current_user)):
     """Get the authenticated user's site preferences (table column visibility, etc.)."""
+    logger.debug("GET /api/user/site-prefs for user_id=%d", user_id)
     db_manager = get_db_manager()
     with db_manager.get_session() as session:
         repo = TradingBuddyRepository(session)
@@ -343,6 +347,7 @@ class RiskUpdate(BaseModel):
 @router.get("/risk", response_model=RiskResponse)
 async def get_risk(user_id: int = Depends(get_current_user)):
     """Get the authenticated user's risk preferences (legacy format)."""
+    logger.debug("GET /api/user/risk for user_id=%d", user_id)
     db_manager = get_db_manager()
     with db_manager.get_session() as session:
         repo = TradingBuddyRepository(session)

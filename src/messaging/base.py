@@ -1,9 +1,12 @@
 """Abstract base class for message bus implementations."""
 
+import logging
 from abc import ABC, abstractmethod
 from typing import Callable
 
 from src.messaging.events import Event, EventType
+
+logger = logging.getLogger(__name__)
 
 # Type alias for subscriber callbacks
 Subscriber = Callable[[Event], None]
@@ -66,6 +69,11 @@ class MessageBusBase(ABC):
         """
         import threading
 
+        logger.debug(
+            "publish_and_wait: request_type=%s, response_type=%s, correlation_id=%s, timeout=%.1f",
+            request.event_type, response_type, request.correlation_id, timeout,
+        )
+
         result: list[Event] = []
         done = threading.Event()
 
@@ -81,11 +89,24 @@ class MessageBusBase(ABC):
         finally:
             self.unsubscribe(response_type, _waiter)
 
+        if result:
+            logger.debug(
+                "publish_and_wait: received response for correlation_id=%s",
+                request.correlation_id,
+            )
+        else:
+            logger.warning(
+                "publish_and_wait: timed out after %.1fs waiting for %s (correlation_id=%s)",
+                timeout, response_type, request.correlation_id,
+            )
+
         return result[0] if result else None
 
     def shutdown(self) -> None:
         """Release resources held by the bus. Override in subclasses."""
+        logger.info("Message bus shutting down")
 
     def health_check(self) -> bool:
         """Return ``True`` if the bus is operational. Override in subclasses."""
+        logger.debug("Message bus health check: OK")
         return True

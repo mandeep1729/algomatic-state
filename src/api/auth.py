@@ -181,6 +181,8 @@ async def get_me(
 
     Also triggers background sync of broker trade fills (Alpaca).
     """
+    logger.debug("GET /api/auth/me for user_id=%d", user_id)
+
     # Import here to avoid circular dependency
     from src.api.alpaca import sync_alpaca_fills_background
 
@@ -211,4 +213,5 @@ async def get_me(
 @router.post("/logout")
 async def logout():
     """Logout endpoint (stateless JWT — client discards token)."""
+    logger.debug("POST /api/auth/logout")
     return {"message": "Logged out successfully"}

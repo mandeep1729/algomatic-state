@@ -294,6 +294,7 @@ async def get_account(
     client: AlpacaClient = Depends(get_alpaca_client),
 ):
     """Get Alpaca account information."""
+    logger.debug("GET /api/alpaca/account for user_id=%d", user_id)
     if not client:
         raise HTTPException(status_code=503, detail="Alpaca client not configured")
 
@@ -321,6 +322,7 @@ async def get_positions(
     client: AlpacaClient = Depends(get_alpaca_client),
 ):
     """Get all current positions from Alpaca."""
+    logger.debug("GET /api/alpaca/positions for user_id=%d", user_id)
     if not client:
         raise HTTPException(status_code=503, detail="Alpaca client not configured")
 
@@ -439,6 +441,10 @@ async def get_trades(
 
     Note: Call /sync first to fetch latest trades from Alpaca.
     """
+    logger.debug(
+        "GET /api/alpaca/trades for user_id=%d: symbol=%s, sort=%s, page=%d, limit=%d",
+        user_id, symbol, sort, page, limit,
+    )
     # Build query for Alpaca trades
     query = db.query(TradeFill).filter(
         TradeFill.account_id == user_id,
@@ -488,6 +494,7 @@ async def get_status(
     client: AlpacaClient = Depends(get_alpaca_client),
 ):
     """Get Alpaca connection and sync status."""
+    logger.debug("GET /api/alpaca/status for user_id=%d", user_id)
     result = {
         "client_configured": client is not None,
         "paper_trading": client.paper if client else None,

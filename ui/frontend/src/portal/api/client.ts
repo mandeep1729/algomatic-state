@@ -27,6 +27,7 @@
  */
 
 import { apiUrl } from '../../config';
+import { createLogger } from '../utils/logger';
 import type {
   EvaluateRequest,
   EvaluateResponse,
@@ -50,6 +51,8 @@ import type {
   OrphanedLegGroup,
 } from '../types';
 
+const log = createLogger('ApiClient');
+
 const TOKEN_KEY = 'auth_token';
 
 function getAuthHeaders(): Record<string, string> {
@@ -61,6 +64,9 @@ function getAuthHeaders(): Record<string, string> {
 }
 
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const method = options?.method ?? 'GET';
+  log.debug(`${method} ${url}`);
+
   const res = await fetch(url, {
     headers: {
       'Content-Type': 'application/json',
@@ -72,6 +78,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (res.status === 401) {
     // Token expired or invalid — clear auth state and redirect
+    log.warn(`${method} ${url} -> 401 Unauthorized, redirecting to login`);
     localStorage.removeItem(TOKEN_KEY);
     window.location.href = '/auth/login';
     throw new Error('Authentication expired');
@@ -79,8 +86,11 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
+    log.error(`${method} ${url} -> ${res.status}`, body || res.statusText);
     throw new Error(`API error ${res.status}: ${body || res.statusText}`);
   }
+
+  log.debug(`${method} ${url} -> ${res.status} OK`);
   return res.json();
 }
 
