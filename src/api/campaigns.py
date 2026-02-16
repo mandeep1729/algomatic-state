@@ -2,11 +2,12 @@
 
 Provides endpoints for:
 - Listing campaigns (summaries with computed aggregates)
-- Fetching campaign details with fills and decision contexts
+- Fetching campaign details with fills mapped to "legs" for UI
 - Fetching P&L summary aggregated by ticker
 - Fetching P&L timeseries for charting
 - Saving/updating decision contexts on fills
 - Rebuilding campaigns
+- Stub endpoints for removed features (uncategorized-count, orphaned-legs)
 """
 
 import logging
@@ -15,7 +16,7 @@ from typing import Optional, List, Literal
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import func, distinct
+from sqlalchemy import case, func, distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -24,8 +25,6 @@ from src.data.database.connection import get_db_manager
 from src.data.database.trading_repository import TradingBuddyRepository
 from src.data.database.broker_models import TradeFill
 from src.data.database.trade_lifecycle_models import (
-    Campaign,
-    CampaignFill,
     CampaignCheck,
     DecisionContext,
 )
@@ -60,60 +59,113 @@ def _format_dt(dt: Optional[datetime]) -> Optional[str]:
 
 
 # -----------------------------------------------------------------------------
-# Response Models - Campaign List/Detail
+# Response Models - Campaign List (matches frontend CampaignSummary)
 # -----------------------------------------------------------------------------
 
-class FillResponse(BaseModel):
-    """A single trade fill within a campaign."""
-    fillId: str
-    symbol: str
-    side: str
-    quantity: float
-    price: float
-    fees: float
-    executedAt: str
-    broker: Optional[str] = None
-    orderId: Optional[str] = None
-    contextType: Optional[str] = None
-    strategyName: Optional[str] = None
-    hypothesis: Optional[str] = None
-    notes: Optional[str] = None
-
-
 class CampaignSummaryResponse(BaseModel):
-    """Summary of a campaign for the list view."""
+    """Summary of a campaign for the list view.
+
+    Field names match the frontend CampaignSummary TypeScript type.
+    Each fill in the campaign is treated as a "leg" for UI purposes.
+    """
     campaignId: str
     symbol: str
     direction: str
     status: str
     openedAt: Optional[str] = None
     closedAt: Optional[str] = None
-    fillCount: int
-    netQuantity: float
-    totalBought: float
-    totalSold: float
-    realizedPnl: Optional[float] = None
-    strategyName: Optional[str] = None
+    legsCount: int
+    maxQty: float
+    legQuantities: List[float] = []
+    overallLabel: str = "mixed"
+    keyFlags: List[str] = []
+    strategies: List[str] = []
     orderIds: List[str] = []
+    pnlRealized: Optional[float] = None
+
+
+# -----------------------------------------------------------------------------
+# Response Models - Campaign Detail (matches frontend CampaignDetail)
+# -----------------------------------------------------------------------------
+
+class LegResponse(BaseModel):
+    """A fill mapped to the frontend CampaignLeg type."""
+    legId: str
+    campaignId: Optional[str] = None
+    legType: str
+    side: str
+    quantity: float
+    avgPrice: float
+    startedAt: str
+    endedAt: str
+    symbol: Optional[str] = None
+    direction: Optional[str] = None
+    orderIds: Optional[List[str]] = None
+    strategyName: Optional[str] = None
+
+
+class CampaignMetadataResponse(BaseModel):
+    """Campaign metadata matching the frontend Campaign type."""
+    campaignId: str
+    symbol: str
+    direction: str
+    status: str
+    openedAt: Optional[str] = None
+    closedAt: Optional[str] = None
+    legsCount: int
+    maxQty: float
+    pnlRealized: Optional[float] = None
+    costBasisMethod: str = "fifo"
+    source: str = "broker_synced"
+
+
+class CheckResponse(BaseModel):
+    """Campaign check matching the frontend CampaignCheck type."""
+    checkId: str
+    legId: str
+    checkType: str
+    code: str
+    severity: str
+    passed: bool
+    nudgeText: Optional[str] = None
+    details: Optional[dict] = None
+    checkPhase: str
+    checkedAt: Optional[str] = None
+    acknowledged: Optional[bool] = None
+    traderAction: Optional[str] = None
+
+
+class ContextResponse(BaseModel):
+    """Decision context matching the frontend DecisionContext type."""
+    contextId: str
+    scope: str = "leg"
+    campaignId: Optional[str] = None
+    legId: Optional[str] = None
+    contextType: str
+    strategyTags: List[str] = []
+    hypothesis: Optional[str] = None
+    exitIntent: Optional[str] = None
+    feelingsThen: Optional[dict] = None
+    feelingsNow: Optional[dict] = None
+    notes: Optional[str] = None
+    updatedAt: str
 
 
 class CampaignDetailResponse(BaseModel):
-    """Full campaign detail response."""
-    campaignId: str
-    symbol: str
-    direction: str
-    status: str
-    openedAt: Optional[str] = None
-    closedAt: Optional[str] = None
-    fillCount: int
-    netQuantity: float
-    totalBought: float
-    totalSold: float
-    realizedPnl: Optional[float] = None
-    strategyName: Optional[str] = None
-    fills: List[FillResponse]
-    checks: List[dict] = []
+    """Full campaign detail matching the frontend CampaignDetail type.
 
+    Returns nested structure: campaign metadata + legs (fills as legs) +
+    contexts/checks grouped by legId (fillId).
+    """
+    campaign: CampaignMetadataResponse
+    legs: List[LegResponse]
+    contextsByLeg: dict = {}
+    checksByLeg: dict = {}
+
+
+# -----------------------------------------------------------------------------
+# Response Models - Fill Context
+# -----------------------------------------------------------------------------
 
 class SaveFillContextRequest(BaseModel):
     """Request body for saving a decision context on a fill."""
@@ -126,8 +178,8 @@ class SaveFillContextRequest(BaseModel):
     notes: Optional[str] = None
 
 
-class DecisionContextResponse(BaseModel):
-    """Decision context response."""
+class DecisionContextApiResponse(BaseModel):
+    """Decision context response for fill-level context endpoints."""
     contextId: str
     fillId: str
     contextType: str
@@ -145,12 +197,15 @@ class DecisionContextResponse(BaseModel):
 # -----------------------------------------------------------------------------
 
 class TickerPnlResponse(BaseModel):
-    """P&L summary for a single ticker symbol."""
+    """P&L summary for a single ticker symbol.
+
+    Field names match the frontend TickerPnlSummary type.
+    """
     symbol: str
     total_pnl: float
     total_pnl_pct: float
-    campaign_count: int
-    fill_count: int
+    trade_count: int
+    closed_count: int
     first_entry_time: Optional[datetime] = None
 
 
@@ -177,14 +232,15 @@ class PnlTimeseriesResponse(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# Helper Functions — Campaign Aggregates
+# Helper Functions
 # -----------------------------------------------------------------------------
 
 def _compute_campaign_aggregates(fills: list[TradeFill]) -> dict:
     """Compute aggregates from a list of fills for a campaign.
 
     Returns dict with: direction, status, opened_at, closed_at,
-    net_quantity, total_bought, total_sold, realized_pnl, order_ids.
+    net_quantity, max_qty, leg_quantities, realized_pnl, order_ids,
+    strategies.
     """
     if not fills:
         return {
@@ -193,29 +249,36 @@ def _compute_campaign_aggregates(fills: list[TradeFill]) -> dict:
             "opened_at": None,
             "closed_at": None,
             "net_quantity": 0.0,
-            "total_bought": 0.0,
-            "total_sold": 0.0,
+            "max_qty": 0.0,
+            "leg_quantities": [],
             "realized_pnl": 0.0,
             "order_ids": [],
+            "strategies": [],
         }
 
     net_qty = 0.0
+    max_qty = 0.0
     total_bought_qty = 0.0
     total_sold_qty = 0.0
     total_bought_cost = 0.0
     total_sold_proceeds = 0.0
     order_ids: list[str] = []
     seen_order_ids: set = set()
+    leg_quantities: list[float] = []
 
     for fill in fills:
         if fill.side.lower() == "buy":
             total_bought_qty += fill.quantity
             total_bought_cost += fill.quantity * fill.price
             net_qty += fill.quantity
+            leg_quantities.append(fill.quantity)
         else:
             total_sold_qty += fill.quantity
             total_sold_proceeds += fill.quantity * fill.price
             net_qty -= fill.quantity
+            leg_quantities.append(-fill.quantity)
+
+        max_qty = max(max_qty, abs(net_qty))
 
         if fill.order_id and fill.order_id not in seen_order_ids:
             seen_order_ids.add(fill.order_id)
@@ -227,7 +290,7 @@ def _compute_campaign_aggregates(fills: list[TradeFill]) -> dict:
     # Status based on net quantity
     status = "closed" if abs(net_qty) < 1e-9 else "open"
 
-    # Realized P&L: matched quantity × (sell_avg - buy_avg)
+    # Realized P&L: matched quantity x (sell_avg - buy_avg)
     matched_qty = min(total_bought_qty, total_sold_qty)
     if matched_qty > 0:
         buy_avg = total_bought_cost / total_bought_qty if total_bought_qty > 0 else 0
@@ -249,44 +312,169 @@ def _compute_campaign_aggregates(fills: list[TradeFill]) -> dict:
         "opened_at": fills[0].executed_at,
         "closed_at": fills[-1].executed_at if status == "closed" else None,
         "net_quantity": round(net_qty, 6),
-        "total_bought": total_bought_qty,
-        "total_sold": total_sold_qty,
+        "max_qty": max_qty,
+        "leg_quantities": leg_quantities,
         "realized_pnl": realized_pnl,
         "order_ids": order_ids,
     }
 
 
-def _fill_to_response(fill: TradeFill, db: Session) -> FillResponse:
-    """Convert a TradeFill to FillResponse, including context info."""
+def _derive_leg_type(
+    fill: TradeFill,
+    fill_index: int,
+    net_qty_after: float,
+    net_qty_before: float,
+) -> str:
+    """Derive legType from position state (always correct for campaign display).
+
+    Uses net position before/after the fill to determine:
+    - open: first fill in the campaign
+    - add: position size increases (abs grows)
+    - reduce: position size decreases (abs shrinks)
+    - close: position goes to zero
+    """
+    if fill_index == 0:
+        return "open"
+
+    if abs(net_qty_after) < 1e-9:
+        return "close"
+
+    if abs(net_qty_after) > abs(net_qty_before):
+        return "add"
+
+    return "reduce"
+
+
+def _get_fill_strategy_name(fill: TradeFill, db: Session) -> Optional[str]:
+    """Get strategy name from a fill's decision context."""
     ctx = db.query(DecisionContext).filter(
         DecisionContext.fill_id == fill.id
     ).first()
-
-    strategy_name = None
     if ctx and ctx.strategy_id:
         strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
         if strategy:
-            strategy_name = strategy.name
+            return strategy.name
+    return None
 
-    return FillResponse(
-        fillId=str(fill.id),
-        symbol=fill.symbol,
+
+def _get_campaign_strategies(fills: list[TradeFill], db: Session) -> list[str]:
+    """Get unique strategy names from all fills' decision contexts."""
+    strategies: list[str] = []
+    seen: set = set()
+    for fill in fills:
+        name = _get_fill_strategy_name(fill, db)
+        if name and name not in seen:
+            seen.add(name)
+            strategies.append(name)
+    return strategies
+
+
+def _fill_to_leg_response(
+    fill: TradeFill,
+    group_id: int,
+    direction: str,
+    leg_type: str,
+    db: Session,
+) -> LegResponse:
+    """Convert a TradeFill to LegResponse for the frontend."""
+    strategy_name = _get_fill_strategy_name(fill, db)
+    order_ids = [fill.order_id] if fill.order_id else []
+
+    return LegResponse(
+        legId=str(fill.id),
+        campaignId=str(group_id),
+        legType=leg_type,
         side=fill.side,
         quantity=fill.quantity,
-        price=fill.price,
-        fees=fill.fees,
-        executedAt=_format_dt(fill.executed_at),
-        broker=fill.broker,
-        orderId=fill.order_id,
-        contextType=ctx.context_type if ctx else None,
+        avgPrice=fill.price,
+        startedAt=_format_dt(fill.executed_at),
+        endedAt=_format_dt(fill.executed_at),
+        symbol=fill.symbol,
+        direction=direction,
+        orderIds=order_ids,
         strategyName=strategy_name,
-        hypothesis=ctx.hypothesis if ctx else None,
-        notes=ctx.notes if ctx else None,
     )
 
 
-def _context_to_response(ctx: DecisionContext, db: Session) -> DecisionContextResponse:
-    """Convert a DecisionContext to response."""
+def _build_contexts_by_leg(
+    fills: list[TradeFill],
+    group_id: int,
+    db: Session,
+) -> dict:
+    """Build contextsByLeg dict mapping legId (fillId) to DecisionContext."""
+    result = {}
+    for fill in fills:
+        ctx = db.query(DecisionContext).filter(
+            DecisionContext.fill_id == fill.id
+        ).first()
+        if ctx:
+            strategy_name = None
+            if ctx.strategy_id:
+                strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
+                if strategy:
+                    strategy_name = strategy.name
+
+            exit_intent = ctx.exit_intent
+            if isinstance(exit_intent, dict):
+                exit_intent = exit_intent.get("type", "unknown")
+
+            result[str(fill.id)] = ContextResponse(
+                contextId=str(ctx.id),
+                scope="leg",
+                campaignId=str(group_id),
+                legId=str(fill.id),
+                contextType=ctx.context_type,
+                strategyTags=[strategy_name] if strategy_name else [],
+                hypothesis=ctx.hypothesis,
+                exitIntent=exit_intent if isinstance(exit_intent, str) else None,
+                feelingsThen=ctx.feelings_then,
+                feelingsNow=ctx.feelings_now,
+                notes=ctx.notes,
+                updatedAt=_format_dt(ctx.updated_at),
+            ).model_dump()
+    return result
+
+
+def _build_checks_by_leg(fills: list[TradeFill], db: Session) -> dict:
+    """Build checksByLeg dict mapping legId (fillId) to CampaignCheck list."""
+    result = {}
+    for fill in fills:
+        ctx = db.query(DecisionContext).filter(
+            DecisionContext.fill_id == fill.id
+        ).first()
+        if not ctx:
+            continue
+
+        checks = (
+            db.query(CampaignCheck)
+            .filter(CampaignCheck.decision_context_id == ctx.id)
+            .order_by(CampaignCheck.checked_at.asc())
+            .all()
+        )
+
+        if checks:
+            result[str(fill.id)] = [
+                CheckResponse(
+                    checkId=str(check.id),
+                    legId=str(fill.id),
+                    checkType=check.check_type,
+                    code=(check.details or {}).get("code", check.check_type),
+                    severity=check.severity,
+                    passed=check.passed,
+                    nudgeText=check.nudge_text,
+                    details=check.details,
+                    checkPhase=check.check_phase,
+                    checkedAt=_format_dt(check.checked_at),
+                    acknowledged=check.acknowledged,
+                    traderAction=check.trader_action,
+                ).model_dump()
+                for check in checks
+            ]
+    return result
+
+
+def _context_to_api_response(ctx: DecisionContext, db: Session) -> DecisionContextApiResponse:
+    """Convert a DecisionContext to API response."""
     strategy_name = None
     if ctx.strategy_id:
         strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
@@ -297,7 +485,7 @@ def _context_to_response(ctx: DecisionContext, db: Session) -> DecisionContextRe
     if isinstance(exit_intent, dict):
         exit_intent = exit_intent.get("type", "unknown")
 
-    return DecisionContextResponse(
+    return DecisionContextApiResponse(
         contextId=str(ctx.id),
         fillId=str(ctx.fill_id),
         contextType=ctx.context_type,
@@ -312,6 +500,47 @@ def _context_to_response(ctx: DecisionContext, db: Session) -> DecisionContextRe
 
 
 # -----------------------------------------------------------------------------
+# Stub Endpoints (features removed during restructuring)
+# These return empty results so the frontend doesn't crash on 404.
+# -----------------------------------------------------------------------------
+
+@router.get("/uncategorized-count")
+async def get_uncategorized_count(
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return count of fills not yet assigned to a campaign group.
+
+    After a rebuild, all fills should be grouped, so this typically returns 0.
+    """
+    repo = TradingBuddyRepository(db)
+    total_fills = (
+        db.query(func.count(TradeFill.id))
+        .filter(TradeFill.account_id == user_id)
+        .scalar()
+    ) or 0
+
+    grouped_fills = repo.count_grouped_fills(user_id)
+    count = max(0, total_fills - grouped_fills)
+
+    logger.debug("Uncategorized fills for user_id=%d: %d", user_id, count)
+    return {"count": count}
+
+
+@router.get("/orphaned-legs")
+async def get_orphaned_legs(
+    user_id: int = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return orphaned legs (fills without a campaign group).
+
+    In the current schema, orphaned legs are not tracked separately.
+    Returns empty list.
+    """
+    return []
+
+
+# -----------------------------------------------------------------------------
 # P&L Endpoints (computed from fills)
 # -----------------------------------------------------------------------------
 
@@ -321,14 +550,9 @@ async def get_pnl_by_ticker(
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get P&L summary aggregated by ticker symbol.
-
-    Computes P&L from trade_fills grouped by symbol. Includes counts
-    of campaigns and fills per symbol.
-    """
+    """Get P&L summary aggregated by ticker symbol."""
     logger.debug("Fetching P&L by ticker for user_id=%d, limit=%d", user_id, limit)
 
-    # Get all symbols for this user
     symbols = (
         db.query(distinct(TradeFill.symbol))
         .filter(TradeFill.account_id == user_id)
@@ -336,6 +560,8 @@ async def get_pnl_by_ticker(
     )
 
     tickers = []
+    repo = TradingBuddyRepository(db)
+
     for (symbol,) in symbols:
         fills = (
             db.query(TradeFill)
@@ -347,7 +573,6 @@ async def get_pnl_by_ticker(
         if not fills:
             continue
 
-        # Compute P&L from fills
         total_bought_cost = 0.0
         total_bought_qty = 0.0
         total_sold_proceeds = 0.0
@@ -374,23 +599,18 @@ async def get_pnl_by_ticker(
         total_cost = total_bought_cost if total_bought_cost > 0 else 1.0
         total_pnl_pct = round(total_pnl / total_cost * 100, 2) if total_cost > 0 else 0.0
 
-        # Count campaigns for this symbol
-        campaign_count = (
-            db.query(func.count(Campaign.id))
-            .filter(Campaign.account_id == user_id, Campaign.symbol == symbol)
-            .scalar() or 0
-        )
+        campaign_count = repo.count_campaign_groups(user_id, symbol=symbol)
+        closed_count = repo.count_closed_campaign_groups(user_id, symbol=symbol)
 
         tickers.append(TickerPnlResponse(
             symbol=symbol,
             total_pnl=total_pnl,
             total_pnl_pct=total_pnl_pct,
-            campaign_count=campaign_count,
-            fill_count=len(fills),
+            trade_count=campaign_count,
+            closed_count=closed_count,
             first_entry_time=fills[0].executed_at,
         ))
 
-    # Sort by total_pnl descending and limit
     tickers.sort(key=lambda t: t.total_pnl, reverse=True)
     tickers = tickers[:limit]
 
@@ -409,17 +629,12 @@ async def get_pnl_timeseries(
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get P&L timeseries for charting.
-
-    Computes cumulative P&L over time from fills. Groups by date
-    granularity for rendering charts.
-    """
+    """Get P&L timeseries for charting."""
     logger.debug(
         "Fetching P&L timeseries: user_id=%d, symbol=%s, start=%s, end=%s, granularity=%s",
         user_id, symbol, start_date, end_date, granularity,
     )
 
-    # Date truncation for grouping
     if granularity == "week":
         date_trunc = func.date_trunc("week", TradeFill.executed_at)
     elif granularity == "month":
@@ -427,13 +642,11 @@ async def get_pnl_timeseries(
     else:
         date_trunc = func.date(TradeFill.executed_at)
 
-    # Build query: sells represent realized proceeds, buys represent cost
-    # We approximate daily P&L as (sell_proceeds - buy_cost) for that period
     query = db.query(
         date_trunc.label("period"),
         func.coalesce(
             func.sum(
-                func.case(
+                case(
                     (TradeFill.side == "sell", TradeFill.quantity * TradeFill.price),
                     else_=0.0,
                 )
@@ -442,7 +655,7 @@ async def get_pnl_timeseries(
         ).label("sell_proceeds"),
         func.coalesce(
             func.sum(
-                func.case(
+                case(
                     (TradeFill.side == "buy", TradeFill.quantity * TradeFill.price),
                     else_=0.0,
                 )
@@ -471,7 +684,6 @@ async def get_pnl_timeseries(
     points = []
     cumulative = 0.0
     for row in results:
-        # Period P&L approximation: sells - buys - fees
         period_pnl = round(row.sell_proceeds - row.buy_cost - row.fees, 2)
         cumulative += period_pnl
 
@@ -519,8 +731,8 @@ async def get_ticker_pnl(
             symbol=symbol.upper(),
             total_pnl=0.0,
             total_pnl_pct=0.0,
-            campaign_count=0,
-            fill_count=0,
+            trade_count=0,
+            closed_count=0,
             first_entry_time=None,
         )
 
@@ -550,18 +762,16 @@ async def get_ticker_pnl(
     total_cost = total_bought_cost if total_bought_cost > 0 else 1.0
     total_pnl_pct = round(total_pnl / total_cost * 100, 2) if total_cost > 0 else 0.0
 
-    campaign_count = (
-        db.query(func.count(Campaign.id))
-        .filter(Campaign.account_id == user_id, Campaign.symbol == symbol.upper())
-        .scalar() or 0
-    )
+    repo = TradingBuddyRepository(db)
+    campaign_count = repo.count_campaign_groups(user_id, symbol=symbol.upper())
+    closed_count = repo.count_closed_campaign_groups(user_id, symbol=symbol.upper())
 
     return TickerPnlResponse(
         symbol=symbol.upper(),
         total_pnl=total_pnl,
         total_pnl_pct=total_pnl_pct,
-        campaign_count=campaign_count,
-        fill_count=len(fills),
+        trade_count=campaign_count,
+        closed_count=closed_count,
         first_entry_time=fills[0].executed_at,
     )
 
@@ -578,12 +788,7 @@ async def list_campaigns(
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List campaigns for the authenticated user.
-
-    Optional filters:
-    - symbol: Filter by ticker symbol
-    - strategy_id: Filter by strategy
-    """
+    """List campaigns for the authenticated user."""
     logger.debug(
         "list_campaigns: user_id=%d symbol=%s strategy_id=%s",
         user_id, symbol, strategy_id,
@@ -599,104 +804,87 @@ async def list_campaigns(
 
     result = []
     for campaign in campaigns:
-        fills = repo.get_campaign_fills(campaign.id)
+        group_id = campaign["group_id"]
+        fills = repo.get_campaign_fills(group_id)
         agg = _compute_campaign_aggregates(fills)
-
-        strategy_name = None
-        if campaign.strategy_id:
-            strategy = db.query(Strategy).filter(Strategy.id == campaign.strategy_id).first()
-            if strategy:
-                strategy_name = strategy.name
+        strategies = _get_campaign_strategies(fills, db)
 
         result.append(CampaignSummaryResponse(
-            campaignId=str(campaign.id),
-            symbol=campaign.symbol,
+            campaignId=str(group_id),
+            symbol=fills[0].symbol if fills else "",
             direction=agg["direction"],
             status=agg["status"],
             openedAt=_format_dt(agg["opened_at"]),
             closedAt=_format_dt(agg["closed_at"]),
-            fillCount=len(fills),
-            netQuantity=agg["net_quantity"],
-            totalBought=agg["total_bought"],
-            totalSold=agg["total_sold"],
-            realizedPnl=agg["realized_pnl"],
-            strategyName=strategy_name,
+            legsCount=len(fills),
+            maxQty=agg["max_qty"],
+            legQuantities=agg["leg_quantities"],
+            overallLabel="mixed",
+            keyFlags=[],
+            strategies=strategies,
             orderIds=agg["order_ids"],
+            pnlRealized=agg["realized_pnl"],
         ))
 
     logger.debug("Returning %d campaigns for user_id=%d", len(result), user_id)
     return result
 
 
-@router.get("/{campaign_id}", response_model=CampaignDetailResponse)
+@router.get("/{group_id}", response_model=CampaignDetailResponse)
 async def get_campaign_detail(
-    campaign_id: int,
+    group_id: int,
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get full campaign detail including fills and decision contexts."""
+    """Get full campaign detail with fills mapped to legs."""
+    logger.debug("get_campaign_detail: group_id=%d, user_id=%d", group_id, user_id)
+
     repo = TradingBuddyRepository(db)
-    campaign = repo.get_campaign(campaign_id)
 
-    if not campaign:
-        raise HTTPException(status_code=404, detail=f"Campaign {campaign_id} not found")
-    if campaign.account_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to view this campaign")
+    if not repo.campaign_group_exists(group_id, user_id):
+        raise HTTPException(status_code=404, detail=f"Campaign {group_id} not found")
 
-    fills = repo.get_campaign_fills(campaign.id)
+    fills = repo.get_campaign_fills(group_id)
     agg = _compute_campaign_aggregates(fills)
 
-    strategy_name = None
-    if campaign.strategy_id:
-        strategy = db.query(Strategy).filter(Strategy.id == campaign.strategy_id).first()
-        if strategy:
-            strategy_name = strategy.name
+    # Build legs from fills
+    legs = []
+    net_qty = 0.0
+    for idx, fill in enumerate(fills):
+        net_qty_before = net_qty
+        if fill.side.lower() == "buy":
+            net_qty += fill.quantity
+        else:
+            net_qty -= fill.quantity
 
-    # Build fill responses with context
-    fill_responses = [_fill_to_response(f, db) for f in fills]
+        leg_type = _derive_leg_type(fill, idx, net_qty, net_qty_before)
+        leg = _fill_to_leg_response(fill, group_id, agg["direction"], leg_type, db)
+        legs.append(leg)
 
-    # Gather checks for all fills' decision contexts
-    checks_list = []
-    for fill in fills:
-        ctx = db.query(DecisionContext).filter(DecisionContext.fill_id == fill.id).first()
-        if ctx:
-            checks = (
-                db.query(CampaignCheck)
-                .filter(CampaignCheck.decision_context_id == ctx.id)
-                .order_by(CampaignCheck.checked_at.asc())
-                .all()
-            )
-            for check in checks:
-                checks_list.append({
-                    "checkId": str(check.id),
-                    "fillId": str(fill.id),
-                    "checkType": check.check_type,
-                    "code": (check.details or {}).get("code", check.check_type),
-                    "severity": check.severity,
-                    "passed": check.passed,
-                    "nudgeText": check.nudge_text,
-                    "details": check.details,
-                    "checkPhase": check.check_phase,
-                    "checkedAt": _format_dt(check.checked_at),
-                    "acknowledged": check.acknowledged,
-                    "traderAction": check.trader_action,
-                })
-
-    return CampaignDetailResponse(
-        campaignId=str(campaign.id),
-        symbol=campaign.symbol,
+    # Build campaign metadata
+    campaign_meta = CampaignMetadataResponse(
+        campaignId=str(group_id),
+        symbol=fills[0].symbol if fills else "",
         direction=agg["direction"],
         status=agg["status"],
         openedAt=_format_dt(agg["opened_at"]),
         closedAt=_format_dt(agg["closed_at"]),
-        fillCount=len(fills),
-        netQuantity=agg["net_quantity"],
-        totalBought=agg["total_bought"],
-        totalSold=agg["total_sold"],
-        realizedPnl=agg["realized_pnl"],
-        strategyName=strategy_name,
-        fills=fill_responses,
-        checks=checks_list,
+        legsCount=len(fills),
+        maxQty=agg["max_qty"],
+        pnlRealized=agg["realized_pnl"],
+        costBasisMethod="fifo",
+        source="broker_synced",
+    )
+
+    # Build contexts and checks grouped by legId (fillId)
+    contexts_by_leg = _build_contexts_by_leg(fills, group_id, db)
+    checks_by_leg = _build_checks_by_leg(fills, db)
+
+    return CampaignDetailResponse(
+        campaign=campaign_meta,
+        legs=legs,
+        contextsByLeg=contexts_by_leg,
+        checksByLeg=checks_by_leg,
     )
 
 
@@ -704,7 +892,7 @@ async def get_campaign_detail(
 # Fill Context Endpoints (atomic unit: fill)
 # -----------------------------------------------------------------------------
 
-@router.get("/fills/{fill_id}/context", response_model=DecisionContextResponse)
+@router.get("/fills/{fill_id}/context", response_model=DecisionContextApiResponse)
 async def get_fill_context(
     fill_id: int,
     user_id: int = Depends(get_current_user),
@@ -723,10 +911,10 @@ async def get_fill_context(
     if not ctx:
         raise HTTPException(status_code=404, detail="No context for this fill")
 
-    return _context_to_response(ctx, db)
+    return _context_to_api_response(ctx, db)
 
 
-@router.put("/fills/{fill_id}/context", response_model=DecisionContextResponse)
+@router.put("/fills/{fill_id}/context", response_model=DecisionContextApiResponse)
 async def save_fill_context(
     fill_id: int,
     request: SaveFillContextRequest,
@@ -734,9 +922,6 @@ async def save_fill_context(
     db: Session = Depends(get_db),
 ):
     """Save or update a decision context for a fill.
-
-    If a context already exists for this fill, it is updated.
-    Otherwise, a new context is created.
 
     If strategy changes, triggers campaign rebuild for affected groups.
     """
@@ -760,7 +945,6 @@ async def save_fill_context(
         if strategy:
             strategy_id = strategy.id
 
-    # Build exit_intent value
     exit_intent_value = request.exitIntent
 
     # Get or create context
@@ -805,7 +989,7 @@ async def save_fill_context(
         )
 
     db.commit()
-    return _context_to_response(ctx, db)
+    return _context_to_api_response(ctx, db)
 
 
 # -----------------------------------------------------------------------------
@@ -825,17 +1009,12 @@ async def rebuild_campaigns(
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Rebuild campaigns from fills.
-
-    Deletes existing campaigns and recomputes from trade_fills +
-    decision_contexts using zero-crossing algorithm.
-    """
+    """Rebuild campaigns from fills using zero-crossing algorithm."""
     logger.info("rebuild_campaigns: user_id=%d, symbol=%s", user_id, symbol)
 
     repo = TradingBuddyRepository(db)
 
     if symbol:
-        # Rebuild for all strategy groups under this symbol
         strategy_ids = (
             db.query(distinct(DecisionContext.strategy_id))
             .join(TradeFill, TradeFill.id == DecisionContext.fill_id)

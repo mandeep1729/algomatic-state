@@ -1,12 +1,13 @@
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { GoogleLogin } from '@react-oauth/google';
-import { useAuth } from '../../context/AuthContext';
-import { Shield } from 'lucide-react';
+import { useAuth, WaitlistError } from '../../context/AuthContext';
+import { Shield, Clock } from 'lucide-react';
 
 export default function Login() {
   const { user, login, loading } = useAuth();
   const navigate = useNavigate();
+  const [waitlistMessage, setWaitlistMessage] = useState<string | null>(null);
 
   // If already authenticated, redirect to app
   useEffect(() => {
@@ -17,11 +18,16 @@ export default function Login() {
 
   async function handleGoogleSuccess(credentialResponse: { credential?: string }) {
     if (!credentialResponse.credential) return;
+    setWaitlistMessage(null);
     try {
       await login(credentialResponse.credential);
       navigate('/app', { replace: true });
     } catch (err) {
-      console.error('Login failed:', err);
+      if (err instanceof WaitlistError) {
+        setWaitlistMessage(err.detail);
+      } else {
+        console.error('Login failed:', err);
+      }
     }
   }
 
@@ -47,31 +53,51 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Sign-in card */}
-        <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-8">
-          <div className="flex justify-center">
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={() => console.error('Google login error')}
-              shape="rectangular"
-              size="large"
-              text="signin_with"
-              width="300"
-            />
+        {/* Waitlist pending message */}
+        {waitlistMessage && (
+          <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-6 text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-yellow-500/20 text-yellow-500">
+              <Clock size={20} />
+            </div>
+            <p className="text-sm font-medium text-[var(--text-primary)]">
+              {waitlistMessage}
+            </p>
+            <Link
+              to="/"
+              className="mt-3 inline-block text-xs text-[var(--accent-blue)] hover:underline"
+            >
+              Back to homepage
+            </Link>
           </div>
+        )}
 
-          <p className="mt-6 text-center text-xs text-[var(--text-secondary)]">
-            By signing in, you agree to our{' '}
-            <a href="/legal/terms" className="underline hover:text-[var(--text-primary)]">
-              Terms of Service
-            </a>{' '}
-            and{' '}
-            <a href="/legal/privacy" className="underline hover:text-[var(--text-primary)]">
-              Privacy Policy
-            </a>
-            .
-          </p>
-        </div>
+        {/* Sign-in card */}
+        {!waitlistMessage && (
+          <div className="rounded-xl border border-[var(--border-color)] bg-[var(--bg-secondary)] p-8">
+            <div className="flex justify-center">
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={() => console.error('Google login error')}
+                shape="rectangular"
+                size="large"
+                text="signin_with"
+                width="300"
+              />
+            </div>
+
+            <p className="mt-6 text-center text-xs text-[var(--text-secondary)]">
+              By signing in, you agree to our{' '}
+              <a href="/legal/terms" className="underline hover:text-[var(--text-primary)]">
+                Terms of Service
+              </a>{' '}
+              and{' '}
+              <a href="/legal/privacy" className="underline hover:text-[var(--text-primary)]">
+                Privacy Policy
+              </a>
+              .
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

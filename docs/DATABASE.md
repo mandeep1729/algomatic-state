@@ -261,111 +261,14 @@ Executed trade fills synced from brokers (immutable ledger).
 
 ## Trade Lifecycle Tables
 
-### `position_lots`
-Open position inventory and cost basis.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | BIGSERIAL | Primary key |
-| account_id | INTEGER | Foreign key to user_accounts |
-| symbol | VARCHAR(20) | Stock symbol |
-| direction | VARCHAR(10) | 'long' or 'short' |
-| opened_at | TIMESTAMPTZ | Position open time |
-| open_fill_id | BIGINT | Foreign key to trade_fills |
-| open_qty | FLOAT | Original quantity |
-| remaining_qty | FLOAT | Current quantity |
-| avg_open_price | FLOAT | Average entry price |
-| strategy_id | INTEGER | Foreign key to strategies |
-| status | VARCHAR(10) | 'open' or 'closed' |
-| campaign_id | BIGINT | Foreign key to position_campaigns |
-| created_at | TIMESTAMPTZ | Creation time |
-
-### `lot_closures`
-Pairing of open lots with closing fills.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | BIGSERIAL | Primary key |
-| lot_id | BIGINT | Foreign key to position_lots |
-| open_fill_id | BIGINT | Foreign key to trade_fills |
-| close_fill_id | BIGINT | Foreign key to trade_fills |
-| matched_qty | FLOAT | Quantity matched |
-| open_price | FLOAT | Entry price |
-| close_price | FLOAT | Exit price |
-| realized_pnl | FLOAT | Profit/loss |
-| fees_allocated | FLOAT | Allocated fees |
-| match_method | VARCHAR(10) | 'fifo', 'lifo', 'avg', 'manual' |
-| matched_at | TIMESTAMPTZ | Match timestamp |
-
-### `position_campaigns`
-User-visible trade journey (flat to flat).
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | BIGSERIAL | Primary key |
-| account_id | INTEGER | Foreign key to user_accounts |
-| symbol | VARCHAR(20) | Stock symbol |
-| direction | VARCHAR(10) | 'long' or 'short' |
-| opened_at | TIMESTAMPTZ | Campaign start |
-| closed_at | TIMESTAMPTZ | Campaign end |
-| qty_opened | FLOAT | Total quantity opened |
-| qty_closed | FLOAT | Total quantity closed |
-| avg_open_price | FLOAT | Average entry price |
-| avg_close_price | FLOAT | Average exit price |
-| realized_pnl | FLOAT | Total profit/loss |
-| return_pct | FLOAT | Return percentage |
-| holding_period_sec | INTEGER | Duration in seconds |
-| num_fills | INTEGER | Number of fills |
-| tags | JSONB | Strategy tags and labels |
-| derived_from | JSONB | Lot/closure IDs |
-| status | VARCHAR(10) | 'open' or 'closed' |
-| max_qty | FLOAT | Peak position size |
-| cost_basis_method | VARCHAR(10) | 'average', 'fifo', 'lifo' |
-| source | VARCHAR(20) | 'broker_synced', 'manual', 'proposed' |
-| link_group_id | BIGINT | Related campaigns group |
-| r_multiple | FLOAT | Risk-adjusted return |
-| intent_id | BIGINT | Foreign key to trade_intents |
-| strategy_id | INTEGER | Foreign key to strategies |
-| created_at | TIMESTAMPTZ | Creation time |
-| updated_at | TIMESTAMPTZ | Last update time |
-
-### `campaign_legs`
-Semantic decision points within a campaign.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | BIGSERIAL | Primary key |
-| campaign_id | BIGINT | Foreign key to position_campaigns |
-| leg_type | VARCHAR(20) | 'open', 'add', 'reduce', 'close', 'flip_close', 'flip_open' |
-| side | VARCHAR(10) | 'buy' or 'sell' |
-| quantity | FLOAT | Leg quantity |
-| avg_price | FLOAT | Average price |
-| started_at | TIMESTAMPTZ | Leg start time |
-| ended_at | TIMESTAMPTZ | Leg end time |
-| fill_count | INTEGER | Number of fills in leg |
-| intent_id | BIGINT | Foreign key to trade_intents |
-| notes | TEXT | Leg notes |
-| created_at | TIMESTAMPTZ | Creation time |
-
-### `leg_fill_map`
-Join table mapping legs to fills.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| leg_id | BIGINT | Foreign key to campaign_legs (PK) |
-| fill_id | BIGINT | Foreign key to trade_fills (PK) |
-| allocated_qty | FLOAT | Quantity allocated to this leg |
-
 ### `decision_contexts`
-Trader's context and feelings at decision points.
+Trader's context and feelings attached 1-to-1 with a trade fill.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | id | BIGSERIAL | Primary key |
 | account_id | INTEGER | Foreign key to user_accounts |
-| campaign_id | BIGINT | Foreign key to position_campaigns |
-| leg_id | BIGINT | Foreign key to campaign_legs |
-| intent_id | BIGINT | Foreign key to trade_intents |
+| fill_id | BIGINT | Foreign key to trade_fills (unique) |
 | context_type | VARCHAR(30) | 'entry', 'add', 'reduce', 'exit', 'idea', 'post_trade_reflection' |
 | strategy_id | INTEGER | Foreign key to strategies |
 | hypothesis | TEXT | Trade hypothesis |
@@ -375,6 +278,36 @@ Trader's context and feelings at decision points.
 | notes | TEXT | Additional notes |
 | created_at | TIMESTAMPTZ | Creation time |
 | updated_at | TIMESTAMPTZ | Last update time |
+
+### `campaign_checks`
+Behavioral nudge checks attached to decision contexts.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| decision_context_id | BIGINT | Foreign key to decision_contexts |
+| account_id | INTEGER | Foreign key to user_accounts |
+| check_type | VARCHAR(50) | Check identifier |
+| severity | VARCHAR(10) | 'info', 'warn', 'critical' |
+| passed | BOOLEAN | Whether check passed |
+| details | JSONB | Check details |
+| nudge_text | TEXT | Human-readable nudge message |
+| acknowledged | BOOLEAN | Whether trader acknowledged |
+| trader_action | VARCHAR(20) | 'proceeded', 'modified', 'cancelled' |
+| checked_at | TIMESTAMPTZ | Check timestamp |
+| check_phase | VARCHAR(20) | 'pre_trade', 'at_entry', 'during', 'at_exit', 'post_trade' |
+
+### `campaign_fills`
+Self-contained campaign grouping. Campaigns are derived from fills using FIFO zero-crossing. `group_id` is the first fill_id in the campaign (deterministic, unique per campaign). A fill can appear in two groups when a zero-crossing flip occurs.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key (surrogate row key) |
+| group_id | BIGINT | First fill_id in the group (campaign identifier) |
+| fill_id | BIGINT | Foreign key to trade_fills |
+| created_at | TIMESTAMPTZ | When the row was created (rebuild timestamp) |
+
+Constraints: UNIQUE on (group_id, fill_id), indexes on group_id and fill_id.
 
 ## Migrations
 

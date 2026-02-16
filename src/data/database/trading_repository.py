@@ -20,13 +20,13 @@ from src.data.database.trading_buddy_models import (
     UserAccount as UserAccountModel,
     UserProfile as UserProfileModel,
     UserRule as UserRuleModel,
+    Waitlist as WaitlistModel,
 )
 from src.data.database.broker_models import TradeFill as TradeFillModel
 from src.data.database.strategy_models import Strategy as StrategyModel
 from src.data.database.trade_lifecycle_models import (
     DecisionContext as DecisionContextModel,
     CampaignCheck as CampaignCheckModel,
-    Campaign as CampaignModel,
     CampaignFill as CampaignFillModel,
 )
 from src.trade.evaluation import Severity
@@ -112,6 +112,55 @@ class TradingBuddyRepository:
         if account is None:
             account = self.create_account(external_user_id, name, email=email, **kwargs)
         return account
+
+    # -------------------------------------------------------------------------
+    # Waitlist Operations
+    # -------------------------------------------------------------------------
+
+    def get_waitlist_entry_by_email(self, email: str) -> Optional[WaitlistModel]:
+        """Get a waitlist entry by email."""
+        return self.session.query(WaitlistModel).filter(
+            WaitlistModel.email == email
+        ).first()
+
+    def is_email_approved(self, email: str) -> bool:
+        """Check if an email is approved on the waitlist."""
+        entry = self.get_waitlist_entry_by_email(email)
+        return entry is not None and entry.status == "approved"
+
+    def create_waitlist_entry(
+        self,
+        name: str,
+        email: str,
+        referral_source: Optional[str] = None,
+    ) -> WaitlistModel:
+        """Create a new waitlist entry."""
+        entry = WaitlistModel(
+            name=name,
+            email=email,
+            referral_source=referral_source,
+        )
+        self.session.add(entry)
+        self.session.flush()
+        logger.info("Created waitlist entry id=%s email=%s", entry.id, email)
+        return entry
+
+    def get_or_create_waitlist_entry(
+        self,
+        name: str,
+        email: str,
+        referral_source: Optional[str] = None,
+    ) -> tuple[WaitlistModel, bool]:
+        """Get existing waitlist entry or create a new one.
+
+        Returns:
+            Tuple of (entry, created) where created is True if new.
+        """
+        existing = self.get_waitlist_entry_by_email(email)
+        if existing is not None:
+            return existing, False
+        entry = self.create_waitlist_entry(name, email, referral_source)
+        return entry, True
 
     # -------------------------------------------------------------------------
     # User Profile Operations
@@ -600,6 +649,7 @@ class TradingBuddyRepository:
         1. Query fills joined with decision_contexts filtered by account, symbol, strategy
         2. Walk chronologically tracking net position
         3. Campaign boundaries at zero crossings
+        4. group_id = first fill_id in each campaign group
 
         Args:
             account_id: Account ID
@@ -611,17 +661,35 @@ class TradingBuddyRepository:
         """
         stats = {"campaigns_created": 0, "fills_grouped": 0}
 
-        # Delete existing campaigns for this group (cascade deletes campaign_fills)
-        existing = self.session.query(CampaignModel).filter(
-            CampaignModel.account_id == account_id,
-            CampaignModel.symbol == symbol,
-            CampaignModel.strategy_id == strategy_id if strategy_id is not None
-            else CampaignModel.strategy_id.is_(None),
-        ).all()
+        # Delete existing campaign_fills for this group by joining to matching fills
+        fill_ids_subquery = (
+            self.session.query(TradeFillModel.id)
+            .outerjoin(
+                DecisionContextModel,
+                DecisionContextModel.fill_id == TradeFillModel.id,
+            )
+            .filter(
+                TradeFillModel.account_id == account_id,
+                TradeFillModel.symbol == symbol,
+            )
+        )
+        if strategy_id is not None:
+            fill_ids_subquery = fill_ids_subquery.filter(
+                DecisionContextModel.strategy_id == strategy_id
+            )
+        else:
+            fill_ids_subquery = fill_ids_subquery.filter(
+                (DecisionContextModel.strategy_id.is_(None))
+                | (DecisionContextModel.id.is_(None))
+            )
 
-        for campaign in existing:
-            self.session.delete(campaign)
-        self.session.flush()
+        fill_ids = [row[0] for row in fill_ids_subquery.all()]
+
+        if fill_ids:
+            self.session.query(CampaignFillModel).filter(
+                CampaignFillModel.fill_id.in_(fill_ids)
+            ).delete(synchronize_session="fetch")
+            self.session.flush()
 
         # Query fills with their decision context strategy
         query = (
@@ -667,9 +735,7 @@ class TradingBuddyRepository:
             # Check for zero crossing
             if position == 0.0:
                 # Campaign complete — create it
-                self._create_campaign_from_fills(
-                    account_id, symbol, strategy_id, current_fills
-                )
+                self._create_campaign_from_fills(current_fills)
                 stats["campaigns_created"] += 1
                 stats["fills_grouped"] += len(current_fills)
                 current_fills = []
@@ -679,9 +745,7 @@ class TradingBuddyRepository:
             ):
                 # Zero crossing flip: the fill both closes old and opens new.
                 # Close old campaign with all fills up to and including this one
-                self._create_campaign_from_fills(
-                    account_id, symbol, strategy_id, current_fills
-                )
+                self._create_campaign_from_fills(current_fills)
                 stats["campaigns_created"] += 1
                 stats["fills_grouped"] += len(current_fills)
                 # Start new campaign with this fill (it opens the new direction)
@@ -689,9 +753,7 @@ class TradingBuddyRepository:
 
         # Remaining fills form an open campaign
         if current_fills:
-            self._create_campaign_from_fills(
-                account_id, symbol, strategy_id, current_fills
-            )
+            self._create_campaign_from_fills(current_fills)
             stats["campaigns_created"] += 1
             stats["fills_grouped"] += len(current_fills)
 
@@ -703,43 +765,33 @@ class TradingBuddyRepository:
 
     def _create_campaign_from_fills(
         self,
-        account_id: int,
-        symbol: str,
-        strategy_id: Optional[int],
         fills: list[TradeFillModel],
-    ) -> CampaignModel:
-        """Create a campaign and link fills to it.
+    ) -> int:
+        """Create campaign_fill rows for a group of fills.
+
+        group_id is set to the first fill's ID (deterministic, unique per campaign).
 
         Args:
-            account_id: Account ID
-            symbol: Symbol
-            strategy_id: Strategy ID (or None)
             fills: List of fills in this campaign
 
         Returns:
-            Created CampaignModel
+            The group_id for the created campaign
         """
-        campaign = CampaignModel(
-            account_id=account_id,
-            symbol=symbol,
-            strategy_id=strategy_id,
-        )
-        self.session.add(campaign)
-        self.session.flush()
+        group_id = fills[0].id
 
         for fill in fills:
             cf = CampaignFillModel(
-                campaign_id=campaign.id,
+                group_id=group_id,
                 fill_id=fill.id,
             )
             self.session.add(cf)
 
         self.session.flush()
         logger.debug(
-            "Created campaign id=%s symbol=%s strategy=%s fills=%d",
-            campaign.id, symbol, strategy_id, len(fills),
+            "Created campaign group_id=%s fills=%d",
+            group_id, len(fills),
         )
-        return campaign
+        return group_id
 
     def rebuild_all_campaigns(self, account_id: int) -> dict:
         """Rebuild all campaigns for a user (used after bulk sync).
@@ -900,29 +952,130 @@ class TradingBuddyRepository:
         symbol: Optional[str] = None,
         strategy_id: Optional[int] = None,
         limit: int = 200,
-    ) -> list[CampaignModel]:
-        """Get campaigns for an account, optionally filtered."""
-        query = self.session.query(CampaignModel).filter(
-            CampaignModel.account_id == account_id
+    ) -> list[dict]:
+        """Get campaigns for an account, optionally filtered.
+
+        Returns list of dicts with: group_id, symbol, account_id, strategy_id,
+        first_fill_at (for ordering).
+        """
+        from sqlalchemy import distinct, func
+
+        # Get distinct group_ids with their first fill info
+        query = (
+            self.session.query(
+                CampaignFillModel.group_id,
+                func.min(TradeFillModel.executed_at).label("first_fill_at"),
+            )
+            .join(TradeFillModel, TradeFillModel.id == CampaignFillModel.fill_id)
+            .filter(TradeFillModel.account_id == account_id)
         )
+
         if symbol:
-            query = query.filter(CampaignModel.symbol == symbol)
+            query = query.filter(TradeFillModel.symbol == symbol)
+
         if strategy_id is not None:
-            query = query.filter(CampaignModel.strategy_id == strategy_id)
-        return query.order_by(CampaignModel.created_at.desc()).limit(limit).all()
+            query = query.outerjoin(
+                DecisionContextModel,
+                DecisionContextModel.fill_id == TradeFillModel.id,
+            ).filter(DecisionContextModel.strategy_id == strategy_id)
 
-    def get_campaign(self, campaign_id: int) -> Optional[CampaignModel]:
-        """Get a campaign by ID."""
-        return self.session.query(CampaignModel).filter(
-            CampaignModel.id == campaign_id
-        ).first()
+        query = query.group_by(CampaignFillModel.group_id)
+        query = query.order_by(func.min(TradeFillModel.executed_at).desc())
+        query = query.limit(limit)
 
-    def get_campaign_fills(self, campaign_id: int) -> list[TradeFillModel]:
-        """Get fills for a campaign, ordered by executed_at."""
+        rows = query.all()
+
+        campaigns = []
+        for row in rows:
+            campaigns.append({
+                "group_id": row.group_id,
+                "first_fill_at": row.first_fill_at,
+            })
+
+        return campaigns
+
+    def get_campaign_fills(self, group_id: int) -> list[TradeFillModel]:
+        """Get fills for a campaign group, ordered by executed_at."""
         return (
             self.session.query(TradeFillModel)
             .join(CampaignFillModel, CampaignFillModel.fill_id == TradeFillModel.id)
-            .filter(CampaignFillModel.campaign_id == campaign_id)
+            .filter(CampaignFillModel.group_id == group_id)
             .order_by(TradeFillModel.executed_at.asc())
             .all()
         )
+
+    def campaign_group_exists(self, group_id: int, account_id: int) -> bool:
+        """Check if a campaign group exists and belongs to the account."""
+        return (
+            self.session.query(CampaignFillModel.id)
+            .join(TradeFillModel, TradeFillModel.id == CampaignFillModel.fill_id)
+            .filter(
+                CampaignFillModel.group_id == group_id,
+                TradeFillModel.account_id == account_id,
+            )
+            .first()
+        ) is not None
+
+    def count_campaign_groups(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+    ) -> int:
+        """Count distinct campaign groups for an account, optionally by symbol."""
+        from sqlalchemy import func
+
+        query = (
+            self.session.query(func.count(func.distinct(CampaignFillModel.group_id)))
+            .join(TradeFillModel, TradeFillModel.id == CampaignFillModel.fill_id)
+            .filter(TradeFillModel.account_id == account_id)
+        )
+        if symbol:
+            query = query.filter(TradeFillModel.symbol == symbol)
+        return query.scalar() or 0
+
+    def count_closed_campaign_groups(
+        self,
+        account_id: int,
+        symbol: Optional[str] = None,
+    ) -> int:
+        """Count campaign groups that are closed (net position = 0).
+
+        A closed campaign has equal buy and sell quantities across its fills.
+        """
+        from sqlalchemy import func
+
+        # Get all group_ids for this account/symbol
+        query = (
+            self.session.query(CampaignFillModel.group_id)
+            .join(TradeFillModel, TradeFillModel.id == CampaignFillModel.fill_id)
+            .filter(TradeFillModel.account_id == account_id)
+        )
+        if symbol:
+            query = query.filter(TradeFillModel.symbol == symbol)
+
+        group_ids = [row[0] for row in query.distinct().all()]
+
+        closed_count = 0
+        for gid in group_ids:
+            fills = self.get_campaign_fills(gid)
+            net_qty = 0.0
+            for fill in fills:
+                if fill.side.lower() == "buy":
+                    net_qty += fill.quantity
+                else:
+                    net_qty -= fill.quantity
+            if abs(net_qty) < 1e-9:
+                closed_count += 1
+
+        return closed_count
+
+    def count_grouped_fills(self, account_id: int) -> int:
+        """Count fills that are assigned to at least one campaign group."""
+        from sqlalchemy import func
+
+        return (
+            self.session.query(func.count(func.distinct(CampaignFillModel.fill_id)))
+            .join(TradeFillModel, TradeFillModel.id == CampaignFillModel.fill_id)
+            .filter(TradeFillModel.account_id == account_id)
+            .scalar()
+        ) or 0

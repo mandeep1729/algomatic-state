@@ -309,9 +309,9 @@ export async function fetchTrades(params: {
 // =============================================================================
 
 /**
- * Backend returns campaign detail without evaluation bundles (those are
- * not yet implemented server-side). The frontend provides empty defaults
- * for evaluationCampaign, evaluationByLeg so the UI renders gracefully.
+ * Backend returns campaign detail with fills mapped to "legs".
+ * Evaluation bundles are not yet implemented server-side — the frontend
+ * provides empty defaults so the UI renders gracefully.
  */
 
 interface BackendCampaignDetail {
@@ -390,15 +390,14 @@ export async function fetchCampaignDetail(campaignId: string): Promise<CampaignD
 }
 
 export async function saveDecisionContext(context: DecisionContext): Promise<DecisionContext> {
-  const campaignId = context.campaignId;
-  if (!campaignId) throw new Error('campaignId is required to save context');
+  // In the new schema, each "leg" is actually a fill. The legId IS the fill_id.
+  // We save context per-fill using the fill context endpoint.
+  const fillId = context.legId;
+  if (!fillId) throw new Error('legId (fill ID) is required to save context');
 
   const body = {
-    scope: context.scope,
-    campaignId: context.campaignId,
-    legId: context.legId,
     contextType: context.contextType,
-    strategyTags: context.strategyTags,
+    strategyName: context.strategyTags?.[0] ?? null,
     hypothesis: context.hypothesis,
     exitIntent: context.exitIntent,
     feelingsThen: context.feelingsThen,
@@ -408,26 +407,24 @@ export async function saveDecisionContext(context: DecisionContext): Promise<Dec
 
   const res = await put<{
     contextId: string;
-    scope: string;
-    campaignId?: string;
-    legId?: string;
+    fillId: string;
     contextType: string;
-    strategyTags: string[];
+    strategyName?: string;
     hypothesis?: string;
     exitIntent?: string;
     feelingsThen?: { chips: string[]; intensity?: number; note?: string };
     feelingsNow?: { chips: string[]; intensity?: number; note?: string };
     notes?: string;
     updatedAt: string;
-  }>(`/api/campaigns/${encodeURIComponent(campaignId)}/context`, body);
+  }>(`/api/campaigns/fills/${encodeURIComponent(fillId)}/context`, body);
 
   return {
     contextId: res.contextId,
-    scope: res.scope as DecisionContext['scope'],
-    campaignId: res.campaignId,
-    legId: res.legId,
+    scope: context.scope,
+    campaignId: context.campaignId,
+    legId: res.fillId,
     contextType: res.contextType as DecisionContext['contextType'],
-    strategyTags: res.strategyTags,
+    strategyTags: res.strategyName ? [res.strategyName] : [],
     hypothesis: res.hypothesis,
     exitIntent: res.exitIntent as DecisionContext['exitIntent'],
     feelingsThen: res.feelingsThen,
@@ -457,17 +454,8 @@ export async function fetchCampaignOHLCVData(
 // Returns P&L summary for a single ticker symbol
 // =============================================================================
 
-interface TickerPnlBackendResponse {
-  symbol: string;
-  total_pnl: number;
-  total_pnl_pct: number;
-  trade_count: number;
-  closed_count: number;
-  first_entry_time: string | null;
-}
-
 export async function fetchTickerPnl(symbol: string): Promise<TickerPnlSummary> {
-  const res = await get<TickerPnlBackendResponse>(
+  const res = await get<TickerPnlSummary>(
     `/api/campaigns/pnl/${encodeURIComponent(symbol)}`
   );
 
