@@ -11,6 +11,7 @@ from typing import Optional
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -429,3 +430,43 @@ class UserRule(Base):
         return f"<UserRule(id={self.id}, code='{self.rule_code}')>"
 
 
+class Waitlist(Base):
+    """Waitlist entry for users requesting platform access.
+
+    Status values:
+    - waiting: submitted interest, pending manual approval
+    - approved: approved for account creation
+    - rejected: denied access
+    """
+
+    __tablename__ = "waitlist"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="waiting", nullable=False)
+    referral_source: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('waiting', 'approved', 'rejected')",
+            name="ck_waitlist_status",
+        ),
+        Index("ix_waitlist_email", "email"),
+        Index("ix_waitlist_status", "status"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Waitlist(id={self.id}, email='{self.email}', status='{self.status}')>"

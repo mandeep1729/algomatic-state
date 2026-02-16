@@ -124,7 +124,18 @@ async def google_login(request: GoogleLoginRequest):
             account = repo.get_account_by_email(email)
 
         if account is None:
-            # Create new account
+            # New user — check waitlist approval (skip in dev mode)
+            if not settings.auth.dev_mode:
+                if not repo.is_email_approved(email):
+                    # Auto-add to waitlist so they don't have to fill the form
+                    repo.get_or_create_waitlist_entry(name=name, email=email)
+                    logger.info("Blocked unapproved login: email=%s", email)
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Your account is pending approval. We'll notify you when access is granted.",
+                    )
+
+            # Approved — create new account
             account = repo.create_account(
                 external_user_id=f"google_{google_id}",
                 name=name,

@@ -1,3 +1,4 @@
+import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ShieldAlert,
@@ -9,8 +10,10 @@ import {
   X,
   ArrowRight,
   CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { apiUrl } from '../../../config';
 
 const FEATURES: { title: string; desc: string; icon: LucideIcon; color: string; gradient: string }[] = [
   {
@@ -58,6 +61,36 @@ const FEATURES: { title: string; desc: string; icon: LucideIcon; color: string; 
 ];
 
 export default function Home() {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function handleWaitlistSubmit(e: FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    setResult(null);
+    try {
+      const res = await fetch(apiUrl('/api/waitlist'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), email: email.trim() }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setResult({ ok: true, message: data.message });
+        setName('');
+        setEmail('');
+      } else {
+        setResult({ ok: false, message: data.detail || 'Something went wrong.' });
+      }
+    } catch {
+      setResult({ ok: false, message: 'Network error. Please try again.' });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-24">
       {/* Hero */}
@@ -86,13 +119,13 @@ export default function Home() {
         </p>
 
         <div className="mt-10 flex gap-4">
-          <Link
-            to="/app"
+          <a
+            href="#waitlist"
             className="group flex items-center gap-2 rounded-full bg-[var(--accent-blue)] px-8 py-3.5 text-sm font-semibold text-white shadow-lg shadow-[var(--accent-blue)]/25 transition-all hover:bg-[var(--accent-blue)]/90 hover:shadow-[var(--accent-blue)]/40 hover:-translate-y-0.5"
           >
-            Open App
+            Join Waitlist
             <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
-          </Link>
+          </a>
           <Link
             to="/how-it-works"
             className="flex items-center gap-2 rounded-full border border-[var(--border-color)] bg-[var(--bg-secondary)] px-8 py-3.5 text-sm font-semibold text-[var(--text-secondary)] transition-all hover:border-[var(--text-primary)] hover:text-[var(--text-primary)]"
@@ -189,8 +222,11 @@ export default function Home() {
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--accent-blue)] via-blue-600 to-[var(--accent-purple)] px-6 py-16 text-center text-white sm:px-12 lg:py-24">
+      {/* Waitlist CTA */}
+      <section
+        id="waitlist"
+        className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[var(--accent-blue)] via-blue-600 to-[var(--accent-purple)] px-6 py-16 text-center text-white sm:px-12 lg:py-24"
+      >
         {/* Abstract shapes */}
         <div className="absolute left-0 top-0 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/10 blur-3xl"></div>
         <div className="absolute bottom-0 right-0 h-64 w-64 translate-x-1/2 translate-y-1/2 rounded-full bg-purple-500/20 blur-3xl"></div>
@@ -200,15 +236,53 @@ export default function Home() {
           <p className="mt-4 text-lg text-blue-100">
             Join disciplined traders who use Trading Buddy to protect their capital from themselves.
           </p>
-          <div className="mt-10 flex justify-center gap-4">
-            <Link
-              to="/app/evaluate"
-              className="group inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-bold text-blue-600 shadow-xl transition-all hover:bg-blue-50 hover:shadow-2xl hover:-translate-y-0.5"
+
+          {result?.ok ? (
+            <div className="mt-10 rounded-xl bg-white/15 px-6 py-4">
+              <CheckCircle2 size={24} className="mx-auto mb-2 text-green-300" />
+              <p className="text-sm font-medium">{result.message}</p>
+            </div>
+          ) : (
+            <form
+              onSubmit={handleWaitlistSubmit}
+              className="mx-auto mt-10 flex max-w-md flex-col gap-3 sm:flex-row"
             >
-              Start Evaluating
-              <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          </div>
+              <input
+                type="text"
+                placeholder="Your name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                className="flex-1 rounded-full border border-white/20 bg-white/10 px-5 py-3 text-sm text-white placeholder-blue-200 outline-none transition focus:border-white/40 focus:bg-white/15"
+              />
+              <input
+                type="email"
+                placeholder="Your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="flex-1 rounded-full border border-white/20 bg-white/10 px-5 py-3 text-sm text-white placeholder-blue-200 outline-none transition focus:border-white/40 focus:bg-white/15"
+              />
+              <button
+                type="submit"
+                disabled={submitting}
+                className="group inline-flex items-center justify-center gap-2 rounded-full bg-white px-8 py-3 text-sm font-bold text-blue-600 shadow-xl transition-all hover:bg-blue-50 hover:shadow-2xl hover:-translate-y-0.5 disabled:opacity-60"
+              >
+                {submitting ? (
+                  <Loader2 size={16} className="animate-spin" />
+                ) : (
+                  <>
+                    Join Waitlist
+                    <ArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
+                  </>
+                )}
+              </button>
+            </form>
+          )}
+
+          {result && !result.ok && (
+            <p className="mt-3 text-sm text-red-200">{result.message}</p>
+          )}
         </div>
       </section>
     </div>
