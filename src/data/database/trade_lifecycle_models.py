@@ -119,10 +119,10 @@ class CampaignCheck(Base):
     __tablename__ = "campaign_checks"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    decision_context_id: Mapped[Optional[int]] = mapped_column(
+    decision_context_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("decision_contexts.id", ondelete="CASCADE"),
-        nullable=True,
+        nullable=False,
         index=True,
     )
     account_id: Mapped[int] = mapped_column(
@@ -144,7 +144,7 @@ class CampaignCheck(Base):
     check_phase: Mapped[str] = mapped_column(String(20), nullable=False)
 
     # Relationships
-    decision_context: Mapped[Optional["DecisionContext"]] = relationship(
+    decision_context: Mapped["DecisionContext"] = relationship(
         "DecisionContext", back_populates="checks"
     )
     account: Mapped["UserAccount"] = relationship("UserAccount")
