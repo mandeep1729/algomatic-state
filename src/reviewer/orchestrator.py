@@ -109,11 +109,17 @@ class ReviewerOrchestrator:
     # ------------------------------------------------------------------
 
     def _run_checks_for_leg(self, leg_id: int, correlation_id: str) -> None:
-        """Run all behavioral checks for a single leg in its own DB session."""
+        """Run behavioral checks and evaluator checks for a single leg.
+
+        Behavioral checks (CheckRunner) and evaluator checks (EvaluatorRunner)
+        run in sequence within the same DB session. Evaluator failures are
+        isolated — they don't prevent behavioral checks from completing.
+        """
         from config.settings import get_settings
         from src.data.database.connection import get_db_manager
         from src.data.database.trade_lifecycle_models import CampaignLeg as CampaignLegModel
         from src.reviewer.checks.runner import CheckRunner
+        from src.reviewer.evaluator_runner import EvaluatorRunner
 
         settings = get_settings()
         if not settings.reviewer.enabled:
@@ -133,6 +139,7 @@ class ReviewerOrchestrator:
                     )
                     return
 
+                # --- Behavioral checks ---
                 runner = CheckRunner(session, settings.checks)
                 checks = runner.run_checks(leg)
 
@@ -140,19 +147,35 @@ class ReviewerOrchestrator:
                 failed = len(checks) - passed
 
                 logger.info(
-                    "Checks complete for leg_id=%s: %d passed, %d failed (correlation_id=%s)",
+                    "Behavioral checks complete for leg_id=%s: %d passed, %d failed (correlation_id=%s)",
                     leg_id, passed, failed, correlation_id,
                 )
 
-                # Publish completion event
+                # --- Evaluator checks (isolated from behavioral checks) ---
+                evaluation = None
+                try:
+                    eval_runner = EvaluatorRunner(session)
+                    evaluation = eval_runner.run_evaluations(leg)
+                except Exception:
+                    logger.exception(
+                        "Evaluator checks failed for leg_id=%s (correlation_id=%s)",
+                        leg_id, correlation_id,
+                    )
+
+                # Publish completion event with evaluation metadata
+                payload = {
+                    "leg_id": leg_id,
+                    "check_count": len(checks),
+                    "passed": passed,
+                    "failed": failed,
+                }
+                if evaluation is not None:
+                    payload["evaluation_id"] = evaluation.id
+                    payload["evaluation_score"] = evaluation.score
+
                 self._bus.publish(Event(
                     event_type=EventType.REVIEW_COMPLETE,
-                    payload={
-                        "leg_id": leg_id,
-                        "check_count": len(checks),
-                        "passed": passed,
-                        "failed": failed,
-                    },
+                    payload=payload,
                     source="ReviewerOrchestrator",
                     correlation_id=correlation_id,
                 ))
