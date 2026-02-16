@@ -42,23 +42,23 @@ class CheckResult:
 class BaseChecker(ABC):
     """Abstract base class for behavioral checkers.
 
-    Subclasses implement run() to evaluate a campaign leg against
+    Subclasses implement run() to evaluate a trade fill against
     risk/behavioral criteria and return a list of CheckResults.
     """
 
     @abstractmethod
     def run(
         self,
-        leg: Any,
+        fill: Any,
         intent: Optional[TradeIntent],
         atr: Optional[float],
         account_balance: Optional[float],
     ) -> list[CheckResult]:
-        """Run checks for a campaign leg.
+        """Run checks for a trade fill.
 
         Args:
-            leg: CampaignLeg model instance
-            intent: Linked TradeIntent domain object (None if broker-synced)
+            fill: TradeFill model instance
+            intent: TradeIntent domain object built from fill data (None if unavailable)
             atr: Current ATR value for the symbol/timeframe
             account_balance: Trader's account balance
 

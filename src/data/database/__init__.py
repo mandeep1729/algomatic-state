@@ -6,19 +6,14 @@ from src.data.database.market_repository import OHLCVRepository
 from src.data.database.trading_buddy_models import (
     UserAccount,
     UserRule,
-    TradeIntent,
-    TradeEvaluation,
-    TradeEvaluationItem,
 )
 from src.data.database.broker_models import TradeFill
 from src.data.database.strategy_models import Strategy
 from src.data.database.trade_lifecycle_models import (
-    PositionLot,
-    LotClosure,
-    PositionCampaign,
-    CampaignLeg,
-    LegFillMap,
     DecisionContext,
+    CampaignCheck,
+    Campaign,
+    CampaignFill,
 )
 from src.data.database.probe_models import ProbeStrategy, StrategyProbeResult
 
@@ -37,19 +32,14 @@ __all__ = [
     # Trading Buddy models
     "UserAccount",
     "UserRule",
-    "TradeIntent",
-    "TradeEvaluation",
-    "TradeEvaluationItem",
     # Strategy model
     "Strategy",
     # Trade lifecycle models
     "TradeFill",
-    "PositionLot",
-    "LotClosure",
-    "PositionCampaign",
-    "CampaignLeg",
-    "LegFillMap",
     "DecisionContext",
+    "CampaignCheck",
+    "Campaign",
+    "CampaignFill",
     # Probe system
     "ProbeStrategy",
     "StrategyProbeResult",

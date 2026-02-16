@@ -155,13 +155,6 @@ class TradeFill(Base):
     # Import tracking
     import_batch_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
-    # Link to originating intent (bridges pre→post execution)
-    intent_id: Mapped[Optional[int]] = mapped_column(
-        BigInteger,
-        ForeignKey("trade_intents.id", ondelete="SET NULL"),
-        nullable=True,
-    )
-
     # Raw data from provider
     raw_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
@@ -174,7 +167,9 @@ class TradeFill(Base):
     # Relationships
     connection: Mapped["BrokerConnection"] = relationship("BrokerConnection", back_populates="trades")
     account: Mapped[Optional["UserAccount"]] = relationship("UserAccount")
-    intent: Mapped[Optional["TradeIntent"]] = relationship("TradeIntent")
+    decision_context: Mapped[Optional["DecisionContext"]] = relationship(
+        "DecisionContext", back_populates="fill", uselist=False
+    )
 
     __table_args__ = (
         CheckConstraint("side IN ('buy', 'sell')", name="ck_trade_fill_side"),

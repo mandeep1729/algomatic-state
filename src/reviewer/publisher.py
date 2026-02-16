@@ -13,62 +13,28 @@ from src.messaging.events import Event, EventType
 logger = logging.getLogger(__name__)
 
 
-def publish_leg_created(
-    leg_id: int,
-    campaign_id: int,
-    account_id: int,
-    symbol: str,
-) -> None:
-    """Publish a REVIEW_LEG_CREATED event after a new campaign leg is created.
-
-    Args:
-        leg_id: The newly created leg's ID
-        campaign_id: Parent campaign ID
-        account_id: Owner's account ID
-        symbol: Ticker symbol for the campaign
-    """
-    bus = get_message_bus()
-    bus.publish(Event(
-        event_type=EventType.REVIEW_LEG_CREATED,
-        payload={
-            "leg_id": leg_id,
-            "campaign_id": campaign_id,
-            "account_id": account_id,
-            "symbol": symbol,
-        },
-        source="reviewer.publisher",
-    ))
-    logger.debug(
-        "Published REVIEW_LEG_CREATED: leg_id=%s campaign_id=%s",
-        leg_id, campaign_id,
-    )
-
-
 def publish_context_updated(
-    leg_id: int,
-    campaign_id: int,
+    fill_id: int,
     account_id: int,
 ) -> None:
     """Publish a REVIEW_CONTEXT_UPDATED event after a DecisionContext is saved.
 
     Args:
-        leg_id: The leg whose context changed
-        campaign_id: Parent campaign ID
+        fill_id: The fill whose context changed
         account_id: Owner's account ID
     """
     bus = get_message_bus()
     bus.publish(Event(
         event_type=EventType.REVIEW_CONTEXT_UPDATED,
         payload={
-            "leg_id": leg_id,
-            "campaign_id": campaign_id,
+            "fill_id": fill_id,
             "account_id": account_id,
         },
         source="reviewer.publisher",
     ))
     logger.debug(
-        "Published REVIEW_CONTEXT_UPDATED: leg_id=%s campaign_id=%s",
-        leg_id, campaign_id,
+        "Published REVIEW_CONTEXT_UPDATED: fill_id=%s account_id=%s",
+        fill_id, account_id,
     )
 
 
@@ -91,19 +57,19 @@ def publish_risk_prefs_updated(account_id: int) -> None:
     )
 
 
-def publish_campaigns_populated(
+def publish_campaigns_rebuilt(
     account_id: int,
-    leg_ids: list[int],
+    campaigns_created: int,
 ) -> None:
-    """Publish a REVIEW_CAMPAIGNS_POPULATED event after batch campaign population.
+    """Publish a REVIEW_CAMPAIGNS_POPULATED event after campaign rebuild.
 
     Args:
-        account_id: The user whose campaigns were populated
-        leg_ids: IDs of all legs created during population
+        account_id: The user whose campaigns were rebuilt
+        campaigns_created: Number of campaigns created
     """
-    if not leg_ids:
+    if campaigns_created == 0:
         logger.debug(
-            "Skipping REVIEW_CAMPAIGNS_POPULATED: no legs created for account_id=%s",
+            "Skipping REVIEW_CAMPAIGNS_POPULATED: no campaigns created for account_id=%s",
             account_id,
         )
         return
@@ -113,11 +79,11 @@ def publish_campaigns_populated(
         event_type=EventType.REVIEW_CAMPAIGNS_POPULATED,
         payload={
             "account_id": account_id,
-            "leg_ids": leg_ids,
+            "campaigns_created": campaigns_created,
         },
         source="reviewer.publisher",
     ))
     logger.debug(
-        "Published REVIEW_CAMPAIGNS_POPULATED: account_id=%s leg_count=%d",
-        account_id, len(leg_ids),
+        "Published REVIEW_CAMPAIGNS_POPULATED: account_id=%s campaigns=%d",
+        account_id, campaigns_created,
     )

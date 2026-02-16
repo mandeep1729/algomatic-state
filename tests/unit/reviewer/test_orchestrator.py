@@ -51,40 +51,25 @@ class TestLifecycle:
         orch.stop()  # should not raise
 
 
-class TestLegCreatedHandler:
-    """Tests for REVIEW_LEG_CREATED event handling."""
-
-    @patch.object(ReviewerOrchestrator, "_run_checks_for_leg")
-    def test_dispatches_to_run_checks(self, mock_run, orchestrator, bus):
-        event = Event(
-            event_type=EventType.REVIEW_LEG_CREATED,
-            payload={"leg_id": 42, "campaign_id": 10, "account_id": 1, "symbol": "AAPL"},
-            source="test",
-        )
-        bus.publish(event)
-
-        mock_run.assert_called_once_with(42, event.correlation_id)
-
-
 class TestContextUpdatedHandler:
     """Tests for REVIEW_CONTEXT_UPDATED event handling."""
 
-    @patch.object(ReviewerOrchestrator, "_run_checks_for_leg")
+    @patch.object(ReviewerOrchestrator, "_run_checks_for_fill")
     def test_dispatches_to_run_checks(self, mock_run, orchestrator, bus):
         event = Event(
             event_type=EventType.REVIEW_CONTEXT_UPDATED,
-            payload={"leg_id": 42, "campaign_id": 10, "account_id": 1},
+            payload={"fill_id": 42, "account_id": 1},
             source="test",
         )
         bus.publish(event)
 
         mock_run.assert_called_once_with(42, event.correlation_id)
 
-    @patch.object(ReviewerOrchestrator, "_run_checks_for_leg")
-    def test_skips_when_no_leg_id(self, mock_run, orchestrator, bus):
+    @patch.object(ReviewerOrchestrator, "_run_checks_for_fill")
+    def test_skips_when_no_fill_id(self, mock_run, orchestrator, bus):
         event = Event(
             event_type=EventType.REVIEW_CONTEXT_UPDATED,
-            payload={"campaign_id": 10, "account_id": 1},
+            payload={"account_id": 1},
             source="test",
         )
         bus.publish(event)
@@ -110,34 +95,20 @@ class TestRiskPrefsUpdatedHandler:
 class TestCampaignsPopulatedHandler:
     """Tests for REVIEW_CAMPAIGNS_POPULATED event handling."""
 
-    @patch.object(ReviewerOrchestrator, "_run_checks_for_leg")
-    def test_dispatches_for_each_leg(self, mock_run, orchestrator, bus):
+    @patch.object(ReviewerOrchestrator, "_rerun_checks_for_user")
+    def test_dispatches_to_rerun_checks(self, mock_rerun, orchestrator, bus):
         event = Event(
             event_type=EventType.REVIEW_CAMPAIGNS_POPULATED,
-            payload={"account_id": 100, "leg_ids": [1, 2, 3]},
+            payload={"account_id": 100, "campaigns_created": 3},
             source="test",
         )
         bus.publish(event)
 
-        assert mock_run.call_count == 3
-        mock_run.assert_any_call(1, event.correlation_id)
-        mock_run.assert_any_call(2, event.correlation_id)
-        mock_run.assert_any_call(3, event.correlation_id)
-
-    @patch.object(ReviewerOrchestrator, "_run_checks_for_leg")
-    def test_empty_leg_ids_no_calls(self, mock_run, orchestrator, bus):
-        event = Event(
-            event_type=EventType.REVIEW_CAMPAIGNS_POPULATED,
-            payload={"account_id": 100, "leg_ids": []},
-            source="test",
-        )
-        bus.publish(event)
-
-        mock_run.assert_not_called()
+        mock_rerun.assert_called_once_with(100, event.correlation_id)
 
 
-class TestRunChecksForLeg:
-    """Tests for _run_checks_for_leg with mocked DB."""
+class TestRunChecksForFill:
+    """Tests for _run_checks_for_fill with mocked DB."""
 
     @patch("config.settings.get_settings")
     @patch("src.data.database.connection.get_db_manager")
@@ -151,11 +122,21 @@ class TestRunChecksForLeg:
 
         # Setup DB mock
         mock_session = MagicMock()
-        mock_leg = MagicMock()
-        mock_leg.id = 42
-        mock_leg.campaign_id = 10
-        mock_leg.campaign.account_id = 1
-        mock_session.query.return_value.filter.return_value.first.return_value = mock_leg
+
+        # Mock DecisionContext query
+        mock_dc = MagicMock()
+        mock_dc.id = 10
+        mock_dc.account_id = 1
+
+        # Mock TradeFill query
+        mock_fill = MagicMock()
+        mock_fill.id = 42
+
+        # First .filter().first() returns dc, second returns fill
+        mock_session.query.return_value.filter.return_value.first.side_effect = [
+            mock_dc,  # DecisionContext query
+            mock_fill,  # TradeFill query
+        ]
 
         ctx_manager = MagicMock()
         ctx_manager.__enter__ = MagicMock(return_value=mock_session)
@@ -176,12 +157,12 @@ class TestRunChecksForLeg:
 
             orch = ReviewerOrchestrator(message_bus=bus)
             orch.start()
-            orch._run_checks_for_leg(42, "test-corr-id")
+            orch._run_checks_for_fill(42, "test-corr-id")
             orch.stop()
 
             assert len(events_published) == 1
             evt = events_published[0]
-            assert evt.payload["leg_id"] == 42
+            assert evt.payload["fill_id"] == 42
             assert evt.payload["passed"] == 1
             assert evt.payload["failed"] == 0
 
@@ -195,7 +176,7 @@ class TestRunChecksForLeg:
 
         orch = ReviewerOrchestrator(message_bus=bus)
         orch.start()
-        orch._run_checks_for_leg(42, "test-corr-id")
+        orch._run_checks_for_fill(42, "test-corr-id")
         orch.stop()
 
         mock_db_mgr.return_value.get_session.assert_not_called()
@@ -215,9 +196,9 @@ class TestRunChecksForLeg:
 
         orch = ReviewerOrchestrator(message_bus=bus)
         orch.start()
-        orch._run_checks_for_leg(42, "test-corr-id")
+        orch._run_checks_for_fill(42, "test-corr-id")
         orch.stop()
 
         assert len(events_published) == 1
-        assert events_published[0].payload["leg_id"] == 42
+        assert events_published[0].payload["fill_id"] == 42
         assert "failed" in events_published[0].payload["error"].lower()

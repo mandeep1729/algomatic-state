@@ -80,11 +80,8 @@ class SyncResponse(BaseModel):
     fills_synced: int
     fills_skipped: int
     message: str
-    # Campaign population summary (populated if fills were synced)
     campaigns_created: Optional[int] = None
-    lots_created: Optional[int] = None
-    legs_created: Optional[int] = None
-    pnl_summary: Optional[float] = None
+    fills_grouped: Optional[int] = None
 
 
 class TradeResponse(BaseModel):
@@ -156,7 +153,7 @@ def get_or_create_alpaca_connection(
         )
         db.add(conn)
         db.flush()
-        logger.info(f"Created Alpaca connection for user {user_id}")
+        logger.info("Created Alpaca connection for user %d", user_id)
 
     return conn
 
@@ -200,7 +197,7 @@ def sync_fills_to_db(
             currency="USD",
             order_id=fill.order_id,
             external_trade_id=fill.id,
-            source="broker_synced",  # Valid source value per check constraint
+            source="broker_synced",
             raw_data=fill.raw_data
         )
         db.add(trade)
@@ -208,7 +205,7 @@ def sync_fills_to_db(
 
     if synced > 0:
         db.flush()
-        logger.info(f"Synced {synced} fills to database (skipped {skipped} duplicates)")
+        logger.info("Synced %d fills to database (skipped %d duplicates)", synced, skipped)
 
     return synced, skipped
 
@@ -218,21 +215,19 @@ def sync_fills_to_db(
 # -----------------------------------------------------------------------------
 
 def sync_alpaca_fills_background(user_id: int) -> None:
-    """Background task to sync Alpaca trade fills and populate trading journal.
+    """Background task to sync Alpaca trade fills and rebuild campaigns.
 
     Called automatically on user login/session validation.
     Only syncs if last sync was more than AUTO_SYNC_INTERVAL ago.
 
-    After syncing fills, automatically populates position_campaigns,
-    position_lots, and campaign_legs to build the trading journal.
+    After syncing fills, automatically rebuilds campaigns from fills.
     """
     from src.data.database.trading_repository import TradingBuddyRepository
 
     try:
-        # Check if Alpaca client is available
         client = AlpacaClient(paper=True)
     except ValueError as e:
-        logger.debug(f"Alpaca client not configured, skipping auto-sync: {e}")
+        logger.debug("Alpaca client not configured, skipping auto-sync: %s", e)
         return
 
     try:
@@ -251,40 +246,42 @@ def sync_alpaca_fills_background(user_id: int) -> None:
                 now = datetime.now(timezone.utc)
                 if now - last_sync < AUTO_SYNC_INTERVAL:
                     logger.debug(
-                        f"Skipping auto-sync for user {user_id}, last sync was {now - last_sync} ago"
+                        "Skipping auto-sync for user %d, last sync was %s ago",
+                        user_id, now - last_sync,
                     )
                     return
 
             # Perform sync
-            logger.info(f"Auto-syncing Alpaca fills for user {user_id}")
+            logger.info("Auto-syncing Alpaca fills for user %d", user_id)
             connection = get_or_create_alpaca_connection(db, user_id, paper=client.paper)
             fills = client.get_trade_fills()
 
             synced = 0
             if fills:
                 synced, skipped = sync_fills_to_db(db, connection, user_id, fills)
-                logger.info(f"Auto-sync complete: {synced} new fills, {skipped} skipped")
+                logger.info("Auto-sync complete: %d new fills, %d skipped", synced, skipped)
             else:
                 logger.debug("No fills to sync from Alpaca")
 
-            # Populate campaigns and legs if we synced any new fills
+            # Rebuild campaigns if we synced any new fills
             if synced > 0:
                 try:
                     repo = TradingBuddyRepository(db)
-                    pop_stats = repo.populate_campaigns_and_legs(account_id=user_id)
-                    if pop_stats.get("campaigns_created", 0) > 0:
+                    rebuild_stats = repo.rebuild_all_campaigns(account_id=user_id)
+                    if rebuild_stats.get("campaigns_created", 0) > 0:
                         logger.info(
-                            "Auto-sync created %d campaigns with %d legs, total P&L: %.2f",
-                            pop_stats.get("campaigns_created", 0),
-                            pop_stats.get("legs_created", 0),
-                            pop_stats.get("total_pnl", 0.0),
+                            "Auto-sync rebuilt %d campaigns across %d groups",
+                            rebuild_stats.get("campaigns_created", 0),
+                            rebuild_stats.get("groups_rebuilt", 0),
                         )
-                except Exception as pop_err:
-                    # Log but don't fail the sync for population errors
-                    logger.error("Background campaign population failed for user %s: %s", user_id, pop_err)
+                except Exception as rebuild_err:
+                    logger.error(
+                        "Background campaign rebuild failed for user %s: %s",
+                        user_id, rebuild_err,
+                    )
 
     except Exception as e:
-        logger.error(f"Background Alpaca sync failed for user {user_id}: {e}")
+        logger.error("Background Alpaca sync failed for user %d: %s", user_id, e)
 
 
 # -----------------------------------------------------------------------------
@@ -355,14 +352,14 @@ async def sync_trades(
     db: Session = Depends(get_db),
     client: AlpacaClient = Depends(get_alpaca_client),
 ):
-    """Sync trade fills from Alpaca to database and populate trading journal.
+    """Sync trade fills from Alpaca to database and rebuild campaigns.
 
     Fetches all trade activities (FILL events) from Alpaca and stores
     them in the trade_fills table. Duplicates are skipped based on
     external_trade_id.
 
-    After syncing fills, automatically populates position_campaigns,
-    position_lots, and campaign_legs to build the trading journal.
+    After syncing fills, rebuilds campaigns from fills using the
+    zero-crossing algorithm.
     """
     from src.data.database.trading_repository import TradingBuddyRepository
 
@@ -373,8 +370,8 @@ async def sync_trades(
         # Get or create connection
         connection = get_or_create_alpaca_connection(db, user_id, paper=client.paper)
 
-        # Fetch fills from Alpaca (using closed orders)
-        logger.info(f"Fetching trade fills from Alpaca for user {user_id}")
+        # Fetch fills from Alpaca
+        logger.info("Fetching trade fills from Alpaca for user %d", user_id)
         fills = client.get_trade_fills()
 
         if not fills:
@@ -388,36 +385,29 @@ async def sync_trades(
         # Sync to database
         synced, skipped = sync_fills_to_db(db, connection, user_id, fills)
 
-        # Populate campaigns and legs if we synced any new fills
+        # Rebuild campaigns if we synced any new fills
         campaigns_created = 0
-        lots_created = 0
-        legs_created = 0
-        pnl_summary = None
+        fills_grouped = 0
 
         if synced > 0:
             try:
                 repo = TradingBuddyRepository(db)
-                pop_stats = repo.populate_campaigns_and_legs(account_id=user_id)
-                campaigns_created = pop_stats.get("campaigns_created", 0)
-                lots_created = pop_stats.get("lots_created", 0)
-                legs_created = pop_stats.get("legs_created", 0)
-                pnl_summary = pop_stats.get("total_pnl", 0.0)
+                rebuild_stats = repo.rebuild_all_campaigns(account_id=user_id)
+                campaigns_created = rebuild_stats.get("campaigns_created", 0)
+                fills_grouped = rebuild_stats.get("fills_grouped", 0)
 
                 if campaigns_created > 0:
                     logger.info(
-                        "Created %d campaigns with %d legs, total P&L: %.2f",
-                        campaigns_created,
-                        legs_created,
-                        pnl_summary or 0.0,
+                        "Rebuilt %d campaigns grouping %d fills",
+                        campaigns_created, fills_grouped,
                     )
-            except Exception as pop_err:
-                # Log but don't fail the sync for population errors
-                logger.error(f"Failed to populate campaigns: {pop_err}")
+            except Exception as rebuild_err:
+                logger.error("Failed to rebuild campaigns: %s", rebuild_err)
 
         # Build response message
         msg_parts = [f"Synced {synced} new fills, skipped {skipped} existing"]
         if campaigns_created > 0:
-            msg_parts.append(f"created {campaigns_created} campaigns with {legs_created} legs")
+            msg_parts.append(f"rebuilt {campaigns_created} campaigns")
         message = "; ".join(msg_parts)
 
         return SyncResponse(
@@ -426,9 +416,7 @@ async def sync_trades(
             fills_skipped=skipped,
             message=message,
             campaigns_created=campaigns_created if synced > 0 else None,
-            lots_created=lots_created if synced > 0 else None,
-            legs_created=legs_created if synced > 0 else None,
-            pnl_summary=pnl_summary,
+            fills_grouped=fills_grouped if synced > 0 else None,
         )
 
     except HTTPException:

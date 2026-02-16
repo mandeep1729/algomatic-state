@@ -72,7 +72,7 @@ class RiskSanityChecker(BaseChecker):
 
     def run(
         self,
-        leg: Any,
+        fill: Any,
         intent: Optional[TradeIntent],
         atr: Optional[float],
         account_balance: Optional[float],
@@ -80,8 +80,8 @@ class RiskSanityChecker(BaseChecker):
         """Run all risk sanity sub-checks.
 
         Args:
-            leg: CampaignLeg model instance
-            intent: Linked TradeIntent (None for broker-synced trades)
+            fill: TradeFill model instance
+            intent: TradeIntent built from fill data (None if unavailable)
             atr: ATR value for the symbol/timeframe
             account_balance: Trader's account balance
 
@@ -94,8 +94,8 @@ class RiskSanityChecker(BaseChecker):
 
         if intent is None:
             logger.debug(
-                "Skipping RS002-RS004 for leg_id=%s: no linked intent",
-                getattr(leg, "id", "?"),
+                "Skipping RS002-RS004 for fill_id=%s: no linked intent",
+                getattr(fill, "id", "?"),
             )
             return results
 
@@ -104,8 +104,8 @@ class RiskSanityChecker(BaseChecker):
         results.append(self._check_stop_vs_atr(intent, atr))
 
         logger.info(
-            "Risk sanity checks complete for leg_id=%s: %d passed, %d failed",
-            getattr(leg, "id", "?"),
+            "Risk sanity checks complete for fill_id=%s: %d passed, %d failed",
+            getattr(fill, "id", "?"),
             sum(1 for r in results if r.passed),
             sum(1 for r in results if not r.passed),
         )

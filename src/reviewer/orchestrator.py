@@ -21,10 +21,10 @@ logger = logging.getLogger(__name__)
 class ReviewerOrchestrator:
     """Listens for reviewer events and dispatches behavioral checks.
 
-    Subscribes to REVIEW_LEG_CREATED, REVIEW_CONTEXT_UPDATED,
-    REVIEW_RISK_PREFS_UPDATED, and REVIEW_CAMPAIGNS_POPULATED events.
-    For each event, it opens its own DB session via get_db_manager().get_session()
-    and runs the CheckRunner against the relevant legs.
+    Subscribes to REVIEW_CONTEXT_UPDATED, REVIEW_RISK_PREFS_UPDATED,
+    and REVIEW_CAMPAIGNS_POPULATED events. For each event, it opens
+    its own DB session and runs the CheckRunner against the relevant
+    decision contexts.
     """
 
     def __init__(self, message_bus: Optional[MessageBusBase] = None) -> None:
@@ -37,7 +37,6 @@ class ReviewerOrchestrator:
             logger.warning("ReviewerOrchestrator already started")
             return
 
-        self._bus.subscribe(EventType.REVIEW_LEG_CREATED, self._handle_leg_created)
         self._bus.subscribe(EventType.REVIEW_CONTEXT_UPDATED, self._handle_context_updated)
         self._bus.subscribe(EventType.REVIEW_RISK_PREFS_UPDATED, self._handle_risk_prefs_updated)
         self._bus.subscribe(EventType.REVIEW_CAMPAIGNS_POPULATED, self._handle_campaigns_populated)
@@ -49,7 +48,6 @@ class ReviewerOrchestrator:
         if not self._started:
             return
 
-        self._bus.unsubscribe(EventType.REVIEW_LEG_CREATED, self._handle_leg_created)
         self._bus.unsubscribe(EventType.REVIEW_CONTEXT_UPDATED, self._handle_context_updated)
         self._bus.unsubscribe(EventType.REVIEW_RISK_PREFS_UPDATED, self._handle_risk_prefs_updated)
         self._bus.unsubscribe(EventType.REVIEW_CAMPAIGNS_POPULATED, self._handle_campaigns_populated)
@@ -60,32 +58,23 @@ class ReviewerOrchestrator:
     # Event handlers
     # ------------------------------------------------------------------
 
-    def _handle_leg_created(self, event: Event) -> None:
-        """Run checks for a newly created campaign leg."""
-        leg_id = event.payload.get("leg_id")
-        logger.info(
-            "Handling REVIEW_LEG_CREATED: leg_id=%s (correlation_id=%s)",
-            leg_id, event.correlation_id,
-        )
-        self._run_checks_for_leg(leg_id, event.correlation_id)
-
     def _handle_context_updated(self, event: Event) -> None:
         """Re-run checks after a DecisionContext is saved (strategy assigned)."""
-        leg_id = event.payload.get("leg_id")
-        if leg_id is None:
+        fill_id = event.payload.get("fill_id")
+        if fill_id is None:
             logger.debug(
-                "REVIEW_CONTEXT_UPDATED without leg_id, skipping (correlation_id=%s)",
+                "REVIEW_CONTEXT_UPDATED without fill_id, skipping (correlation_id=%s)",
                 event.correlation_id,
             )
             return
         logger.info(
-            "Handling REVIEW_CONTEXT_UPDATED: leg_id=%s (correlation_id=%s)",
-            leg_id, event.correlation_id,
+            "Handling REVIEW_CONTEXT_UPDATED: fill_id=%s (correlation_id=%s)",
+            fill_id, event.correlation_id,
         )
-        self._run_checks_for_leg(leg_id, event.correlation_id)
+        self._run_checks_for_fill(fill_id, event.correlation_id)
 
     def _handle_risk_prefs_updated(self, event: Event) -> None:
-        """Re-run checks for recent legs when risk preferences change."""
+        """Re-run checks for recent fills when risk preferences change."""
         account_id = event.payload.get("account_id")
         logger.info(
             "Handling REVIEW_RISK_PREFS_UPDATED: account_id=%s (correlation_id=%s)",
@@ -94,61 +83,68 @@ class ReviewerOrchestrator:
         self._rerun_checks_for_user(account_id, event.correlation_id)
 
     def _handle_campaigns_populated(self, event: Event) -> None:
-        """Run checks for all legs created during batch population."""
-        leg_ids = event.payload.get("leg_ids", [])
+        """Re-run checks for all fills after campaign rebuild."""
         account_id = event.payload.get("account_id")
         logger.info(
-            "Handling REVIEW_CAMPAIGNS_POPULATED: account_id=%s, %d legs (correlation_id=%s)",
-            account_id, len(leg_ids), event.correlation_id,
+            "Handling REVIEW_CAMPAIGNS_POPULATED: account_id=%s (correlation_id=%s)",
+            account_id, event.correlation_id,
         )
-        for leg_id in leg_ids:
-            self._run_checks_for_leg(leg_id, event.correlation_id)
+        self._rerun_checks_for_user(account_id, event.correlation_id)
 
     # ------------------------------------------------------------------
     # Check execution
     # ------------------------------------------------------------------
 
-    def _run_checks_for_leg(self, leg_id: int, correlation_id: str) -> None:
-        """Run all behavioral checks for a single leg in its own DB session."""
+    def _run_checks_for_fill(self, fill_id: int, correlation_id: str) -> None:
+        """Run all behavioral checks for a single fill's decision context."""
         from config.settings import get_settings
         from src.data.database.connection import get_db_manager
-        from src.data.database.trade_lifecycle_models import CampaignLeg as CampaignLegModel
+        from src.data.database.trade_lifecycle_models import DecisionContext
+        from src.data.database.broker_models import TradeFill
         from src.reviewer.checks.runner import CheckRunner
 
         settings = get_settings()
         if not settings.reviewer.enabled:
-            logger.debug("Reviewer disabled, skipping checks for leg_id=%s", leg_id)
+            logger.debug("Reviewer disabled, skipping checks for fill_id=%s", fill_id)
             return
 
         try:
             with get_db_manager().get_session() as session:
-                leg = session.query(CampaignLegModel).filter(
-                    CampaignLegModel.id == leg_id
+                dc = session.query(DecisionContext).filter(
+                    DecisionContext.fill_id == fill_id
                 ).first()
 
-                if leg is None:
+                if dc is None:
                     logger.warning(
-                        "Leg id=%s not found, skipping checks (correlation_id=%s)",
-                        leg_id, correlation_id,
+                        "No DecisionContext for fill_id=%s, skipping checks (correlation_id=%s)",
+                        fill_id, correlation_id,
+                    )
+                    return
+
+                fill = session.query(TradeFill).filter(TradeFill.id == fill_id).first()
+                if fill is None:
+                    logger.warning(
+                        "Fill id=%s not found, skipping checks (correlation_id=%s)",
+                        fill_id, correlation_id,
                     )
                     return
 
                 runner = CheckRunner(session, settings.checks)
-                checks = runner.run_checks(leg)
+                checks = runner.run_checks(dc, fill)
 
                 passed = sum(1 for c in checks if c.passed)
                 failed = len(checks) - passed
 
                 logger.info(
-                    "Checks complete for leg_id=%s: %d passed, %d failed (correlation_id=%s)",
-                    leg_id, passed, failed, correlation_id,
+                    "Checks complete for fill_id=%s: %d passed, %d failed (correlation_id=%s)",
+                    fill_id, passed, failed, correlation_id,
                 )
 
                 # Publish completion event
                 self._bus.publish(Event(
                     event_type=EventType.REVIEW_COMPLETE,
                     payload={
-                        "leg_id": leg_id,
+                        "fill_id": fill_id,
                         "check_count": len(checks),
                         "passed": passed,
                         "failed": failed,
@@ -159,31 +155,29 @@ class ReviewerOrchestrator:
 
         except Exception:
             logger.exception(
-                "Failed to run checks for leg_id=%s (correlation_id=%s)",
-                leg_id, correlation_id,
+                "Failed to run checks for fill_id=%s (correlation_id=%s)",
+                fill_id, correlation_id,
             )
             self._bus.publish(Event(
                 event_type=EventType.REVIEW_FAILED,
                 payload={
-                    "leg_id": leg_id,
-                    "error": f"Check execution failed for leg_id={leg_id}",
+                    "fill_id": fill_id,
+                    "error": f"Check execution failed for fill_id={fill_id}",
                 },
                 source="ReviewerOrchestrator",
                 correlation_id=correlation_id,
             ))
 
     def _rerun_checks_for_user(self, account_id: int, correlation_id: str) -> None:
-        """Re-run checks for recent legs belonging to a user.
+        """Re-run checks for recent fills belonging to a user.
 
-        Queries CampaignLeg joined to PositionCampaign where account_id
-        matches and started_at >= now - recheck_lookback_days.
+        Queries DecisionContext joined to TradeFill where account_id
+        matches and executed_at >= now - recheck_lookback_days.
         """
         from config.settings import get_settings
         from src.data.database.connection import get_db_manager
-        from src.data.database.trade_lifecycle_models import (
-            CampaignLeg as CampaignLegModel,
-            PositionCampaign as PositionCampaignModel,
-        )
+        from src.data.database.trade_lifecycle_models import DecisionContext
+        from src.data.database.broker_models import TradeFill
 
         settings = get_settings()
         if not settings.reviewer.enabled:
@@ -195,27 +189,24 @@ class ReviewerOrchestrator:
 
         try:
             with get_db_manager().get_session() as session:
-                leg_ids = (
-                    session.query(CampaignLegModel.id)
-                    .join(
-                        PositionCampaignModel,
-                        PositionCampaignModel.id == CampaignLegModel.campaign_id,
-                    )
+                fill_ids = (
+                    session.query(DecisionContext.fill_id)
+                    .join(TradeFill, TradeFill.id == DecisionContext.fill_id)
                     .filter(
-                        PositionCampaignModel.account_id == account_id,
-                        CampaignLegModel.started_at >= cutoff,
+                        DecisionContext.account_id == account_id,
+                        TradeFill.executed_at >= cutoff,
                     )
                     .all()
                 )
 
-            leg_id_list = [row[0] for row in leg_ids]
+            fill_id_list = [row[0] for row in fill_ids]
             logger.info(
-                "Re-running checks for %d recent legs (account_id=%s, lookback=%d days)",
-                len(leg_id_list), account_id, lookback_days,
+                "Re-running checks for %d recent fills (account_id=%s, lookback=%d days)",
+                len(fill_id_list), account_id, lookback_days,
             )
 
-            for leg_id in leg_id_list:
-                self._run_checks_for_leg(leg_id, correlation_id)
+            for fill_id in fill_id_list:
+                self._run_checks_for_fill(fill_id, correlation_id)
 
         except Exception:
             logger.exception(

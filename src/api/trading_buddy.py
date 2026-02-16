@@ -1,13 +1,12 @@
 """FastAPI router for Trading Buddy endpoints.
 
 Provides API endpoints for:
-- Trade intent CRUD (draft, submit, list)
-- Trade evaluation
-- User account management
+- Trade evaluation (in-memory, stateless)
+- Evaluator listing
+- Market context (regime, key levels)
 """
 
 import logging
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -43,7 +42,7 @@ class TradeIntentCreate(BaseModel):
 
     symbol: str = Field(..., description="Ticker symbol (e.g., 'AAPL')")
     direction: str = Field(..., description="Trade direction: 'long' or 'short'")
-    timeframe: str = Field(..., description="Setup timeframe (e.g., '5Min', '1Hour')")
+    timeframe: str = Field(..., description="Setup timeframe (e.g., '1Min', '1Hour')")
     entry_price: float = Field(..., gt=0, description="Planned entry price")
     stop_loss: float = Field(..., gt=0, description="Stop loss price")
     profit_target: float = Field(..., gt=0, description="Profit target price")
@@ -51,25 +50,10 @@ class TradeIntentCreate(BaseModel):
     position_value: Optional[float] = Field(None, gt=0, description="Total position value")
     rationale: Optional[str] = Field(None, description="Trade rationale")
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "symbol": "AAPL",
-                "direction": "long",
-                "timeframe": "5Min",
-                "entry_price": 150.00,
-                "stop_loss": 148.50,
-                "profit_target": 153.00,
-                "position_size": 100,
-                "rationale": "Breakout above resistance with volume confirmation",
-            }
-        }
-
 
 class TradeIntentResponse(BaseModel):
     """Response model for trade intent."""
 
-    intent_id: Optional[int] = None
     symbol: str
     direction: str
     timeframe: str
@@ -79,10 +63,8 @@ class TradeIntentResponse(BaseModel):
     position_size: Optional[float] = None
     position_value: Optional[float] = None
     rationale: Optional[str] = None
-    status: str
     risk_reward_ratio: float
     total_risk: Optional[float] = None
-    created_at: str
 
 
 class EvidenceResponse(BaseModel):
@@ -148,15 +130,7 @@ def _create_domain_intent(
     data: TradeIntentCreate,
     account_id: int,
 ) -> DomainTradeIntent:
-    """Convert API model to domain model.
-
-    Args:
-        data: API request model
-        account_id: Authenticated user's account ID
-
-    Returns:
-        Domain TradeIntent
-    """
+    """Convert API model to domain model."""
     logger.debug(
         "Creating domain intent: symbol=%s, direction=%s, timeframe=%s, account_id=%d",
         data.symbol, data.direction, data.timeframe, account_id,
@@ -179,12 +153,7 @@ def _create_domain_intent(
 
 def _intent_to_response(intent: DomainTradeIntent) -> TradeIntentResponse:
     """Convert domain intent to API response."""
-    logger.debug(
-        "Converting intent to response: intent_id=%s, symbol=%s, status=%s",
-        intent.intent_id, intent.symbol, intent.status.value,
-    )
     return TradeIntentResponse(
-        intent_id=intent.intent_id,
         symbol=intent.symbol,
         direction=intent.direction.value,
         timeframe=intent.timeframe,
@@ -194,10 +163,8 @@ def _intent_to_response(intent: DomainTradeIntent) -> TradeIntentResponse:
         position_size=intent.position_size,
         position_value=intent.position_value,
         rationale=intent.rationale,
-        status=intent.status.value,
         risk_reward_ratio=intent.risk_reward_ratio,
         total_risk=intent.total_risk,
-        created_at=intent.created_at.isoformat(),
     )
 
 
@@ -252,32 +219,6 @@ def _build_evaluation_response(result) -> EvaluationResponse:
 # =============================================================================
 
 
-@router.post("/intents", response_model=TradeIntentResponse)
-async def create_trade_intent(
-    data: TradeIntentCreate,
-    user_id: int = Depends(get_current_user),
-):
-    """Create a new trade intent (draft).
-
-    Creates a trade intent in DRAFT status for later evaluation.
-    The intent is validated for basic coherence (stop/target vs entry)
-    and persisted to the database.
-    """
-    logger.debug("create_trade_intent: user_id=%d, symbol=%s", user_id, data.symbol)
-    try:
-        intent = _create_domain_intent(data, account_id=user_id)
-
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = TradingBuddyRepository(session)
-            intent_model = repo.create_trade_intent(intent)
-            intent.intent_id = intent_model.id
-
-        return _intent_to_response(intent)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
 @router.post("/evaluate", response_model=EvaluateResponse)
 async def evaluate_trade_intent(
     request: EvaluateRequest,
@@ -285,14 +226,8 @@ async def evaluate_trade_intent(
 ):
     """Evaluate a trade intent against all configured evaluators.
 
-    This endpoint:
-    1. Creates and persists a trade intent
-    2. Loads user-specific risk defaults and rule overrides
-    3. Builds market context for the symbol/timeframe
-    4. Runs all (or specified) evaluators
-    5. Applies guardrails sanitization
-    6. Persists the evaluation result
-    7. Returns aggregated evaluation with score and findings
+    This is a stateless evaluation — the intent is not persisted.
+    Results are computed in-memory and returned directly.
 
     The evaluation includes:
     - Overall score (0-100)
@@ -307,30 +242,22 @@ async def evaluate_trade_intent(
     try:
         account_id = user_id
 
-        # Create domain intent
-        intent = _create_domain_intent(
-            request.intent,
-            account_id=account_id,
-        )
+        # Create domain intent (in-memory only)
+        intent = _create_domain_intent(request.intent, account_id=account_id)
         intent.status = TradeIntentStatus.PENDING_EVALUATION
 
+        # Load user-specific evaluator configs
         db_manager = get_db_manager()
-
-        # Persist intent and load user configs in one session
         evaluator_configs = {}
         with db_manager.get_session() as session:
             repo = TradingBuddyRepository(session)
-
-            # Persist the intent
-            intent_model = repo.create_trade_intent(intent)
-            intent.intent_id = intent_model.id
-
-            # Load user-specific evaluator configs
             evaluator_configs = repo.build_evaluator_configs(account_id)
-            logger.debug("Loaded evaluator configs for account %d: %d configs", account_id, len(evaluator_configs))
+            logger.debug(
+                "Loaded evaluator configs for account %d: %d configs",
+                account_id, len(evaluator_configs),
+            )
 
-        # Build context (ensure_fresh_data triggers a messaging request
-        # so that the orchestrator fetches any missing bars before we read)
+        # Build context
         context_builder = ContextPackBuilder(ensure_fresh_data=True)
         context = context_builder.build(
             symbol=intent.symbol,
@@ -359,18 +286,8 @@ async def evaluate_trade_intent(
         guardrail_warnings = validate_evaluation_result(result)
         if guardrail_warnings:
             for warning in guardrail_warnings:
-                logger.warning(f"Guardrail violation: {warning}")
+                logger.warning("Guardrail violation: %s", warning)
             result = sanitize_evaluation_result(result)
-
-        # Update intent status
-        intent.status = TradeIntentStatus.EVALUATED
-
-        # Persist the evaluation result
-        with db_manager.get_session() as session:
-            repo = TradingBuddyRepository(session)
-            eval_model = repo.save_evaluation(result, intent.intent_id)
-            result.evaluation_id = eval_model.id
-            repo.update_intent_status(intent.intent_id, TradeIntentStatus.EVALUATED)
 
         # Build response
         evaluation_response = _build_evaluation_response(result)
@@ -400,78 +317,13 @@ async def evaluate_trade_intent(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.exception(f"Evaluation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/intents/{intent_id}")
-async def get_trade_intent(intent_id: int):
-    """Retrieve a trade intent and its evaluation (if available).
-
-    Args:
-        intent_id: ID of the persisted trade intent
-    """
-    logger.debug("get_trade_intent: intent_id=%d", intent_id)
-    try:
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = TradingBuddyRepository(session)
-
-            intent_model = repo.get_trade_intent(intent_id)
-            if intent_model is None:
-                raise HTTPException(status_code=404, detail=f"Intent {intent_id} not found")
-
-            intent = repo.intent_model_to_domain(intent_model)
-            response: dict = {"intent": _intent_to_response(intent)}
-
-            # Include evaluation if one exists
-            eval_model = repo.get_evaluation(intent_id)
-            if eval_model is not None:
-                eval_items = repo.get_evaluation_items(eval_model.id)
-                response["evaluation"] = {
-                    "evaluation_id": eval_model.id,
-                    "score": eval_model.score,
-                    "summary": eval_model.summary,
-                    "has_blockers": eval_model.blocker_count > 0,
-                    "counts": {
-                        "blockers": eval_model.blocker_count,
-                        "criticals": eval_model.critical_count,
-                        "warnings": eval_model.warning_count,
-                        "infos": eval_model.info_count,
-                    },
-                    "evaluators_run": eval_model.evaluators_run,
-                    "evaluated_at": eval_model.evaluated_at.isoformat(),
-                    "items": [
-                        {
-                            "evaluator": item.evaluator,
-                            "code": item.code,
-                            "severity": item.severity,
-                            "title": item.title,
-                            "message": item.message,
-                            "evidence": item.evidence or [],
-                        }
-                        for item in eval_items
-                    ],
-                }
-            else:
-                response["evaluation"] = None
-
-            return response
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception(f"Failed to retrieve intent {intent_id}: {e}")
+        logger.exception("Evaluation failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/evaluators")
 async def list_evaluators():
-    """List all available evaluators.
-
-    Returns metadata about registered evaluators including
-    name, description, and default configuration.
-    """
+    """List all available evaluators."""
     logger.debug("list_evaluators called")
     from src.evaluators.registry import list_evaluators as _list
 
@@ -483,13 +335,9 @@ async def list_evaluators():
 @router.get("/regime")
 async def get_regime_snapshot(
     symbol: str = Query(..., description="Ticker symbol"),
-    timeframe: str = Query(..., description="Timeframe (e.g., '5Min', '1Hour')"),
+    timeframe: str = Query(..., description="Timeframe (e.g., '1Min', '1Hour')"),
 ):
-    """Get current regime snapshot for a symbol/timeframe.
-
-    Returns regime state, probability, transition risk, entropy,
-    and semantic label.
-    """
+    """Get current regime snapshot for a symbol/timeframe."""
     logger.debug("get_regime_snapshot: symbol=%s, timeframe=%s", symbol, timeframe)
     try:
         context_builder = ContextPackBuilder(
@@ -518,7 +366,7 @@ async def get_regime_snapshot(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Failed to get regime for {symbol}/{timeframe}: {e}")
+        logger.exception("Failed to get regime for %s/%s: %s", symbol, timeframe, e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -527,10 +375,7 @@ async def get_key_levels(
     symbol: str = Query(..., description="Ticker symbol"),
     timeframe: str = Query(..., description="Primary timeframe"),
 ):
-    """Get current key price levels for a symbol.
-
-    Returns pivot points, prior day HLC, rolling range, and VWAP.
-    """
+    """Get current key price levels for a symbol."""
     logger.debug("get_key_levels: symbol=%s, timeframe=%s", symbol, timeframe)
     try:
         context_builder = ContextPackBuilder(
@@ -558,7 +403,7 @@ async def get_key_levels(
     except HTTPException:
         raise
     except Exception as e:
-        logger.exception(f"Failed to get key levels for {symbol}/{timeframe}: {e}")
+        logger.exception("Failed to get key levels for %s/%s: %s", symbol, timeframe, e)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -568,5 +413,5 @@ async def health_check():
     return {
         "status": "healthy",
         "module": "trading_buddy",
-        "version": "0.1.0",
+        "version": "0.2.0",
     }

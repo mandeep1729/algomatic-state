@@ -1,7 +1,7 @@
-"""CheckRunner — orchestrates behavioral checkers for a campaign leg.
+"""CheckRunner — orchestrates behavioral checkers for a trade fill.
 
-Loads the linked TradeIntent (if any), fetches ATR and account balance,
-runs all registered checkers, and persists CampaignCheck records.
+Fetches ATR and account balance, runs all registered checkers,
+and persists CampaignCheck records linked to the DecisionContext.
 """
 
 import logging
@@ -15,8 +15,9 @@ from src.reviewer.checks.base import BaseChecker, CheckResult
 from src.reviewer.checks.risk_sanity import RiskSanityChecker
 from src.data.database.trade_lifecycle_models import (
     CampaignCheck as CampaignCheckModel,
-    CampaignLeg as CampaignLegModel,
+    DecisionContext as DecisionContextModel,
 )
+from src.data.database.broker_models import TradeFill as TradeFillModel
 from src.data.database.trading_buddy_models import (
     UserProfile as UserProfileModel,
 )
@@ -26,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class CheckRunner:
-    """Runs all registered behavioral checkers against a campaign leg."""
+    """Runs all registered behavioral checkers against a fill's decision context."""
 
     def __init__(self, session: Session, settings: ChecksConfig):
         self.session = session
@@ -35,44 +36,48 @@ class CheckRunner:
             RiskSanityChecker(settings),
         ]
 
-    def run_checks(self, leg: CampaignLegModel) -> list[CampaignCheckModel]:
-        """Run all checkers for a leg and persist CampaignCheck records.
+    def run_checks(
+        self,
+        dc: DecisionContextModel,
+        fill: TradeFillModel,
+    ) -> list[CampaignCheckModel]:
+        """Run all checkers for a decision context and persist CampaignCheck records.
 
         Args:
-            leg: The CampaignLeg to evaluate
+            dc: The DecisionContext to evaluate
+            fill: The linked TradeFill
 
         Returns:
             List of created CampaignCheck records
         """
-        intent = self._load_intent(leg)
-        atr = self._fetch_atr(leg)
-        account_balance = self._get_account_balance(leg)
+        intent = self._build_intent_from_fill(dc, fill)
+        atr = self._fetch_atr(fill)
+        account_balance = self._get_account_balance(dc.account_id)
 
         logger.info(
-            "Running checks for leg_id=%s campaign_id=%s: "
-            "intent=%s atr=%s balance=%s",
-            leg.id, leg.campaign_id,
-            intent.intent_id if intent else None,
-            atr, account_balance,
+            "Running checks for fill_id=%s dc_id=%s: atr=%s balance=%s",
+            fill.id, dc.id, atr, account_balance,
         )
 
         all_results: list[CheckResult] = []
         for checker in self.checkers:
             try:
-                results = checker.run(leg, intent, atr, account_balance)
+                # Pass fill as the "leg" argument — checkers use it for
+                # side/quantity/price/symbol data
+                results = checker.run(fill, intent, atr, account_balance)
                 all_results.extend(results)
             except Exception:
                 logger.exception(
-                    "Checker %s failed for leg_id=%s",
-                    checker.__class__.__name__, leg.id,
+                    "Checker %s failed for fill_id=%s",
+                    checker.__class__.__name__, fill.id,
                 )
 
-        # Persist as CampaignCheck records
+        # Persist as CampaignCheck records linked to decision_context
         checks: list[CampaignCheckModel] = []
         for result in all_results:
             check = CampaignCheckModel(
-                leg_id=leg.id,
-                account_id=leg.campaign.account_id,
+                decision_context_id=dc.id,
+                account_id=dc.account_id,
                 check_type=result.check_type,
                 severity=result.severity,
                 passed=result.passed,
@@ -86,137 +91,97 @@ class CheckRunner:
 
         self.session.flush()
         logger.info(
-            "Persisted %d check records for leg_id=%s",
-            len(checks), leg.id,
+            "Persisted %d check records for fill_id=%s dc_id=%s",
+            len(checks), fill.id, dc.id,
         )
         return checks
 
-    def _load_intent(self, leg: CampaignLegModel) -> Optional[TradeIntent]:
-        """Load the TradeIntent linked to this leg, if any.
+    def _build_intent_from_fill(
+        self,
+        dc: DecisionContextModel,
+        fill: TradeFillModel,
+    ) -> Optional[TradeIntent]:
+        """Build a TradeIntent domain object from fill data.
 
-        Args:
-            leg: CampaignLeg model
+        Since intents are no longer persisted, we construct a minimal
+        TradeIntent from the fill's trade data for checkers that need it.
 
-        Returns:
-            Domain TradeIntent or None
+        Returns None if the fill doesn't have enough data for an intent.
         """
-        if leg.intent_id is None:
-            logger.debug("No intent_id on leg_id=%s", leg.id)
-            return None
+        try:
+            direction = TradeDirection.LONG if fill.side.lower() == "buy" else TradeDirection.SHORT
 
-        from src.data.database.trading_buddy_models import (
-            TradeIntent as TradeIntentModel,
-        )
-
-        model = self.session.query(TradeIntentModel).filter(
-            TradeIntentModel.id == leg.intent_id
-        ).first()
-
-        if model is None:
-            logger.warning(
-                "Intent id=%s not found for leg_id=%s", leg.intent_id, leg.id,
+            return TradeIntent(
+                user_id=dc.account_id,
+                account_id=dc.account_id,
+                symbol=fill.symbol,
+                direction=direction,
+                timeframe="1Day",  # Default — fills don't carry timeframe
+                entry_price=fill.price,
+                stop_loss=fill.price,  # No stop data from fill
+                profit_target=fill.price,  # No target data from fill
+                position_size=fill.quantity,
+                position_value=fill.quantity * fill.price,
+                status=TradeIntentStatus.EVALUATED,
+            )
+        except Exception:
+            logger.debug(
+                "Could not build intent from fill_id=%s", fill.id, exc_info=True,
             )
             return None
 
-        return TradeIntent(
-            intent_id=model.id,
-            user_id=model.account_id,
-            account_id=model.account_id,
-            symbol=model.symbol,
-            direction=TradeDirection(model.direction),
-            timeframe=model.timeframe,
-            entry_price=model.entry_price,
-            stop_loss=model.stop_loss,
-            profit_target=model.profit_target,
-            position_size=model.position_size,
-            position_value=model.position_value,
-            rationale=model.rationale,
-            status=TradeIntentStatus(model.status),
-            created_at=model.created_at,
-            metadata=model.intent_metadata or {},
-        )
+    def _fetch_atr(self, fill: TradeFillModel) -> Optional[float]:
+        """Fetch the ATR value for this fill's symbol.
 
-    def _fetch_atr(self, leg: CampaignLegModel) -> Optional[float]:
-        """Fetch the ATR value for this leg's symbol/timeframe.
-
-        Uses the same atr_14 column from the features table that
-        ContextPackBuilder reads. Returns None if unavailable.
-
-        Args:
-            leg: CampaignLeg model
-
-        Returns:
-            ATR float value or None
+        Uses the atr_14 column from the features table.
+        Returns None if unavailable.
         """
         try:
-            campaign = leg.campaign
-            if campaign is None:
-                logger.debug("No campaign found for leg %s, skipping ATR fetch", leg.id)
-                return None
-
             from src.data.database.models import FeatureRow
 
             row = self.session.query(FeatureRow).filter(
-                FeatureRow.symbol == campaign.symbol,
+                FeatureRow.symbol == fill.symbol,
             ).order_by(FeatureRow.timestamp.desc()).first()
 
             if row is None:
-                logger.debug(
-                    "No feature row found for symbol=%s", campaign.symbol,
-                )
+                logger.debug("No feature row found for symbol=%s", fill.symbol)
                 return None
 
             atr_value = getattr(row, "atr_14", None)
             if atr_value is not None:
                 logger.debug(
-                    "Fetched atr_14=%.4f for symbol=%s", atr_value, campaign.symbol,
+                    "Fetched atr_14=%.4f for symbol=%s", atr_value, fill.symbol,
                 )
             return atr_value
 
         except Exception:
             logger.debug(
-                "Could not fetch ATR for leg_id=%s: feature table may not exist",
-                leg.id,
-                exc_info=True,
+                "Could not fetch ATR for fill_id=%s: feature table may not exist",
+                fill.id, exc_info=True,
             )
             return None
 
-    def _get_account_balance(self, leg: CampaignLegModel) -> Optional[float]:
-        """Get the account balance for the campaign's account.
-
-        Args:
-            leg: CampaignLeg model
-
-        Returns:
-            Account balance or None
-        """
+    def _get_account_balance(self, account_id: int) -> Optional[float]:
+        """Get the account balance for a user."""
         try:
-            campaign = leg.campaign
-            if campaign is None:
-                logger.debug("No campaign found for leg %s, skipping balance lookup", leg.id)
-                return None
-
             profile = self.session.query(UserProfileModel).filter(
-                UserProfileModel.user_account_id == campaign.account_id,
+                UserProfileModel.user_account_id == account_id,
             ).first()
 
             if profile is None:
-                logger.debug(
-                    "No profile found for account_id=%s", campaign.account_id,
-                )
+                logger.debug("No profile found for account_id=%s", account_id)
                 return None
 
             balance = profile.account_balance
             logger.debug(
                 "Account balance=%.2f for account_id=%s",
-                balance or 0, campaign.account_id,
+                balance or 0, account_id,
             )
             return balance
 
         except Exception:
             logger.debug(
-                "Could not fetch account balance for leg_id=%s",
-                leg.id,
-                exc_info=True,
+                "Could not fetch account balance for account_id=%s",
+                account_id, exc_info=True,
             )
             return None

@@ -15,42 +15,22 @@ def mock_bus():
         yield bus
 
 
-class TestPublishLegCreated:
-    """Tests for publish_leg_created."""
-
-    def test_publishes_event(self, mock_bus):
-        from src.reviewer.publisher import publish_leg_created
-
-        publish_leg_created(leg_id=1, campaign_id=10, account_id=100, symbol="AAPL")
-
-        mock_bus.publish.assert_called_once()
-        event = mock_bus.publish.call_args[0][0]
-        assert event.event_type == EventType.REVIEW_LEG_CREATED
-        assert event.payload == {
-            "leg_id": 1,
-            "campaign_id": 10,
-            "account_id": 100,
-            "symbol": "AAPL",
-        }
-        assert event.source == "reviewer.publisher"
-
-
 class TestPublishContextUpdated:
     """Tests for publish_context_updated."""
 
     def test_publishes_event(self, mock_bus):
         from src.reviewer.publisher import publish_context_updated
 
-        publish_context_updated(leg_id=1, campaign_id=10, account_id=100)
+        publish_context_updated(fill_id=1, account_id=100)
 
         mock_bus.publish.assert_called_once()
         event = mock_bus.publish.call_args[0][0]
         assert event.event_type == EventType.REVIEW_CONTEXT_UPDATED
         assert event.payload == {
-            "leg_id": 1,
-            "campaign_id": 10,
+            "fill_id": 1,
             "account_id": 100,
         }
+        assert event.source == "reviewer.publisher"
 
 
 class TestPublishRiskPrefsUpdated:
@@ -67,25 +47,25 @@ class TestPublishRiskPrefsUpdated:
         assert event.payload == {"account_id": 100}
 
 
-class TestPublishCampaignsPopulated:
-    """Tests for publish_campaigns_populated."""
+class TestPublishCampaignsRebuilt:
+    """Tests for publish_campaigns_rebuilt."""
 
     def test_publishes_event(self, mock_bus):
-        from src.reviewer.publisher import publish_campaigns_populated
+        from src.reviewer.publisher import publish_campaigns_rebuilt
 
-        publish_campaigns_populated(account_id=100, leg_ids=[1, 2, 3])
+        publish_campaigns_rebuilt(account_id=100, campaigns_created=3)
 
         mock_bus.publish.assert_called_once()
         event = mock_bus.publish.call_args[0][0]
         assert event.event_type == EventType.REVIEW_CAMPAIGNS_POPULATED
         assert event.payload == {
             "account_id": 100,
-            "leg_ids": [1, 2, 3],
+            "campaigns_created": 3,
         }
 
-    def test_skips_empty_leg_ids(self, mock_bus):
-        from src.reviewer.publisher import publish_campaigns_populated
+    def test_skips_zero_campaigns(self, mock_bus):
+        from src.reviewer.publisher import publish_campaigns_rebuilt
 
-        publish_campaigns_populated(account_id=100, leg_ids=[])
+        publish_campaigns_rebuilt(account_id=100, campaigns_created=0)
 
         mock_bus.publish.assert_not_called()
