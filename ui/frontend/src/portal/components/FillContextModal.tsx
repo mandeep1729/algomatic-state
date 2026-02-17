@@ -138,12 +138,6 @@ export function FillContextModal({
   const handleSave = useCallback(async () => {
     if (!context) return;
 
-    // Check if fill is linked to a campaign
-    if (!context.campaign_id || !context.leg_id) {
-      setError('This fill is not linked to a campaign. Context cannot be saved.');
-      return;
-    }
-
     setSaving(true);
     setError(null);
 
@@ -169,7 +163,7 @@ export function FillContextModal({
     }
   }, [context, fillId, draft, onSave, onClose]);
 
-  const canSave = context?.campaign_id != null && context?.leg_id != null;
+  const canSave = context != null;
 
   return (
     <Modal
@@ -187,11 +181,6 @@ export function FillContextModal({
         ) : error && !context ? (
           <div className="rounded-md bg-red-500/10 p-4 text-sm text-red-500">
             {error}
-          </div>
-        ) : !canSave ? (
-          <div className="rounded-md bg-yellow-500/10 p-4 text-sm text-yellow-600">
-            This fill is not yet linked to a campaign. Context editing will be available
-            after the fill is processed into a position campaign.
           </div>
         ) : (
           <div className="space-y-5">

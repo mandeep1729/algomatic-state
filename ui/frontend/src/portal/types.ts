@@ -453,8 +453,6 @@ export interface SitePrefs {
 
 export interface FillContextDetail {
   fill_id: number;
-  campaign_id: number | null;
-  leg_id: number | null;
   context_id: number | null;
   context_type: string | null;
   strategy_id: number | null;
