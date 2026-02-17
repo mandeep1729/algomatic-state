@@ -8,9 +8,9 @@ Complete reference for all behavioral checks and evaluator checks implemented in
 
 Trading Buddy runs two categories of checks against trades:
 
-1. **Behavioral Checks** (CheckRunner) — Post-execution risk sanity gates that persist to the `campaign_checks` table. These fire when a campaign leg is created and produce pass/fail results with nudge text for the trader.
+1. **Behavioral Checks** (CheckRunner) — Post-execution risk sanity gates that persist to the `campaign_checks` table. These fire when a decision context is created and produce pass/fail results with nudge text for the trader.
 
-2. **Evaluator Checks** (Evaluator framework) — Pre-trade and retroactive evaluations that persist to the `trade_evaluations` and `trade_evaluation_items` tables. These analyze market context, structure, and trade quality.
+2. **Evaluator Checks** (Evaluator framework) — Pre-trade and retroactive evaluations that analyze market context, structure, and trade quality. Results are returned in the API response (not persisted to DB since the `trade_evaluations` and `trade_evaluation_items` tables were removed in migration 026).
 
 ### Severity Levels
 
@@ -378,6 +378,6 @@ Each evaluator accepts an optional `EvaluatorConfig` with:
 
 | Script | Table | Description |
 |--------|-------|-------------|
-| `scripts/review_legs.py` | `campaign_checks`, `trade_evaluations` | Publishes `REVIEW_CAMPAIGNS_POPULATED` events so the reviewer service runs both behavioral checks (RS001-RS004) and all 7 evaluators |
+| `scripts/review_legs.py` | `campaign_checks` | Publishes `REVIEW_CAMPAIGNS_POPULATED` events so the reviewer service runs behavioral checks (RS001-RS004) against decision contexts |
 
 The script supports `--dry-run`, `--symbol`, and `--account-id` flags. The reviewer service handles idempotent persistence.

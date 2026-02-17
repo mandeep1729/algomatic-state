@@ -62,7 +62,9 @@ The project has three major subsystems:
 
 4. **Messaging & Market Data Service** (`src/messaging/`, `src/marketdata/`) -- In-memory pub/sub message bus decoupling market data fetching from consumers. `MarketDataOrchestrator` coordinates between the bus and `MarketDataService`.
 
-5. **Position Campaigns & Trade Lifecycle** (`src/api/campaigns.py`, `src/data/database/trade_lifecycle_models.py`) -- Tracks trade journeys from flat-to-flat, with position lots, campaign legs, and decision contexts for post-trade analysis.
+5. **Trade Lifecycle & Campaigns** (`src/api/campaigns.py`, `src/data/database/trade_lifecycle_models.py`) -- Tracks trade journeys from flat-to-flat using fills as the atomic unit. Decision contexts capture trader reasoning per fill, campaign_fills provides derived FIFO zero-crossing groupings. Behavioral checks (`src/checks/`, `src/reviewer/`) run against decision contexts.
+
+6. **Reviewer Service** (`src/reviewer/`) -- Event-driven service that subscribes to review events on the Redis message bus and runs behavioral checks against trade fills and decision contexts.
 
 Supporting infrastructure: data loaders (`src/data/`), database models and repositories (`src/data/database/`), broker integration (`src/api/broker.py`, `src/api/alpaca.py`, `src/execution/snaptrade_client.py`), backtesting (`src/backtest/`), configuration (`config/settings.py`), authentication (`src/api/auth.py`, `src/api/auth_middleware.py`).
 

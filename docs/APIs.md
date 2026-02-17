@@ -51,7 +51,7 @@ Data is always loaded from the PostgreSQL database. If data is not available for
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| timeframe | string | "1Min" | Bar timeframe (1Min, 5Min, 15Min, 1Hour, 1Day) |
+| timeframe | string | "1Min" | Bar timeframe (1Min, 15Min, 1Hour, 1Day) |
 | start_date | string | -30 days | Start date (YYYY-MM-DD) |
 | end_date | string | now | End date (YYYY-MM-DD) |
 
@@ -699,3 +699,152 @@ Update the authenticated user's risk preferences.
 ```
 
 **Response:** Same as `GET /api/user/risk`
+
+## Strategies
+
+### `GET /api/user/strategies`
+List all strategies for the authenticated user. Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "id": "1",
+    "name": "Momentum: Multi-Timeframe",
+    "description": "Trend-following momentum strategy",
+    "direction": "both",
+    "timeframes": ["1Day"],
+    "entry_criteria": "Price > SMA_200...",
+    "exit_criteria": "Stop-loss: 2.0 * ATR_14...",
+    "max_risk_pct": 1.0,
+    "min_risk_reward": 1.5,
+    "is_active": true
+  }
+]
+```
+
+### `POST /api/user/strategies`
+Create a new strategy. Requires Bearer token.
+
+**Request Body:**
+```json
+{
+  "name": "My Breakout Strategy",
+  "description": "Donchian channel breakouts",
+  "direction": "both",
+  "timeframes": ["1Day"],
+  "entry_criteria": "Break above 20-day high",
+  "exit_criteria": "Stop at 2 ATR below entry",
+  "max_risk_pct": 1.0,
+  "min_risk_reward": 2.0
+}
+```
+
+**Response:** Same format as list item above (201 Created).
+
+### `PUT /api/user/strategies/{id}`
+Update an existing strategy. Requires Bearer token. Only the strategy owner can update.
+
+**Request Body:** (all fields optional)
+```json
+{
+  "name": "Updated Strategy Name",
+  "max_risk_pct": 0.75,
+  "is_active": false
+}
+```
+
+**Response:** Same format as list item above.
+
+## Journal
+
+### `GET /api/journal/entries`
+List journal entries for the authenticated user, newest first (max 200). Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "id": "1",
+    "date": "2024-01-15",
+    "type": "daily_reflection",
+    "content": "Stuck to my plan today...",
+    "trade_id": null,
+    "tags": ["followed_plan"],
+    "mood": "confident",
+    "created_at": "2024-01-15T18:00:00Z",
+    "updated_at": "2024-01-15T18:00:00Z"
+  }
+]
+```
+
+### `POST /api/journal/entries`
+Create a new journal entry. Requires Bearer token.
+
+**Request Body:**
+```json
+{
+  "date": "2024-01-15",
+  "type": "daily_reflection",
+  "content": "Stuck to my plan today...",
+  "trade_id": null,
+  "tags": ["followed_plan"],
+  "mood": "confident"
+}
+```
+
+**Response:** Same format as list item above (201 Created).
+
+### `PUT /api/journal/entries/{id}`
+Update an existing journal entry. Requires Bearer token.
+
+**Request Body:** (all fields optional)
+```json
+{
+  "content": "Updated reflection...",
+  "mood": "neutral"
+}
+```
+
+**Response:** Same format as list item above.
+
+### `GET /api/journal/tags`
+List predefined behavioral tags. Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "name": "fomo",
+    "category": "emotional",
+    "description": "Fear of missing out drove the entry"
+  },
+  {
+    "name": "followed_plan",
+    "category": "process",
+    "description": "Trade aligned with defined strategy"
+  }
+]
+```
+
+## Waitlist
+
+### `POST /api/waitlist`
+Submit a waitlist signup request. **Public endpoint -- no authentication required.** Idempotent: re-submitting the same email returns `already_registered: true`.
+
+**Request Body:**
+```json
+{
+  "name": "Jane Doe",
+  "email": "jane@example.com",
+  "referral_source": "twitter"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Thanks for signing up! We'll notify you when your account is ready.",
+  "already_registered": false
+}
+```

@@ -14,7 +14,7 @@ Algomatic State has three major subsystems:
 
 ### Key Features
 
-- **Multi-Timeframe Support**: Separate models for 1m, 5m, 15m, 1h, and 1d timeframes
+- **Multi-Timeframe Support**: Separate models for 1Min, 15Min, 1Hour, and 1Day timeframes
 - **HMM Regime Tracking**: Gaussian HMM with configurable state counts and covariance types
 - **PCA Encoding**: Dimensionality reduction with automatic latent dimension selection
 - **Anti-Chatter Controls**: Minimum dwell time, probability thresholds, majority voting
@@ -720,6 +720,11 @@ algomatic-state/
 │   │   ├── runner.py              # Trading runner
 │   │   └── snaptrade_client.py    # SnapTrade broker client
 │   │
+│   ├── checks/                      # Behavioral check implementations
+│   │   ├── base.py                # BaseCheck ABC
+│   │   ├── risk_sanity.py         # Risk sanity checks (RS001-RS004)
+│   │   └── runner.py              # CheckRunner (executes all checks)
+│   │
 │   ├── reviewer/                   # Reviewer service (event-driven checks)
 │   │   ├── main.py                # Standalone entry point
 │   │   ├── orchestrator.py        # Event subscriber and check dispatcher
@@ -753,28 +758,15 @@ algomatic-state/
 │               └── metadata.json
 │
 ├── alembic/                        # Database migrations
-│   └── versions/
+│   └── versions/                   # 31 migrations (001-031)
 │       ├── 001_initial_schema.py
-│       ├── 002_add_computed_features.py
-│       ├── 003_remove_vwap.py
-│       ├── 004_consolidate_states_to_features.py
-│       ├── 005_trading_buddy_tables.py
-│       ├── 006_broker_integration_tables.py
-│       ├── 007_auth_and_user_profiles.py
-│       ├── 008_trade_lifecycle_schema.py
-│       ├── 009_position_campaigns.py
-│       ├── 010_strategies_first_class.py
-│       ├── 011_user_profiles_jsonb.py
-│       ├── 012_strategy_risk_profiles.py
-│       ├── 013_settings_journal_schema.py
-│       ├── 014_site_preferences.py
-│       ├── 015_strategy_probe_tables.py
-│       ├── 016_strategy_probe_trades.py
-│       ├── 017_add_trade_pnl_metrics.py
-│       ├── 018_fix_open_day_to_date.py
-│       ├── 019_campaign_checks.py
-│       ├── 020_add_strategy_versioning.py
-│       └── 021_add_probe_results_open_day_index.py
+│       ├── ...
+│       ├── 026_restructure_trade_lifecycle.py  # Drops intents, lots, old campaigns
+│       ├── 027_drop_campaigns_table.py         # Self-contained campaign_fills
+│       ├── 028_campaign_checks_require_context.py
+│       ├── 029_add_strategy_implied_family.py
+│       ├── 030_waitlist_table.py
+│       └── 031_seed_app_user_and_strategies.py
 │
 ├── ui/                             # Web UI
 │   ├── backend/                   # FastAPI backend (api.py)
