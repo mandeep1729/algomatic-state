@@ -274,6 +274,14 @@ async def sync_data(
         user_id, synced_count, backfilled,
         rebuild_stats.get("campaigns_created", 0),
     )
+
+    # Trigger baseline stats computation after sync
+    try:
+        from src.reviewer.publisher import publish_baseline_requested
+        publish_baseline_requested(account_id=user_id)
+    except Exception:
+        logger.debug("Failed to publish baseline requested after sync", exc_info=True)
+
     return SyncResponse(
         status="success",
         trades_synced=synced_count,

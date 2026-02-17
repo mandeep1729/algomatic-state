@@ -66,6 +66,7 @@ from src.api.strategies import router as strategies_router
 from src.api.journal import router as journal_router
 from src.api.waitlist import router as waitlist_router
 from src.api.strategy_probe import router as strategy_probe_router
+from src.api.internal import router as internal_router
 from src.api.ohlcv import router as ohlcv_router
 from src.api.features_api import router as features_router
 from src.api.regimes import router as regimes_router
@@ -170,6 +171,7 @@ app.include_router(features_router)
 app.include_router(regimes_router)
 app.include_router(data_sync_router)
 app.include_router(analysis_router)
+app.include_router(internal_router)
 
 # Enable CORS for React frontend
 app.add_middleware(

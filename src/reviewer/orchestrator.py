@@ -5,6 +5,12 @@ Follows the same lifecycle pattern as MarketDataOrchestrator:
     orchestrator.start()   # subscribes to the bus
     ...
     orchestrator.stop()    # unsubscribes
+
+Handles:
+- REVIEW_CONTEXT_UPDATED: run checks for a single fill
+- REVIEW_RISK_PREFS_UPDATED: re-run checks for recent fills
+- REVIEW_CAMPAIGNS_POPULATED: re-run checks after campaign rebuild
+- REVIEW_BASELINE_REQUESTED: compute baseline stats for one or all accounts
 """
 
 import logging
@@ -22,13 +28,27 @@ class ReviewerOrchestrator:
     """Listens for reviewer events and dispatches behavioral checks.
 
     Subscribes to REVIEW_CONTEXT_UPDATED, REVIEW_RISK_PREFS_UPDATED,
-    and REVIEW_CAMPAIGNS_POPULATED events. For each event, it opens
-    its own DB session and runs the CheckRunner against the relevant
-    decision contexts.
+    REVIEW_CAMPAIGNS_POPULATED, and REVIEW_BASELINE_REQUESTED events.
+    For each event, it opens its own DB session and runs the CheckRunner
+    against the relevant decision contexts.
+
+    When api_client is provided, it is passed through to CheckRunner
+    for HTTP-based data access and to baseline computation.
     """
 
-    def __init__(self, message_bus: Optional[MessageBusBase] = None) -> None:
+    def __init__(
+        self,
+        message_bus: Optional[MessageBusBase] = None,
+        api_client=None,
+    ) -> None:
+        """Initialize ReviewerOrchestrator.
+
+        Args:
+            message_bus: Message bus instance (defaults to global bus)
+            api_client: Optional ReviewerApiClient for HTTP-based data access
+        """
         self._bus = message_bus or get_message_bus()
+        self._api_client = api_client
         self._started = False
 
     def start(self) -> None:
@@ -40,6 +60,7 @@ class ReviewerOrchestrator:
         self._bus.subscribe(EventType.REVIEW_CONTEXT_UPDATED, self._handle_context_updated)
         self._bus.subscribe(EventType.REVIEW_RISK_PREFS_UPDATED, self._handle_risk_prefs_updated)
         self._bus.subscribe(EventType.REVIEW_CAMPAIGNS_POPULATED, self._handle_campaigns_populated)
+        self._bus.subscribe(EventType.REVIEW_BASELINE_REQUESTED, self._handle_baseline_requested)
         self._started = True
         logger.info("ReviewerOrchestrator started")
 
@@ -51,6 +72,7 @@ class ReviewerOrchestrator:
         self._bus.unsubscribe(EventType.REVIEW_CONTEXT_UPDATED, self._handle_context_updated)
         self._bus.unsubscribe(EventType.REVIEW_RISK_PREFS_UPDATED, self._handle_risk_prefs_updated)
         self._bus.unsubscribe(EventType.REVIEW_CAMPAIGNS_POPULATED, self._handle_campaigns_populated)
+        self._bus.unsubscribe(EventType.REVIEW_BASELINE_REQUESTED, self._handle_baseline_requested)
         self._started = False
         logger.info("ReviewerOrchestrator stopped")
 
@@ -91,6 +113,59 @@ class ReviewerOrchestrator:
         )
         self._rerun_checks_for_user(account_id, event.correlation_id)
 
+    def _handle_baseline_requested(self, event: Event) -> None:
+        """Compute baseline stats for one or all accounts."""
+        account_id = event.payload.get("account_id")
+        logger.info(
+            "Handling REVIEW_BASELINE_REQUESTED: account_id=%s (correlation_id=%s)",
+            account_id, event.correlation_id,
+        )
+
+        if self._api_client is None:
+            logger.warning(
+                "Cannot compute baseline: no API client configured (correlation_id=%s)",
+                event.correlation_id,
+            )
+            return
+
+        from config.settings import get_settings
+        from src.reviewer.baseline import compute_baseline_stats
+
+        settings = get_settings()
+        lookback_days = settings.checks.baseline_lookback_days
+        min_fills = settings.checks.baseline_min_fills
+
+        try:
+            if account_id == "all":
+                # Batch: compute for all active accounts
+                account_ids = self._api_client.get_active_accounts(
+                    active_since_days=lookback_days,
+                )
+                logger.info(
+                    "Computing baseline for %d active accounts (correlation_id=%s)",
+                    len(account_ids), event.correlation_id,
+                )
+                for aid in account_ids:
+                    try:
+                        compute_baseline_stats(
+                            aid, self._api_client, lookback_days, min_fills,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Baseline computation failed for account_id=%s", aid,
+                        )
+            else:
+                # Single account
+                compute_baseline_stats(
+                    int(account_id), self._api_client, lookback_days, min_fills,
+                )
+
+        except Exception:
+            logger.exception(
+                "Failed to handle baseline request (correlation_id=%s)",
+                event.correlation_id,
+            )
+
     # ------------------------------------------------------------------
     # Check execution
     # ------------------------------------------------------------------
@@ -130,7 +205,9 @@ class ReviewerOrchestrator:
                     return
 
                 # --- Behavioral checks ---
-                runner = CheckRunner(session, settings.checks)
+                runner = CheckRunner(
+                    session, settings.checks, api_client=self._api_client,
+                )
                 checks = runner.run_checks(dc, fill)
 
                 passed = sum(1 for c in checks if c.passed)

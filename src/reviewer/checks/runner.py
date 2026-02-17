@@ -2,6 +2,11 @@
 
 Fetches ATR and account balance, runs all registered checkers,
 and persists CampaignCheck records linked to the DecisionContext.
+
+Supports two modes:
+1. DB-direct mode (original): uses SQLAlchemy session for reads/writes
+2. API-client mode (new): uses ReviewerApiClient for data and indicator
+   computation, enabling the reviewer service to run as a separate process
 """
 
 import logging
@@ -13,6 +18,7 @@ from sqlalchemy.orm import Session
 from config.settings import ChecksConfig
 from src.reviewer.checks.base import BaseChecker, CheckResult
 from src.reviewer.checks.risk_sanity import RiskSanityChecker
+from src.reviewer.checks.entry_quality import EntryQualityChecker
 from src.data.database.trade_lifecycle_models import (
     CampaignCheck as CampaignCheckModel,
     DecisionContext as DecisionContextModel,
@@ -27,13 +33,31 @@ logger = logging.getLogger(__name__)
 
 
 class CheckRunner:
-    """Runs all registered behavioral checkers against a fill's decision context."""
+    """Runs all registered behavioral checkers against a fill's decision context.
 
-    def __init__(self, session: Session, settings: ChecksConfig):
+    When an api_client is provided, indicators are fetched via the backend API
+    and passed to checkers as kwargs (indicator_snapshot, baseline_stats).
+    """
+
+    def __init__(
+        self,
+        session: Session,
+        settings: ChecksConfig,
+        api_client=None,
+    ):
+        """Initialize CheckRunner.
+
+        Args:
+            session: SQLAlchemy session for DB reads/writes
+            settings: Checks configuration
+            api_client: Optional ReviewerApiClient for HTTP-based data access
+        """
         self.session = session
         self.settings = settings
+        self._api_client = api_client
         self.checkers: list[BaseChecker] = [
             RiskSanityChecker(settings),
+            EntryQualityChecker(),
         ]
 
     def run_checks(
@@ -51,20 +75,42 @@ class CheckRunner:
             List of created CampaignCheck records
         """
         intent = self._build_intent_from_fill(dc, fill)
-        atr = self._fetch_atr(fill)
-        account_balance = self._get_account_balance(dc.account_id)
+
+        # Build kwargs for checkers (indicator snapshot, baseline stats)
+        checker_kwargs = {}
+        indicator_snapshot = None
+        atr = None
+        account_balance = None
+
+        if self._api_client:
+            # API-client mode: fetch indicators and profile via HTTP
+            indicator_snapshot = self._fetch_indicator_snapshot_via_api(fill)
+            if indicator_snapshot:
+                atr = indicator_snapshot.get("atr_14")
+                checker_kwargs["indicator_snapshot"] = indicator_snapshot
+
+            profile_data = self._get_profile_via_api(dc.account_id)
+            if profile_data:
+                account_balance = profile_data.get("account_balance")
+                baseline_stats = profile_data.get("stats")
+                if baseline_stats:
+                    checker_kwargs["baseline_stats"] = baseline_stats
+        else:
+            # DB-direct mode (legacy)
+            atr = self._fetch_atr(fill)
+            account_balance = self._get_account_balance(dc.account_id)
 
         logger.info(
-            "Running checks for fill_id=%s dc_id=%s: atr=%s balance=%s",
-            fill.id, dc.id, atr, account_balance,
+            "Running checks for fill_id=%s dc_id=%s: atr=%s balance=%s has_snapshot=%s",
+            fill.id, dc.id, atr, account_balance, indicator_snapshot is not None,
         )
 
         all_results: list[CheckResult] = []
         for checker in self.checkers:
             try:
-                # Pass fill as the "leg" argument — checkers use it for
-                # side/quantity/price/symbol data
-                results = checker.run(fill, intent, atr, account_balance)
+                results = checker.run(
+                    fill, intent, atr, account_balance, **checker_kwargs,
+                )
                 all_results.extend(results)
             except Exception:
                 logger.exception(
@@ -94,7 +140,16 @@ class CheckRunner:
             "Persisted %d check records for fill_id=%s dc_id=%s",
             len(checks), fill.id, dc.id,
         )
+
+        # Write entry quality results to inferred_context via API
+        if self._api_client:
+            self._save_entry_quality_to_inferred_context(fill.id, all_results)
+
         return checks
+
+    # ------------------------------------------------------------------
+    # Intent building
+    # ------------------------------------------------------------------
 
     def _build_intent_from_fill(
         self,
@@ -111,6 +166,13 @@ class CheckRunner:
         try:
             direction = TradeDirection.LONG if fill.side.lower() == "buy" else TradeDirection.SHORT
 
+            # Extract stop/target from exit_intent if available
+            stop_loss = fill.price
+            profit_target = fill.price
+            if dc.exit_intent and isinstance(dc.exit_intent, dict):
+                stop_loss = dc.exit_intent.get("stop_loss", fill.price) or fill.price
+                profit_target = dc.exit_intent.get("profit_target", fill.price) or fill.price
+
             return TradeIntent(
                 user_id=dc.account_id,
                 account_id=dc.account_id,
@@ -118,8 +180,8 @@ class CheckRunner:
                 direction=direction,
                 timeframe="1Day",  # Default — fills don't carry timeframe
                 entry_price=fill.price,
-                stop_loss=fill.price,  # No stop data from fill
-                profit_target=fill.price,  # No target data from fill
+                stop_loss=float(stop_loss),
+                profit_target=float(profit_target),
                 position_size=fill.quantity,
                 position_value=fill.quantity * fill.price,
                 status=TradeIntentStatus.EVALUATED,
@@ -129,6 +191,102 @@ class CheckRunner:
                 "Could not build intent from fill_id=%s", fill.id, exc_info=True,
             )
             return None
+
+    # ------------------------------------------------------------------
+    # API-client data fetching
+    # ------------------------------------------------------------------
+
+    def _fetch_indicator_snapshot_via_api(
+        self, fill: TradeFillModel,
+    ) -> Optional[dict]:
+        """Fetch OHLCV bars via API and compute indicator snapshot locally.
+
+        Args:
+            fill: TradeFill to compute indicators for
+
+        Returns:
+            Dict of indicator values at the fill bar, or None
+        """
+        try:
+            # Determine timeframe from decision context
+            dc = fill.decision_context
+            timeframe = "15Min"
+            if dc and dc.exit_intent and isinstance(dc.exit_intent, dict):
+                timeframe = dc.exit_intent.get("timeframe", "15Min") or "15Min"
+
+            executed_at = fill.executed_at.isoformat() if fill.executed_at else None
+            if not executed_at:
+                return None
+
+            bars = self._api_client.get_ohlcv_bars(
+                symbol=fill.symbol,
+                timeframe=timeframe,
+                end=executed_at,
+                last_n_bars=250,
+            )
+
+            if not bars or len(bars) < 30:
+                logger.debug(
+                    "Insufficient bars for %s/%s at %s (%d bars)",
+                    fill.symbol, timeframe, executed_at, len(bars) if bars else 0,
+                )
+                return None
+
+            # Convert to DataFrame and compute indicators
+            from src.reviewer.baseline import _bars_to_dataframe, _compute_indicator_snapshot
+            df = _bars_to_dataframe(bars)
+            return _compute_indicator_snapshot(df)
+
+        except Exception:
+            logger.debug(
+                "Failed to fetch indicator snapshot for fill_id=%s",
+                fill.id, exc_info=True,
+            )
+            return None
+
+    def _get_profile_via_api(self, account_id: int) -> Optional[dict]:
+        """Fetch user profile via API client.
+
+        Returns:
+            Profile dict with account_balance, stats, etc. or None
+        """
+        try:
+            return self._api_client.get_profile(account_id)
+        except Exception:
+            logger.debug(
+                "Could not fetch profile via API for account_id=%s",
+                account_id, exc_info=True,
+            )
+            return None
+
+    # ------------------------------------------------------------------
+    # Entry quality → inferred_context
+    # ------------------------------------------------------------------
+
+    def _save_entry_quality_to_inferred_context(
+        self, fill_id: int, results: list[CheckResult],
+    ) -> None:
+        """Extract EQ000 composite result and save to inferred_context via API."""
+        eq_result = next(
+            (r for r in results if r.code == "EQ000"), None,
+        )
+        if eq_result is None:
+            return
+
+        try:
+            self._api_client.save_inferred_context(
+                fill_id,
+                {"entry_quality": eq_result.details},
+            )
+        except Exception:
+            logger.debug(
+                "Failed to save entry quality inferred context for fill_id=%s",
+                fill_id, exc_info=True,
+            )
+
+    # ------------------------------------------------------------------
+    # Legacy DB-direct data fetching
+    # ------------------------------------------------------------------
 
     def _fetch_atr(self, fill: TradeFillModel) -> Optional[float]:
         """Fetch the ATR value for this fill's symbol.

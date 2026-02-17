@@ -24,6 +24,7 @@ class EventType(Enum):
     REVIEW_CONTEXT_UPDATED = "review_context_updated"
     REVIEW_RISK_PREFS_UPDATED = "review_risk_prefs_updated"
     REVIEW_CAMPAIGNS_POPULATED = "review_campaigns_populated"
+    REVIEW_BASELINE_REQUESTED = "review_baseline_requested"
     REVIEW_COMPLETE = "review_complete"
     REVIEW_FAILED = "review_failed"
 
