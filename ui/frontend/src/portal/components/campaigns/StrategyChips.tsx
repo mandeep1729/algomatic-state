@@ -1,4 +1,5 @@
 import type { StrategyDefinition } from '../../types';
+import { mergeStrategies } from '../../utils/defaultStrategies';
 
 interface StrategyChipsProps {
   value: string[];
@@ -26,10 +27,16 @@ export function StrategyChips({ value, onChange, strategies, loading }: Strategy
     );
   }
 
-  if (strategies.length === 0) {
+  // Merge user-defined strategies with default family strategies
+  const mergedStrategies = mergeStrategies(
+    strategies.filter((s) => s.is_active).map((s) => ({ id: s.id, name: s.name })),
+    true, // Include default strategies
+  );
+
+  if (mergedStrategies.length === 0) {
     return (
       <div className="text-xs text-[var(--text-secondary)]">
-        No strategies defined.{' '}
+        No strategies available.{' '}
         <a href="/app/settings/strategies" className="text-[var(--accent-blue)] hover:underline">
           Create one
         </a>
@@ -39,14 +46,14 @@ export function StrategyChips({ value, onChange, strategies, loading }: Strategy
 
   return (
     <div className="flex flex-wrap gap-2">
-      {strategies.filter((s) => s.is_active).map((strategy) => {
+      {mergedStrategies.map((strategy) => {
         const isActive = value.includes(strategy.id);
         return (
           <button
             key={strategy.id}
             type="button"
             onClick={() => toggle(strategy.id)}
-            title={strategy.description}
+            title={strategy.name}
             className={`rounded-full border px-3 py-1 text-xs transition-colors ${
               isActive
                 ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
