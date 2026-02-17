@@ -247,8 +247,10 @@ export default function CampaignDetail() {
     setContextsByLeg((prev) => ({ ...prev, [ctx.legId ?? 'campaign']: ctx }));
     try {
       await api.saveDecisionContext(ctx);
-    } catch {
-      // Silently fail -- context is still saved locally in state
+    } catch (err) {
+      // Log the error but don't rethrow -- the ContextPanel will show feedback
+      console.error('[CampaignDetail] Failed to save context:', err);
+      throw err; // Re-throw so ContextPanel can handle it
     }
   }, []);
 

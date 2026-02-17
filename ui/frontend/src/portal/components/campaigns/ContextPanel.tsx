@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DecisionContext, StrategyDefinition } from '../../types';
 import api from '../../api';
+import { createLogger } from '../../utils/logger';
 import { StrategyChips } from './StrategyChips';
 import { EmotionChips } from './EmotionChips';
+
+const log = createLogger('ContextPanel');
 
 interface Draft {
   strategyIds: string[];  // Strategy IDs (strings) for StrategyChips component
@@ -16,7 +19,7 @@ interface Draft {
 interface ContextPanelProps {
   title: string;
   initial?: DecisionContext;
-  onAutosave: (ctx: DecisionContext) => void;
+  onAutosave: (ctx: DecisionContext) => Promise<void>;
   scope: DecisionContext['scope'];
   contextType: DecisionContext['contextType'];
   campaignId?: string;
@@ -67,6 +70,9 @@ export function ContextPanel({
   // Strategies fetched from API
   const [strategies, setStrategies] = useState<StrategyDefinition[]>([]);
   const [strategiesLoading, setStrategiesLoading] = useState(true);
+
+  // Autosave feedback
+  const [autosaveFeedback, setAutosaveFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Fetch strategies on mount
   useEffect(() => {
@@ -119,24 +125,35 @@ export function ContextPanel({
   useEffect(() => {
     if (!dirtyRef.current) return;
 
-    const timer = setTimeout(() => {
-      const next: DecisionContext = {
-        contextId: initial?.contextId ?? crypto.randomUUID(),
-        scope,
-        contextType,
-        campaignId,
-        legId,
-        strategyTags: getStrategyNamesFromIds(draft.strategyIds),
-        hypothesis: draft.hypothesis.trim() || undefined,
-        exitIntent: draft.exitIntent,
-        feelingsThen: {
-          chips: draft.feelingsThenChips,
-          intensity: draft.feelingsThenIntensity,
-        },
-        notes: draft.notes.trim() || undefined,
-        updatedAt: new Date().toISOString(),
-      };
-      onAutosave(next);
+    const timer = setTimeout(async () => {
+      try {
+        const next: DecisionContext = {
+          contextId: initial?.contextId ?? crypto.randomUUID(),
+          scope,
+          contextType,
+          campaignId,
+          legId,
+          strategyTags: getStrategyNamesFromIds(draft.strategyIds),
+          hypothesis: draft.hypothesis.trim() || undefined,
+          exitIntent: draft.exitIntent,
+          feelingsThen: {
+            chips: draft.feelingsThenChips,
+            intensity: draft.feelingsThenIntensity,
+          },
+          notes: draft.notes.trim() || undefined,
+          updatedAt: new Date().toISOString(),
+        };
+
+        log.debug('[autosave] saving context for legId=%s', legId, next);
+        await onAutosave(next);
+        setAutosaveFeedback({ type: 'success', message: 'Saved' });
+        // Clear feedback after 3 seconds
+        setTimeout(() => setAutosaveFeedback(null), 3000);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to save';
+        log.error('[autosave] error saving context for legId=%s: %s', legId, message);
+        setAutosaveFeedback({ type: 'error', message });
+      }
     }, 5000);
 
     return () => clearTimeout(timer);
@@ -152,7 +169,22 @@ export function ContextPanel({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border-color)] px-4 py-3">
         <h3 className="text-sm font-medium text-[var(--text-primary)]">{title}</h3>
-        <span className="text-xs text-[var(--text-secondary)]">Autosaves</span>
+        <div className="flex items-center gap-2">
+          {autosaveFeedback && (
+            <span
+              className={`text-xs font-medium ${
+                autosaveFeedback.type === 'success'
+                  ? 'text-[var(--accent-green)]'
+                  : 'text-[var(--accent-red)]'
+              }`}
+            >
+              {autosaveFeedback.message}
+            </span>
+          )}
+          {!autosaveFeedback && (
+            <span className="text-xs text-[var(--text-secondary)]">Autosaves</span>
+          )}
+        </div>
       </div>
 
       {/* Body */}
