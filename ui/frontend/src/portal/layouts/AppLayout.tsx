@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
+  BarChart3,
   ArrowRightLeft,
   TrendingUp,
   BookOpen,
@@ -28,6 +29,7 @@ import { FeatureFilter } from '../../components/FeatureFilter';
 // Map route paths to breadcrumb labels
 const BREADCRUMB_LABELS: Record<string, string> = {
   '/app': 'Overview',
+  '/app/dashboard': 'Dashboard',
   '/app/campaigns': 'Campaigns',
   '/app/evaluate': 'Evaluate',
   '/app/trades': 'Trades',
@@ -91,6 +93,7 @@ function Breadcrumbs() {
 // Map nav icon name strings to Lucide components
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard,
+  BarChart3,
   ArrowRightLeft,
   TrendingUp,
   BookOpen,

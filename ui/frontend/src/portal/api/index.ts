@@ -143,6 +143,10 @@ export const deleteCampaign: (campaignId: string) => Promise<DeleteCampaignRespo
 export const fetchOrphanedLegs: () => Promise<OrphanedLegGroup[]> =
   USE_MOCKS ? mockApi.fetchOrphanedLegs : realApi.fetchOrphanedLegs;
 
+// Re-export aggregate PnL timeseries for Dashboard
+export { fetchAggregatePnlTimeseries } from './client';
+export type { DailyPnlPoint } from './client';
+
 // Re-export strategy probe function from client
 export { fetchStrategyProbe, fetchThemeStrategies, fetchTopStrategies } from './client';
 export type { StrategyProbeResponse, WeekPerformance, ThemeRanking, OHLCVData, ThemeStrategiesResponse, ThemeStrategyDetail, TopStrategiesResponse, TopStrategyDetail } from './client';

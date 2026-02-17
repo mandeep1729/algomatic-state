@@ -9,6 +9,7 @@ import type {
   RiskInsight,
   StrategyDriftInsight,
 } from '../../types';
+import { StatCard } from '../../components/ui/StatCard';
 
 const TABS = [
   { key: 'summary', label: 'Summary' },
@@ -78,14 +79,14 @@ function SummaryTab() {
 
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <SummaryCard label="Total Trades" value={data.total_trades} />
-      <SummaryCard label="Evaluated" value={data.total_evaluated} sub={`${Math.round((data.total_evaluated / Math.max(data.total_trades, 1)) * 100)}%`} />
-      <SummaryCard label="Flagged" value={data.flagged_count} accent={data.flagged_count > 0 ? 'red' : undefined} />
-      <SummaryCard label="Blockers" value={data.blocker_count} accent={data.blocker_count > 0 ? 'red' : undefined} />
-      <SummaryCard label="Avg Score" value={`${data.avg_score}/100`} accent={data.avg_score >= 70 ? 'green' : data.avg_score >= 50 ? 'yellow' : 'red'} />
-      <SummaryCard label="Avg R:R" value={data.avg_risk_reward.toFixed(2)} accent={data.avg_risk_reward >= 1.5 ? 'green' : 'yellow'} />
-      <SummaryCard label="Win Rate" value={data.win_rate != null ? `${(data.win_rate * 100).toFixed(0)}%` : '--'} accent={data.win_rate != null ? (data.win_rate >= 0.5 ? 'green' : 'red') : undefined} />
-      <SummaryCard label="Most Common Flag" value={data.most_common_flag?.replace(/_/g, ' ') ?? 'None'} />
+      <StatCard label="Total Trades" value={data.total_trades} />
+      <StatCard label="Evaluated" value={data.total_evaluated} sub={`${Math.round((data.total_evaluated / Math.max(data.total_trades, 1)) * 100)}%`} />
+      <StatCard label="Flagged" value={data.flagged_count} accent={data.flagged_count > 0 ? 'red' : undefined} />
+      <StatCard label="Blockers" value={data.blocker_count} accent={data.blocker_count > 0 ? 'red' : undefined} />
+      <StatCard label="Avg Score" value={`${data.avg_score}/100`} accent={data.avg_score >= 70 ? 'green' : data.avg_score >= 50 ? 'yellow' : 'red'} />
+      <StatCard label="Avg R:R" value={data.avg_risk_reward.toFixed(2)} accent={data.avg_risk_reward >= 1.5 ? 'green' : 'yellow'} />
+      <StatCard label="Win Rate" value={data.win_rate != null ? `${(data.win_rate * 100).toFixed(0)}%` : '--'} accent={data.win_rate != null ? (data.win_rate >= 0.5 ? 'green' : 'red') : undefined} />
+      <StatCard label="Most Common Flag" value={data.most_common_flag?.replace(/_/g, ' ') ?? 'None'} />
     </div>
   );
 }
@@ -350,36 +351,6 @@ function DriftTab() {
 
 function Loading() {
   return <div className="py-8 text-center text-sm text-[var(--text-secondary)]">Loading...</div>;
-}
-
-function SummaryCard({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  accent?: 'red' | 'green' | 'yellow';
-}) {
-  const colorClass = accent === 'red'
-    ? 'text-[var(--accent-red)]'
-    : accent === 'green'
-    ? 'text-[var(--accent-green)]'
-    : accent === 'yellow'
-    ? 'text-[var(--accent-yellow)]'
-    : 'text-[var(--text-primary)]';
-
-  return (
-    <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">{label}</div>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className={`text-xl font-semibold ${colorClass}`}>{value}</span>
-        {sub && <span className="text-xs text-[var(--text-secondary)]">{sub}</span>}
-      </div>
-    </div>
-  );
 }
 
 function ScoreValue({ value, label }: { value: number; label?: string }) {

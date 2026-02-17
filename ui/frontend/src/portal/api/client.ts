@@ -571,6 +571,31 @@ export async function fetchTickerPnlTimeseries(
 }
 
 // =============================================================================
+// Aggregate P&L Timeseries — GET /api/campaigns/pnl/timeseries (no symbol)
+// Returns daily P&L points across all tickers for the Dashboard equity curve.
+// =============================================================================
+
+export interface DailyPnlPoint {
+  date: string;
+  realizedPnl: number;
+  cumulativePnl: number;
+  tradeCount: number;
+}
+
+export async function fetchAggregatePnlTimeseries(): Promise<DailyPnlPoint[]> {
+  const res = await get<PnlTimeseriesBackendResponse>(
+    '/api/campaigns/pnl/timeseries?granularity=day'
+  );
+
+  return res.points.map((p) => ({
+    date: p.timestamp.split('T')[0],
+    realizedPnl: p.realized_pnl,
+    cumulativePnl: p.cumulative_pnl,
+    tradeCount: p.trade_count,
+  }));
+}
+
+// =============================================================================
 // Trading Profile — GET/PUT /api/user/profile
 // =============================================================================
 
