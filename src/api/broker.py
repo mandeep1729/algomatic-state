@@ -12,14 +12,12 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.dependencies import get_db
-from src.data.database.broker_models import SnapTradeUser, BrokerConnection, TradeFill
-from src.data.database.trade_lifecycle_models import DecisionContext
-from src.data.database.strategy_models import Strategy
+from src.data.database.dependencies import get_broker_repo
+from src.data.database.broker_repository import BrokerRepository
+from src.data.database.broker_models import TradeFill
 from src.execution.snaptrade_client import SnapTradeClient
 
 logger = logging.getLogger(__name__)
@@ -85,7 +83,7 @@ class SyncResponse(BaseModel):
 async def connect_broker(
     request: ConnectRequest,
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
     client: SnapTradeClient = Depends(get_snaptrade_client),
 ):
     """Initiate broker connection."""
@@ -94,9 +92,7 @@ async def connect_broker(
         logger.error("SnapTrade client not available for user %s", user_id)
         raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
 
-    snap_user = db.query(SnapTradeUser).filter(
-        SnapTradeUser.user_account_id == user_id
-    ).first()
+    snap_user = broker_repo.get_snaptrade_user(user_id)
 
     if not snap_user:
         snap_user_id = f"algomatic_user_{user_id}"
@@ -107,13 +103,11 @@ async def connect_broker(
             logger.error("Failed to register SnapTrade user for user_id=%s", user_id)
             raise HTTPException(status_code=500, detail="Failed to register user with SnapTrade")
 
-        snap_user = SnapTradeUser(
-            user_account_id=user_id,
-            snaptrade_user_id=registration["user_id"],
-            snaptrade_user_secret=registration["user_secret"]
+        snap_user = broker_repo.get_or_create_snaptrade_user(
+            user_id=user_id,
+            snaptrade_id=registration["user_id"],
+            snaptrade_secret=registration["user_secret"],
         )
-        db.add(snap_user)
-        db.flush()
 
     redirect_url = client.generate_connection_link(
         snap_user.snaptrade_user_id,
@@ -132,7 +126,7 @@ async def connect_broker(
 @router.post("/sync", response_model=SyncResponse)
 async def sync_data(
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
     client: SnapTradeClient = Depends(get_snaptrade_client),
 ):
     """Sync trades and accounts from connected brokers."""
@@ -141,10 +135,7 @@ async def sync_data(
         logger.error("SnapTrade client not available for user %s", user_id)
         raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
 
-    snap_user = db.query(SnapTradeUser).filter(
-        SnapTradeUser.user_account_id == user_id
-    ).first()
-
+    snap_user = broker_repo.get_snaptrade_user(user_id)
     if not snap_user:
         raise HTTPException(status_code=404, detail="User not registered with SnapTrade")
 
@@ -160,25 +151,22 @@ async def sync_data(
             broker_name = acc.get("institution_name") or acc.get("name") or "Unknown Broker"
             broker_slug = broker_name.lower().replace(" ", "_")
 
-            conn = db.query(BrokerConnection).filter(
-                BrokerConnection.authorization_id == auth_id
-            ).first()
+            conn = broker_repo.get_connection_by_auth_id(auth_id)
 
             if not conn:
-                conn = BrokerConnection(
+                broker_repo.create_connection(
                     snaptrade_user_id=snap_user.id,
                     brokerage_name=broker_name,
                     brokerage_slug=broker_slug,
                     authorization_id=auth_id,
-                    meta=acc
+                    meta=acc,
                 )
-                db.add(conn)
             else:
                 conn.meta = acc
-            db.flush()
+            broker_repo.session.flush()
 
     # Pre-load all user connections for matching
-    user_conns = db.query(BrokerConnection).filter(BrokerConnection.snaptrade_user_id == snap_user.id).all()
+    user_conns = broker_repo.get_connections_for_user(snap_user.id)
 
     # Fetch all activities
     activities = client.get_activities(snap_user.snaptrade_user_id, snap_user.snaptrade_user_secret)
@@ -210,8 +198,7 @@ async def sync_data(
                 continue
 
             trade_id = str(activity.get("id"))
-            exists = db.query(TradeFill).filter(TradeFill.external_trade_id == trade_id).first()
-            if exists:
+            if broker_repo.exists_by_external_id(trade_id):
                 continue
 
             symbol_data = activity.get("symbol")
@@ -229,7 +216,7 @@ async def sync_data(
                 logger.warning("No trade date for activity %s, using current time", activity.get("id", "unknown"))
                 executed_at = datetime.now(timezone.utc)
 
-            trade = TradeFill(
+            broker_repo.create_fill(
                 broker_connection_id=conn.id,
                 account_id=user_id,
                 symbol=symbol,
@@ -239,28 +226,17 @@ async def sync_data(
                 fees=float(activity.get("fee", 0)),
                 executed_at=executed_at,
                 external_trade_id=trade_id,
-                raw_data=activity
+                raw_data=activity,
             )
-            db.add(trade)
             synced_count += 1
-
-    db.flush()
 
     # Backfill account_id on any existing fills that are NULL
     user_conn_ids = [c.id for c in user_conns]
-    backfilled = 0
-    if user_conn_ids:
-        backfilled = db.query(TradeFill).filter(
-            TradeFill.broker_connection_id.in_(user_conn_ids),
-            TradeFill.account_id.is_(None),
-        ).update({"account_id": user_id}, synchronize_session="fetch")
-        if backfilled:
-            db.flush()
-            logger.info("Backfilled account_id=%d on %d fills", user_id, backfilled)
+    backfilled = broker_repo.backfill_account_id(user_conn_ids, user_id)
 
     # Rebuild campaigns from fills
     from src.data.database.trading_repository import TradingBuddyRepository
-    repo = TradingBuddyRepository(db)
+    repo = TradingBuddyRepository(broker_repo.session)
     rebuild_stats = repo.rebuild_all_campaigns(account_id=user_id)
 
     logger.info(
@@ -293,76 +269,48 @@ async def get_trades(
     sort: str = "-executed_at",
     page: int = 1,
     limit: int = 50,
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Get trade history, optionally filtered by symbol, with pagination."""
     logger.debug(
         "get_trades: user_id=%d, symbol=%s, uncategorized=%s, page=%d, limit=%d",
         user_id, symbol, uncategorized, page, limit
     )
-    snap_user = db.query(SnapTradeUser).filter(
-        SnapTradeUser.user_account_id == user_id
-    ).first()
 
+    snap_user = broker_repo.get_snaptrade_user(user_id)
     if not snap_user:
         return TradeListAPIResponse(trades=[], total=0, page=page, limit=limit)
 
-    query = db.query(TradeFill).join(BrokerConnection).filter(
-        BrokerConnection.snaptrade_user_id == snap_user.id
-    )
-
-    if symbol:
-        query = query.filter(TradeFill.symbol == symbol)
-
-    # Filter for uncategorized fills (no strategy assigned in DecisionContext)
-    if uncategorized:
-        from sqlalchemy import select
-
-        categorized_fill_subq = (
-            select(DecisionContext.fill_id)
-            .where(DecisionContext.strategy_id.isnot(None))
-            .scalar_subquery()
-        )
-        query = query.filter(TradeFill.id.notin_(categorized_fill_subq))
-
-    total = query.count()
-
     desc_sort = sort.startswith("-")
     sort_field = sort.lstrip("-")
-    column = getattr(TradeFill, sort_field, TradeFill.executed_at)
-    query = query.order_by(column.desc() if desc_sort else column.asc())
 
-    offset = (max(page, 1) - 1) * limit
-    trades = query.offset(offset).limit(limit).all()
+    trades, total = broker_repo.get_fills_paginated(
+        account_id=user_id,
+        symbol=symbol,
+        sort_field=sort_field,
+        sort_desc=desc_sort,
+        uncategorized=uncategorized,
+        page=page,
+        limit=limit,
+        snaptrade_user_id=snap_user.id,
+    )
 
-    # Fetch context summaries for all trade fills via DecisionContext directly
+    # Fetch context summaries for all trade fills
     trade_ids = [t.id for t in trades]
     context_map: Dict[int, ContextSummary] = {}
 
     if trade_ids:
-        context_results = (
-            db.query(
-                DecisionContext.fill_id,
-                DecisionContext.hypothesis,
-                DecisionContext.feelings_then,
-                Strategy.name.label("strategy_name"),
-            )
-            .outerjoin(Strategy, Strategy.id == DecisionContext.strategy_id)
-            .filter(DecisionContext.fill_id.in_(trade_ids))
-            .all()
-        )
-
-        for fill_id, hypothesis, feelings_then, strategy_name in context_results:
-            if fill_id in context_map:
-                continue
-
+        raw_contexts = broker_repo.get_context_summaries_for_fills(trade_ids)
+        for fill_id, data in raw_contexts.items():
             emotions: Optional[str] = None
+            feelings_then = data.get("feelings_then")
             if feelings_then and isinstance(feelings_then, dict):
                 chips = feelings_then.get("chips", [])
                 if chips:
                     emotions = ", ".join(chips[:3])
 
             hypothesis_snippet: Optional[str] = None
+            hypothesis = data.get("hypothesis")
             if hypothesis:
                 snippet = hypothesis[:50]
                 if len(hypothesis) > 50:
@@ -370,7 +318,7 @@ async def get_trades(
                 hypothesis_snippet = snippet
 
             context_map[fill_id] = ContextSummary(
-                strategy=strategy_name,
+                strategy=data.get("strategy_name"),
                 emotions=emotions,
                 hypothesis_snippet=hypothesis_snippet,
             )
@@ -404,14 +352,12 @@ class ConnectionStatusResponse(BaseModel):
 @router.get("/status", response_model=ConnectionStatusResponse)
 async def get_connection_status(
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
     client: SnapTradeClient = Depends(get_snaptrade_client),
 ):
     """Check if user has any connected brokerages."""
     logger.debug("get_connection_status: user_id=%d", user_id)
-    snap_user = db.query(SnapTradeUser).filter(
-        SnapTradeUser.user_account_id == user_id
-    ).first()
+    snap_user = broker_repo.get_snaptrade_user(user_id)
 
     if not snap_user:
         return ConnectionStatusResponse(connected=False, brokerages=[])
@@ -439,7 +385,6 @@ async def get_connection_status(
 @router.get("/callback")
 async def broker_callback(
     status: str = "success",
-    db: Session = Depends(get_db),
 ):
     """Handle callback from SnapTrade after broker connection."""
     return {
@@ -481,31 +426,23 @@ class SaveFillContextRequest(BaseModel):
 async def get_fill_context(
     fill_id: int,
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Get the full decision context for a specific trade fill."""
     logger.debug("get_fill_context: fill_id=%d, user_id=%d", fill_id, user_id)
 
-    fill = db.query(TradeFill).filter(
-        TradeFill.id == fill_id,
-        TradeFill.account_id == user_id,
-    ).first()
-
+    fill = broker_repo.get_fill(fill_id, account_id=user_id)
     if not fill:
         raise HTTPException(status_code=404, detail=f"Fill {fill_id} not found")
 
-    # Get decision context directly via fill_id
-    context = db.query(DecisionContext).filter(
-        DecisionContext.fill_id == fill_id
-    ).first()
-
+    context = broker_repo.get_decision_context(fill_id)
     if not context:
         return FillContextDetail(fill_id=fill_id)
 
     # Get strategy name
     strategy_name: Optional[str] = None
     if context.strategy_id:
-        strategy = db.query(Strategy).filter(Strategy.id == context.strategy_id).first()
+        strategy = broker_repo.get_strategy_by_id(context.strategy_id)
         if strategy:
             strategy_name = strategy.name
 
@@ -536,21 +473,17 @@ async def save_fill_context(
     fill_id: int,
     request: SaveFillContextRequest,
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Save or update the decision context for a trade fill."""
     logger.debug("save_fill_context: fill_id=%d, user_id=%d", fill_id, user_id)
 
-    fill = db.query(TradeFill).filter(
-        TradeFill.id == fill_id,
-        TradeFill.account_id == user_id,
-    ).first()
-
+    fill = broker_repo.get_fill(fill_id, account_id=user_id)
     if not fill:
         raise HTTPException(status_code=404, detail=f"Fill {fill_id} not found")
 
     from src.data.database.trading_repository import TradingBuddyRepository
-    repo = TradingBuddyRepository(db)
+    repo = TradingBuddyRepository(broker_repo.session)
 
     # Determine context type from fill side
     context_type = "entry" if fill.side.lower() == "buy" else "exit"
@@ -577,7 +510,7 @@ async def save_fill_context(
     flag_modified(context, "exit_intent")
     flag_modified(context, "feelings_then")
     flag_modified(context, "feelings_now")
-    db.flush()
+    broker_repo.session.flush()
 
     # If strategy changed, rebuild affected campaigns
     new_strategy_id = context.strategy_id
@@ -594,7 +527,7 @@ async def save_fill_context(
     # Get strategy name for response
     strategy_name: Optional[str] = None
     if context.strategy_id:
-        strategy = db.query(Strategy).filter(Strategy.id == context.strategy_id).first()
+        strategy = broker_repo.get_strategy_by_id(context.strategy_id)
         if strategy:
             strategy_name = strategy.name
 
@@ -633,13 +566,9 @@ class BulkUpdateStrategyResponse(BaseModel):
 async def bulk_update_strategy(
     request: BulkUpdateStrategyRequest,
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
-    """Bulk-update the strategy assignment for multiple trade fills.
-
-    For each fill, updates the strategy_id on its DecisionContext.
-    Fills not owned by the current user are skipped.
-    """
+    """Bulk-update the strategy assignment for multiple trade fills."""
     logger.debug(
         "bulk_update_strategy: user_id=%d, fill_ids=%s, strategy_id=%s",
         user_id, request.fill_ids, request.strategy_id
@@ -650,26 +579,20 @@ async def bulk_update_strategy(
 
     # Validate strategy exists if provided
     if request.strategy_id is not None:
-        strategy = db.query(Strategy).filter(
-            Strategy.id == request.strategy_id,
-            Strategy.account_id == user_id,
-        ).first()
+        strategy = broker_repo.get_strategy_by_id(request.strategy_id, account_id=user_id)
         if not strategy:
             raise HTTPException(status_code=404, detail="Strategy not found")
 
     # Verify fills belong to the user
-    user_fills = (
-        db.query(TradeFill)
-        .filter(
-            TradeFill.account_id == user_id,
-            TradeFill.id.in_(request.fill_ids),
-        )
-        .all()
-    )
+    user_fills = []
+    for fid in request.fill_ids:
+        f = broker_repo.get_fill(fid, account_id=user_id)
+        if f:
+            user_fills.append(f)
     valid_fill_ids = {f.id for f in user_fills}
 
     from src.data.database.trading_repository import TradingBuddyRepository
-    repo = TradingBuddyRepository(db)
+    repo = TradingBuddyRepository(broker_repo.session)
 
     updated_count = 0
     skipped_count = 0
@@ -696,7 +619,7 @@ async def bulk_update_strategy(
         affected_symbols.add(fill.symbol)
         updated_count += 1
 
-    db.flush()
+    broker_repo.session.flush()
 
     # Rebuild campaigns for affected (symbol, strategy) groups
     for symbol in affected_symbols:
@@ -733,35 +656,18 @@ class RebuildCampaignsResponse(BaseModel):
 async def rebuild_campaigns(
     symbol: Optional[str] = None,
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
-    """Rebuild campaigns from trade fills.
-
-    Deletes existing campaigns and rebuilds them from fills using
-    zero-crossing logic. This is idempotent.
-
-    Args:
-        symbol: Optional filter to rebuild only one symbol
-    """
+    """Rebuild campaigns from trade fills."""
     from src.data.database.trading_repository import TradingBuddyRepository
 
     try:
-        repo = TradingBuddyRepository(db)
+        repo = TradingBuddyRepository(broker_repo.session)
 
         if symbol:
-            # Rebuild all strategy groups for this symbol
             stats = {"campaigns_created": 0, "fills_grouped": 0, "groups_rebuilt": 0}
-            from sqlalchemy import distinct
-            strategy_ids = (
-                db.query(distinct(DecisionContext.strategy_id))
-                .join(TradeFill, TradeFill.id == DecisionContext.fill_id)
-                .filter(
-                    TradeFill.account_id == user_id,
-                    TradeFill.symbol == symbol.upper(),
-                )
-                .all()
-            )
-            for (sid,) in strategy_ids:
+            strategy_ids = broker_repo.get_distinct_strategy_ids(user_id, symbol)
+            for sid in strategy_ids:
                 group_stats = repo.rebuild_campaigns(user_id, symbol.upper(), sid)
                 stats["campaigns_created"] += group_stats["campaigns_created"]
                 stats["fills_grouped"] += group_stats["fills_grouped"]

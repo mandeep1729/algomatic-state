@@ -1,10 +1,13 @@
 """Unified database access layer.
 
 Single source of truth for all database session management:
-- get_db()          — FastAPI Depends generator yielding a Session
+- get_db()           — FastAPI Depends generator yielding a Session
 - get_trading_repo() — FastAPI Depends returning TradingBuddyRepository
+- get_broker_repo()  — FastAPI Depends returning BrokerRepository
+- get_journal_repo() — FastAPI Depends returning JournalRepository
+- get_probe_repo()   — FastAPI Depends returning ProbeRepository
 - get_market_repo()  — FastAPI Depends returning OHLCVRepository
-- session_scope()   — Context manager for background tasks / non-DI usage
+- session_scope()    — Context manager for background tasks / non-DI usage
 """
 
 import logging
@@ -44,6 +47,51 @@ def get_trading_repo():
 
     with get_db_manager().get_session() as session:
         yield TradingBuddyRepository(session)
+
+
+def get_broker_repo():
+    """FastAPI dependency returning a BrokerRepository.
+
+    Usage::
+
+        @router.get("/trades")
+        async def get_trades(repo: BrokerRepository = Depends(get_broker_repo)):
+            ...
+    """
+    from src.data.database.broker_repository import BrokerRepository
+
+    with get_db_manager().get_session() as session:
+        yield BrokerRepository(session)
+
+
+def get_journal_repo():
+    """FastAPI dependency returning a JournalRepository.
+
+    Usage::
+
+        @router.get("/entries")
+        async def list_entries(repo: JournalRepository = Depends(get_journal_repo)):
+            ...
+    """
+    from src.data.database.journal_repository import JournalRepository
+
+    with get_db_manager().get_session() as session:
+        yield JournalRepository(session)
+
+
+def get_probe_repo():
+    """FastAPI dependency returning a ProbeRepository.
+
+    Usage::
+
+        @router.get("/probe")
+        async def get_probe(repo: ProbeRepository = Depends(get_probe_repo)):
+            ...
+    """
+    from src.data.database.probe_repository import ProbeRepository
+
+    with get_db_manager().get_session() as session:
+        yield ProbeRepository(session)
 
 
 def get_market_repo():

@@ -145,8 +145,14 @@ def client(db_session: Session) -> TestClient:
     - All DB dependencies (get_db, get_trading_repo, get_market_repo) use db_session
     """
     from src.api.auth_middleware import get_current_user
-    from src.data.database.dependencies import get_db, get_trading_repo, get_market_repo
+    from src.data.database.dependencies import (
+        get_db, get_trading_repo, get_market_repo,
+        get_broker_repo, get_journal_repo, get_probe_repo,
+    )
     from src.data.database.trading_repository import TradingBuddyRepository
+    from src.data.database.broker_repository import BrokerRepository
+    from src.data.database.journal_repository import JournalRepository
+    from src.data.database.probe_repository import ProbeRepository
 
     # Build a minimal FastAPI app with only the routers under test
     from fastapi import FastAPI
@@ -175,8 +181,20 @@ def client(db_session: Session) -> TestClient:
     def override_get_trading_repo():
         yield TradingBuddyRepository(db_session)
 
+    def override_get_broker_repo():
+        yield BrokerRepository(db_session)
+
+    def override_get_journal_repo():
+        yield JournalRepository(db_session)
+
+    def override_get_probe_repo():
+        yield ProbeRepository(db_session)
+
     app.dependency_overrides[get_current_user] = override_get_current_user
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_trading_repo] = override_get_trading_repo
+    app.dependency_overrides[get_broker_repo] = override_get_broker_repo
+    app.dependency_overrides[get_journal_repo] = override_get_journal_repo
+    app.dependency_overrides[get_probe_repo] = override_get_probe_repo
 
     yield TestClient(app)

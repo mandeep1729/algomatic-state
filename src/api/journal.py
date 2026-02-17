@@ -12,11 +12,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.dependencies import get_db
+from src.data.database.dependencies import get_journal_repo
 from src.data.database.journal_models import JournalEntry
+from src.data.database.journal_repository import JournalRepository
 
 logger = logging.getLogger(__name__)
 
@@ -122,16 +122,10 @@ def _entry_to_response(entry: JournalEntry) -> JournalEntryResponse:
 @router.get("/entries", response_model=list[JournalEntryResponse])
 async def list_journal_entries(
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    repo: JournalRepository = Depends(get_journal_repo),
 ):
     """List journal entries for the authenticated user, newest first."""
-    entries = (
-        db.query(JournalEntry)
-        .filter(JournalEntry.account_id == user_id)
-        .order_by(JournalEntry.date.desc(), JournalEntry.created_at.desc())
-        .limit(200)
-        .all()
-    )
+    entries = repo.list_entries(account_id=user_id)
     logger.debug("Listed %d journal entries for user_id=%d", len(entries), user_id)
     return [_entry_to_response(e) for e in entries]
 
@@ -140,13 +134,13 @@ async def list_journal_entries(
 async def create_journal_entry(
     data: JournalEntryCreate,
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    repo: JournalRepository = Depends(get_journal_repo),
 ):
     """Create a new journal entry."""
     if not data.content.strip():
         raise HTTPException(status_code=400, detail="Content is required")
 
-    entry = JournalEntry(
+    entry = repo.create_entry(
         account_id=user_id,
         date=data.date,
         entry_type=data.type,
@@ -155,10 +149,6 @@ async def create_journal_entry(
         tags=data.tags,
         mood=data.mood,
     )
-    db.add(entry)
-    db.flush()
-
-    logger.info("Created journal entry id=%s date=%s for user_id=%d", entry.id, data.date, user_id)
     return _entry_to_response(entry)
 
 
@@ -167,16 +157,9 @@ async def update_journal_entry(
     entry_id: int,
     data: JournalEntryUpdate,
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    repo: JournalRepository = Depends(get_journal_repo),
 ):
     """Update an existing journal entry."""
-    entry = db.query(JournalEntry).filter(JournalEntry.id == entry_id).first()
-    if not entry:
-        raise HTTPException(status_code=404, detail=f"Journal entry {entry_id} not found")
-
-    if entry.account_id != user_id:
-        raise HTTPException(status_code=403, detail="Not authorized to update this entry")
-
     updates = data.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -185,13 +168,15 @@ async def update_journal_entry(
     if "type" in updates:
         updates["entry_type"] = updates.pop("type")
 
-    for key, value in updates.items():
-        if hasattr(entry, key):
-            setattr(entry, key, value)
+    entry = repo.update_entry(entry_id, account_id=user_id, **updates)
 
-    db.flush()
+    if entry is None:
+        # Could be not found or not authorized
+        existing = repo.get_entry(entry_id)
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"Journal entry {entry_id} not found")
+        raise HTTPException(status_code=403, detail="Not authorized to update this entry")
 
-    logger.info("Updated journal entry id=%s fields=%s for user_id=%d", entry_id, list(updates.keys()), user_id)
     return _entry_to_response(entry)
 
 

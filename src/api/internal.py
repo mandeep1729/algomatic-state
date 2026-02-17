@@ -19,15 +19,12 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
-from src.data.database.dependencies import get_db
-from src.data.database.broker_models import TradeFill
-from src.data.database.trade_lifecycle_models import DecisionContext
+from src.data.database.dependencies import get_broker_repo, get_db
+from src.data.database.broker_repository import BrokerRepository
 from src.data.database.trading_buddy_models import UserProfile
-from src.data.database.strategy_models import Strategy
 
 logger = logging.getLogger(__name__)
 
@@ -90,35 +87,20 @@ async def get_fills_with_context(
     account_id: int,
     lookback_days: int = Query(default=90, ge=1, le=365),
     symbol: Optional[str] = Query(default=None),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
-    """Get fills with decision contexts for an account within a lookback window.
-
-    Returns fills joined with their decision context data including
-    strategy info and exit intent.
-    """
+    """Get fills with decision contexts for an account within a lookback window."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
 
     try:
-        query = (
-            db.query(TradeFill, DecisionContext, Strategy.name.label("strategy_name"))
-            .outerjoin(DecisionContext, DecisionContext.fill_id == TradeFill.id)
-            .outerjoin(Strategy, Strategy.id == DecisionContext.strategy_id)
-            .filter(
-                TradeFill.account_id == account_id,
-                TradeFill.executed_at >= cutoff,
-            )
+        rows = broker_repo.get_fills_with_context(
+            account_id=account_id,
+            cutoff=cutoff,
+            symbol=symbol,
         )
-
-        if symbol:
-            query = query.filter(TradeFill.symbol == symbol.upper())
-
-        query = query.order_by(TradeFill.executed_at.asc())
-        rows = query.all()
 
         fills = []
         for fill, dc, strategy_name in rows:
-            # Extract timeframe from exit_intent if available
             timeframe = None
             if dc and dc.exit_intent and isinstance(dc.exit_intent, dict):
                 timeframe = dc.exit_intent.get("timeframe")
@@ -222,17 +204,11 @@ async def save_baseline_stats(
 async def save_inferred_context(
     fill_id: int,
     request: InferredContextRequest,
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
-    """Merge entry quality results into decision_contexts.inferred_context JSONB.
-
-    Performs a shallow merge: existing keys in inferred_context are preserved,
-    new keys from the request are added/overwritten.
-    """
+    """Merge entry quality results into decision_contexts.inferred_context JSONB."""
     try:
-        dc = db.query(DecisionContext).filter(
-            DecisionContext.fill_id == fill_id,
-        ).first()
+        dc = broker_repo.get_decision_context(fill_id)
 
         if dc is None:
             raise HTTPException(
@@ -245,7 +221,7 @@ async def save_inferred_context(
         dc.inferred_context = merged
 
         flag_modified(dc, "inferred_context")
-        db.flush()
+        broker_repo.session.flush()
 
         logger.info(
             "Saved inferred context for fill_id=%s (%d keys merged)",
@@ -263,25 +239,13 @@ async def save_inferred_context(
 @router.get("/accounts", response_model=ActiveAccountsResponse)
 async def get_active_accounts(
     active_since_days: int = Query(default=30, ge=1, le=365),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
-    """List account IDs with recent trading activity.
-
-    Returns accounts that have at least one fill within the lookback window.
-    """
+    """List account IDs with recent trading activity."""
     cutoff = datetime.now(timezone.utc) - timedelta(days=active_since_days)
 
     try:
-        rows = (
-            db.query(distinct(TradeFill.account_id))
-            .filter(
-                TradeFill.account_id.isnot(None),
-                TradeFill.executed_at >= cutoff,
-            )
-            .all()
-        )
-
-        account_ids = [row[0] for row in rows]
+        account_ids = broker_repo.get_active_account_ids(cutoff)
 
         logger.info(
             "Found %d active accounts (since %d days ago)",

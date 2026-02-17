@@ -174,8 +174,7 @@ class ReviewerOrchestrator:
         """Run all behavioral checks for a single fill's decision context."""
         from config.settings import get_settings
         from src.data.database.dependencies import session_scope
-        from src.data.database.trade_lifecycle_models import DecisionContext
-        from src.data.database.broker_models import TradeFill
+        from src.data.database.broker_repository import BrokerRepository
         from src.reviewer.checks.runner import CheckRunner
 
         settings = get_settings()
@@ -185,10 +184,9 @@ class ReviewerOrchestrator:
 
         try:
             with session_scope() as session:
-                dc = session.query(DecisionContext).filter(
-                    DecisionContext.fill_id == fill_id
-                ).first()
+                repo = BrokerRepository(session)
 
+                dc = repo.get_decision_context(fill_id)
                 if dc is None:
                     logger.warning(
                         "No DecisionContext for fill_id=%s, skipping checks (correlation_id=%s)",
@@ -196,7 +194,7 @@ class ReviewerOrchestrator:
                     )
                     return
 
-                fill = session.query(TradeFill).filter(TradeFill.id == fill_id).first()
+                fill = repo.get_fill(fill_id)
                 if fill is None:
                     logger.warning(
                         "Fill id=%s not found, skipping checks (correlation_id=%s)",
@@ -247,15 +245,10 @@ class ReviewerOrchestrator:
             ))
 
     def _rerun_checks_for_user(self, account_id: int, correlation_id: str) -> None:
-        """Re-run checks for recent fills belonging to a user.
-
-        Queries DecisionContext joined to TradeFill where account_id
-        matches and executed_at >= now - recheck_lookback_days.
-        """
+        """Re-run checks for recent fills belonging to a user."""
         from config.settings import get_settings
         from src.data.database.dependencies import session_scope
-        from src.data.database.trade_lifecycle_models import DecisionContext
-        from src.data.database.broker_models import TradeFill
+        from src.data.database.broker_repository import BrokerRepository
 
         settings = get_settings()
         if not settings.reviewer.enabled:
@@ -267,17 +260,9 @@ class ReviewerOrchestrator:
 
         try:
             with session_scope() as session:
-                fill_ids = (
-                    session.query(DecisionContext.fill_id)
-                    .join(TradeFill, TradeFill.id == DecisionContext.fill_id)
-                    .filter(
-                        DecisionContext.account_id == account_id,
-                        TradeFill.executed_at >= cutoff,
-                    )
-                    .all()
-                )
+                repo = BrokerRepository(session)
+                fill_id_list = repo.get_recent_fill_ids(account_id, cutoff)
 
-            fill_id_list = [row[0] for row in fill_ids]
             logger.info(
                 "Re-running checks for %d recent fills (account_id=%s, lookback=%d days)",
                 len(fill_id_list), account_id, lookback_days,

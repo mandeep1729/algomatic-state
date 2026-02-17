@@ -16,19 +16,15 @@ from typing import Optional, List, Literal
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import case, func, distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.dependencies import get_db
+from src.data.database.dependencies import get_broker_repo, get_db
+from src.data.database.broker_repository import BrokerRepository
 from src.data.database.trading_repository import TradingBuddyRepository
 from src.data.database.broker_models import TradeFill
-from src.data.database.trade_lifecycle_models import (
-    CampaignCheck,
-    DecisionContext,
-)
-from src.data.database.strategy_models import Strategy
+from src.data.database.trade_lifecycle_models import DecisionContext
 
 logger = logging.getLogger(__name__)
 
@@ -489,11 +485,11 @@ def _build_checks_by_leg(
     return result
 
 
-def _context_to_api_response(ctx: DecisionContext, db: Session) -> DecisionContextApiResponse:
+def _context_to_api_response(ctx: DecisionContext, broker_repo: BrokerRepository) -> DecisionContextApiResponse:
     """Convert a DecisionContext to API response."""
     strategy_name = None
     if ctx.strategy_id:
-        strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
+        strategy = broker_repo.get_strategy_by_id(ctx.strategy_id)
         if strategy:
             strategy_name = strategy.name
 
@@ -524,18 +520,14 @@ def _context_to_api_response(ctx: DecisionContext, db: Session) -> DecisionConte
 async def get_uncategorized_count(
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Return count of fills not yet assigned to a campaign group.
 
     After a rebuild, all fills should be grouped, so this typically returns 0.
     """
     repo = TradingBuddyRepository(db)
-    total_fills = (
-        db.query(func.count(TradeFill.id))
-        .filter(TradeFill.account_id == user_id)
-        .scalar()
-    ) or 0
-
+    total_fills = broker_repo.count_fills(user_id)
     grouped_fills = repo.count_grouped_fills(user_id)
     count = max(0, total_fills - grouped_fills)
 
@@ -565,26 +557,18 @@ async def get_pnl_by_ticker(
     limit: int = Query(50, ge=1, le=200, description="Maximum tickers to return"),
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Get P&L summary aggregated by ticker symbol."""
     logger.debug("Fetching P&L by ticker for user_id=%d, limit=%d", user_id, limit)
 
-    symbols = (
-        db.query(distinct(TradeFill.symbol))
-        .filter(TradeFill.account_id == user_id)
-        .all()
-    )
+    symbols = broker_repo.get_distinct_symbols(user_id)
 
     tickers = []
     repo = TradingBuddyRepository(db)
 
-    for (symbol,) in symbols:
-        fills = (
-            db.query(TradeFill)
-            .filter(TradeFill.account_id == user_id, TradeFill.symbol == symbol)
-            .order_by(TradeFill.executed_at.asc())
-            .all()
-        )
+    for symbol in symbols:
+        fills = broker_repo.get_fills(user_id, symbol=symbol, order_desc=False)
 
         if not fills:
             continue
@@ -643,7 +627,7 @@ async def get_pnl_timeseries(
         "day", description="Time granularity for grouping"
     ),
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Get P&L timeseries for charting."""
     logger.debug(
@@ -651,48 +635,12 @@ async def get_pnl_timeseries(
         user_id, symbol, start_date, end_date, granularity,
     )
 
-    if granularity == "week":
-        date_trunc = func.date_trunc("week", TradeFill.executed_at)
-    elif granularity == "month":
-        date_trunc = func.date_trunc("month", TradeFill.executed_at)
-    else:
-        date_trunc = func.date(TradeFill.executed_at)
-
-    query = db.query(
-        date_trunc.label("period"),
-        func.coalesce(
-            func.sum(
-                case(
-                    (TradeFill.side == "sell", TradeFill.quantity * TradeFill.price),
-                    else_=0.0,
-                )
-            ),
-            0.0,
-        ).label("sell_proceeds"),
-        func.coalesce(
-            func.sum(
-                case(
-                    (TradeFill.side == "buy", TradeFill.quantity * TradeFill.price),
-                    else_=0.0,
-                )
-            ),
-            0.0,
-        ).label("buy_cost"),
-        func.coalesce(func.sum(TradeFill.fees), 0.0).label("fees"),
-        func.count(TradeFill.id).label("fill_count"),
-    ).filter(TradeFill.account_id == user_id)
-
-    if symbol:
-        query = query.filter(TradeFill.symbol == symbol.upper())
-    if start_date:
-        query = query.filter(func.date(TradeFill.executed_at) >= start_date)
-    if end_date:
-        query = query.filter(func.date(TradeFill.executed_at) <= end_date)
-
-    results = (
-        query.group_by(date_trunc)
-        .order_by(date_trunc.asc())
-        .all()
+    results = broker_repo.get_pnl_timeseries(
+        account_id=user_id,
+        symbol=symbol,
+        start_date=start_date,
+        end_date=end_date,
+        granularity=granularity,
     )
 
     logger.debug("Found %d periods with fill data", len(results))
@@ -700,10 +648,10 @@ async def get_pnl_timeseries(
     points = []
     cumulative = 0.0
     for row in results:
-        period_pnl = round(row.sell_proceeds - row.buy_cost - row.fees, 2)
+        period_pnl = round(row["sell_proceeds"] - row["buy_cost"] - row["fees"], 2)
         cumulative += period_pnl
 
-        period_ts = row.period
+        period_ts = row["period"]
         if isinstance(period_ts, date) and not isinstance(period_ts, datetime):
             period_ts = datetime.combine(period_ts, datetime.min.time())
 
@@ -711,7 +659,7 @@ async def get_pnl_timeseries(
             timestamp=period_ts,
             realized_pnl=period_pnl,
             cumulative_pnl=round(cumulative, 2),
-            fill_count=row.fill_count,
+            fill_count=row["fill_count"],
         ))
 
     period_start = points[0].timestamp if points else None
@@ -731,16 +679,12 @@ async def get_ticker_pnl(
     symbol: str,
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Get P&L summary for a single ticker symbol."""
     logger.debug("Fetching P&L for symbol=%s, user_id=%d", symbol, user_id)
 
-    fills = (
-        db.query(TradeFill)
-        .filter(TradeFill.account_id == user_id, TradeFill.symbol == symbol.upper())
-        .order_by(TradeFill.executed_at.asc())
-        .all()
-    )
+    fills = broker_repo.get_fills(user_id, symbol=symbol.upper(), order_desc=False)
 
     if not fills:
         return TickerPnlResponse(
@@ -917,22 +861,18 @@ async def get_campaign_detail(
 async def get_fill_context(
     fill_id: int,
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Get the decision context for a specific fill."""
-    fill = db.query(TradeFill).filter(
-        TradeFill.id == fill_id,
-        TradeFill.account_id == user_id,
-    ).first()
-
+    fill = broker_repo.get_fill(fill_id, account_id=user_id)
     if not fill:
         raise HTTPException(status_code=404, detail="Fill not found")
 
-    ctx = db.query(DecisionContext).filter(DecisionContext.fill_id == fill_id).first()
+    ctx = broker_repo.get_decision_context(fill_id)
     if not ctx:
         raise HTTPException(status_code=404, detail="No context for this fill")
 
-    return _context_to_api_response(ctx, db)
+    return _context_to_api_response(ctx, broker_repo)
 
 
 @router.put("/fills/{fill_id}/context", response_model=DecisionContextApiResponse)
@@ -941,16 +881,13 @@ async def save_fill_context(
     request: SaveFillContextRequest,
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Save or update a decision context for a fill.
 
     If strategy changes, triggers campaign rebuild for affected groups.
     """
-    fill = db.query(TradeFill).filter(
-        TradeFill.id == fill_id,
-        TradeFill.account_id == user_id,
-    ).first()
-
+    fill = broker_repo.get_fill(fill_id, account_id=user_id)
     if not fill:
         raise HTTPException(status_code=404, detail="Fill not found")
 
@@ -959,17 +896,14 @@ async def save_fill_context(
     # Resolve strategy name to ID
     strategy_id = None
     if request.strategyName:
-        strategy = db.query(Strategy).filter(
-            Strategy.name == request.strategyName,
-            Strategy.account_id == user_id,
-        ).first()
+        strategy = broker_repo.get_strategy_by_name(request.strategyName, user_id)
         if strategy:
             strategy_id = strategy.id
 
     exit_intent_value = request.exitIntent
 
     # Get or create context
-    ctx = db.query(DecisionContext).filter(DecisionContext.fill_id == fill_id).first()
+    ctx = broker_repo.get_decision_context(fill_id)
     old_strategy_id = ctx.strategy_id if ctx else None
 
     if ctx:
@@ -1010,7 +944,7 @@ async def save_fill_context(
         )
 
     db.commit()
-    return _context_to_api_response(ctx, db)
+    return _context_to_api_response(ctx, broker_repo)
 
 
 # -----------------------------------------------------------------------------
@@ -1029,6 +963,7 @@ async def rebuild_campaigns(
     symbol: Optional[str] = Query(None, description="Optional symbol filter"),
     user_id: int = Depends(get_current_user),
     db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
     """Rebuild campaigns from fills using zero-crossing algorithm."""
     logger.info("rebuild_campaigns: user_id=%d, symbol=%s", user_id, symbol)
@@ -1036,18 +971,10 @@ async def rebuild_campaigns(
     repo = TradingBuddyRepository(db)
 
     if symbol:
-        strategy_ids = (
-            db.query(distinct(DecisionContext.strategy_id))
-            .join(TradeFill, TradeFill.id == DecisionContext.fill_id)
-            .filter(
-                TradeFill.account_id == user_id,
-                TradeFill.symbol == symbol.upper(),
-            )
-            .all()
-        )
+        strategy_ids = broker_repo.get_distinct_strategy_ids(user_id, symbol)
 
         total_stats = {"campaigns_created": 0, "fills_grouped": 0, "groups_rebuilt": 0}
-        for (sid,) in strategy_ids:
+        for sid in strategy_ids:
             group_stats = repo.rebuild_campaigns(user_id, symbol.upper(), sid)
             total_stats["campaigns_created"] += group_stats["campaigns_created"]
             total_stats["fills_grouped"] += group_stats["fills_grouped"]

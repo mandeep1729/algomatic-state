@@ -16,8 +16,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.dependencies import get_db, session_scope
-from src.data.database.broker_models import BrokerConnection, TradeFill, SnapTradeUser
+from src.data.database.dependencies import get_broker_repo, get_db, session_scope
+from src.data.database.broker_repository import BrokerRepository
+from src.data.database.broker_models import BrokerConnection, TradeFill
 from src.execution.client import AlpacaClient, TradeFillInfo
 
 logger = logging.getLogger(__name__)
@@ -104,9 +105,9 @@ class TradeListResponse(BaseModel):
 # -----------------------------------------------------------------------------
 
 def get_or_create_alpaca_connection(
-    db: Session,
+    repo: BrokerRepository,
     user_id: int,
-    paper: bool = True
+    paper: bool = True,
 ) -> BrokerConnection:
     """Get or create a broker connection for Alpaca.
 
@@ -116,44 +117,27 @@ def get_or_create_alpaca_connection(
     broker_name = "Alpaca Paper" if paper else "Alpaca Live"
     broker_slug = "alpaca_paper" if paper else "alpaca_live"
 
-    # Check for existing snaptrade user or create one
-    snap_user = db.query(SnapTradeUser).filter(
-        SnapTradeUser.user_account_id == user_id
-    ).first()
+    snap_user = repo.get_or_create_snaptrade_user(
+        user_id=user_id,
+        snaptrade_id=f"alpaca_direct_{user_id}",
+        snaptrade_secret="direct_connection",
+    )
 
-    if not snap_user:
-        # Create a placeholder SnapTrade user for direct Alpaca
-        snap_user = SnapTradeUser(
-            user_account_id=user_id,
-            snaptrade_user_id=f"alpaca_direct_{user_id}",
-            snaptrade_user_secret="direct_connection"  # Not used for direct API
-        )
-        db.add(snap_user)
-        db.flush()
-
-    # Check for existing Alpaca connection
-    conn = db.query(BrokerConnection).filter(
-        BrokerConnection.snaptrade_user_id == snap_user.id,
-        BrokerConnection.brokerage_slug == broker_slug
-    ).first()
-
+    conn = repo.get_connection(snap_user.id, broker_slug)
     if not conn:
-        conn = BrokerConnection(
+        conn = repo.create_connection(
             snaptrade_user_id=snap_user.id,
             brokerage_name=broker_name,
             brokerage_slug=broker_slug,
             authorization_id=f"alpaca_direct_{user_id}_{broker_slug}",
-            meta={"connection_type": "direct_api", "paper": paper}
+            meta={"connection_type": "direct_api", "paper": paper},
         )
-        db.add(conn)
-        db.flush()
-        logger.info("Created Alpaca connection for user %d", user_id)
 
     return conn
 
 
 def sync_fills_to_db(
-    db: Session,
+    repo: BrokerRepository,
     connection: BrokerConnection,
     user_id: int,
     fills: list[TradeFillInfo],
@@ -167,24 +151,18 @@ def sync_fills_to_db(
     skipped = 0
 
     for fill in fills:
-        # Check if already exists by external_trade_id
-        exists = db.query(TradeFill).filter(
-            TradeFill.external_trade_id == fill.id
-        ).first()
-
-        if exists:
+        if repo.exists_by_external_id(fill.id):
             skipped += 1
             continue
 
-        # Create new trade fill
-        trade = TradeFill(
+        repo.create_fill(
             broker_connection_id=connection.id,
             account_id=user_id,
             symbol=fill.symbol,
             side=fill.side.lower(),
             quantity=fill.quantity,
             price=fill.price,
-            fees=0.0,  # Alpaca is commission-free for most trades
+            fees=0.0,
             executed_at=fill.transaction_time,
             broker="Alpaca",
             asset_type="equity",
@@ -192,13 +170,11 @@ def sync_fills_to_db(
             order_id=fill.order_id,
             external_trade_id=fill.id,
             source="broker_synced",
-            raw_data=fill.raw_data
+            raw_data=fill.raw_data,
         )
-        db.add(trade)
         synced += 1
 
     if synced > 0:
-        db.flush()
         logger.info("Synced %d fills to database (skipped %d duplicates)", synced, skipped)
 
     return synced, skipped
@@ -226,11 +202,9 @@ def sync_alpaca_fills_background(user_id: int) -> None:
 
     try:
         with session_scope() as db:
-            # Check last sync time
-            latest_trade = db.query(TradeFill).filter(
-                TradeFill.account_id == user_id,
-                TradeFill.broker == "Alpaca"
-            ).order_by(TradeFill.created_at.desc()).first()
+            repo = BrokerRepository(db)
+
+            latest_trade = repo.get_latest_fill(user_id, broker="Alpaca")
 
             if latest_trade:
                 last_sync = latest_trade.created_at
@@ -247,12 +221,12 @@ def sync_alpaca_fills_background(user_id: int) -> None:
 
             # Perform sync
             logger.info("Auto-syncing Alpaca fills for user %d", user_id)
-            connection = get_or_create_alpaca_connection(db, user_id, paper=client.paper)
+            connection = get_or_create_alpaca_connection(repo, user_id, paper=client.paper)
             fills = client.get_trade_fills()
 
             synced = 0
             if fills:
-                synced, skipped = sync_fills_to_db(db, connection, user_id, fills)
+                synced, skipped = sync_fills_to_db(repo, connection, user_id, fills)
                 logger.info("Auto-sync complete: %d new fills, %d skipped", synced, skipped)
             else:
                 logger.debug("No fills to sync from Alpaca")
@@ -260,8 +234,8 @@ def sync_alpaca_fills_background(user_id: int) -> None:
             # Rebuild campaigns if we synced any new fills
             if synced > 0:
                 try:
-                    repo = TradingBuddyRepository(db)
-                    rebuild_stats = repo.rebuild_all_campaigns(account_id=user_id)
+                    trading_repo = TradingBuddyRepository(db)
+                    rebuild_stats = trading_repo.rebuild_all_campaigns(account_id=user_id)
                     if rebuild_stats.get("campaigns_created", 0) > 0:
                         logger.info(
                             "Auto-sync rebuilt %d campaigns across %d groups",
@@ -345,28 +319,18 @@ async def get_positions(
 @router.post("/sync", response_model=SyncResponse)
 async def sync_trades(
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
     client: AlpacaClient = Depends(get_alpaca_client),
 ):
-    """Sync trade fills from Alpaca to database and rebuild campaigns.
-
-    Fetches all trade activities (FILL events) from Alpaca and stores
-    them in the trade_fills table. Duplicates are skipped based on
-    external_trade_id.
-
-    After syncing fills, rebuilds campaigns from fills using the
-    zero-crossing algorithm.
-    """
+    """Sync trade fills from Alpaca to database and rebuild campaigns."""
     from src.data.database.trading_repository import TradingBuddyRepository
 
     if not client:
         raise HTTPException(status_code=503, detail="Alpaca client not configured")
 
     try:
-        # Get or create connection
-        connection = get_or_create_alpaca_connection(db, user_id, paper=client.paper)
+        connection = get_or_create_alpaca_connection(broker_repo, user_id, paper=client.paper)
 
-        # Fetch fills from Alpaca
         logger.info("Fetching trade fills from Alpaca for user %d", user_id)
         fills = client.get_trade_fills()
 
@@ -378,17 +342,15 @@ async def sync_trades(
                 message="No trade fills found in Alpaca account"
             )
 
-        # Sync to database
-        synced, skipped = sync_fills_to_db(db, connection, user_id, fills)
+        synced, skipped = sync_fills_to_db(broker_repo, connection, user_id, fills)
 
-        # Rebuild campaigns if we synced any new fills
         campaigns_created = 0
         fills_grouped = 0
 
         if synced > 0:
             try:
-                repo = TradingBuddyRepository(db)
-                rebuild_stats = repo.rebuild_all_campaigns(account_id=user_id)
+                trading_repo = TradingBuddyRepository(broker_repo.session)
+                rebuild_stats = trading_repo.rebuild_all_campaigns(account_id=user_id)
                 campaigns_created = rebuild_stats.get("campaigns_created", 0)
                 fills_grouped = rebuild_stats.get("fills_grouped", 0)
 
@@ -400,7 +362,6 @@ async def sync_trades(
             except Exception as rebuild_err:
                 logger.error("Failed to rebuild campaigns: %s", rebuild_err)
 
-        # Build response message
         msg_parts = [f"Synced {synced} new fills, skipped {skipped} existing"]
         if campaigns_created > 0:
             msg_parts.append(f"rebuilt {campaigns_created} campaigns")
@@ -429,36 +390,26 @@ async def get_trades(
     sort: str = "-executed_at",
     page: int = 1,
     limit: int = 50,
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
 ):
-    """Get synced trade fills from database.
-
-    Note: Call /sync first to fetch latest trades from Alpaca.
-    """
+    """Get synced trade fills from database."""
     logger.debug(
         "GET /api/alpaca/trades for user_id=%d: symbol=%s, sort=%s, page=%d, limit=%d",
         user_id, symbol, sort, page, limit,
     )
-    # Build query for Alpaca trades
-    query = db.query(TradeFill).filter(
-        TradeFill.account_id == user_id,
-        TradeFill.broker == "Alpaca"
-    )
 
-    if symbol:
-        query = query.filter(TradeFill.symbol == symbol.upper())
-
-    total = query.count()
-
-    # Sorting
     desc_sort = sort.startswith("-")
     sort_field = sort.lstrip("-")
-    column = getattr(TradeFill, sort_field, TradeFill.executed_at)
-    query = query.order_by(column.desc() if desc_sort else column.asc())
 
-    # Pagination
-    offset = (max(page, 1) - 1) * limit
-    trades = query.offset(offset).limit(limit).all()
+    trades, total = broker_repo.get_fills_paginated(
+        account_id=user_id,
+        symbol=symbol.upper() if symbol else None,
+        broker="Alpaca",
+        sort_field=sort_field,
+        sort_desc=desc_sort,
+        page=page,
+        limit=limit,
+    )
 
     return TradeListResponse(
         trades=[
@@ -484,7 +435,7 @@ async def get_trades(
 @router.get("/status")
 async def get_status(
     user_id: int = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
     client: AlpacaClient = Depends(get_alpaca_client),
 ):
     """Get Alpaca connection and sync status."""
@@ -503,19 +454,10 @@ async def get_status(
         except Exception:
             pass
 
-    # Get latest sync info
-    latest_trade = db.query(TradeFill).filter(
-        TradeFill.account_id == user_id,
-        TradeFill.broker == "Alpaca"
-    ).order_by(TradeFill.created_at.desc()).first()
-
+    latest_trade = broker_repo.get_latest_fill(user_id, broker="Alpaca")
     if latest_trade:
         result["last_sync"] = latest_trade.created_at.isoformat()
 
-    # Count total fills
-    result["total_fills"] = db.query(TradeFill).filter(
-        TradeFill.account_id == user_id,
-        TradeFill.broker == "Alpaca"
-    ).count()
+    result["total_fills"] = broker_repo.count_fills(user_id, broker="Alpaca")
 
     return result
