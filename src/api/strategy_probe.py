@@ -10,7 +10,7 @@ Groups by strategy_type, NOT individual strategies.
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -529,3 +529,90 @@ async def get_strategy_probe(
     return StrategyProbeResponse(
         symbol=symbol, weeks=weeks_response, available_timeframes=available_timeframes,
     )
+
+
+# -----------------------------------------------------------------------------
+# Helper Functions
+# -----------------------------------------------------------------------------
+
+def get_best_theme_for_trade(
+    ticker: str,
+    timeframe: str,
+    asof_datetime: datetime,
+    db: Session,
+) -> Optional[str]:
+    """Get the best strategy theme for a given ticker and timeframe.
+
+    Queries strategy_probe_results from a lookback period based on timeframe:
+    - For 5Min and 15Min: look back 3 days
+    - For 1Day: look back 5 days
+
+    Groups by strategy_type (theme) and ranks by best performance:
+    1. Highest weighted average PnL (most profitable)
+    2. Most trades (as tiebreaker)
+
+    Args:
+        ticker: Ticker symbol (case-insensitive, will be uppercased).
+        timeframe: Timeframe (5Min, 15Min, 1Day, etc.).
+        asof_datetime: Reference datetime. Lookback period is computed from this.
+        db: Database session.
+
+    Returns:
+        Name of the best theme (str), or None if no data found.
+    """
+    ticker = ticker.upper()
+    logger.debug(
+        "get_best_theme_for_trade: ticker=%s, timeframe=%s, asof=%s",
+        ticker, timeframe, asof_datetime,
+    )
+
+    # Determine lookback days based on timeframe
+    lookback_days = 3 if timeframe in ("5Min", "15Min") else 5
+    asof_date = asof_datetime.date()
+    start_date = date(asof_date.year, asof_date.month, asof_date.day)
+    # Subtract lookback_days from start_date
+    start_date = start_date - timedelta(days=lookback_days)
+
+    logger.debug(
+        "Lookback window: %s to %s (lookback_days=%d)",
+        start_date, asof_date, lookback_days,
+    )
+
+    # Query: group by theme, sum trades and PnL
+    rows = db.query(
+        ProbeStrategy.strategy_type.label("theme"),
+        func.sum(StrategyProbeResult.num_trades).label("total_trades"),
+        func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).label("sum_pnl"),
+    ).join(
+        StrategyProbeResult, StrategyProbeResult.strategy_id == ProbeStrategy.id,
+    ).filter(
+        StrategyProbeResult.symbol == ticker,
+        StrategyProbeResult.timeframe == timeframe,
+        StrategyProbeResult.open_day >= start_date,
+        StrategyProbeResult.open_day <= asof_date,
+    ).group_by(
+        ProbeStrategy.strategy_type,
+    ).order_by(
+        func.sum(StrategyProbeResult.num_trades * StrategyProbeResult.pnl_mean).desc(),
+        func.sum(StrategyProbeResult.num_trades).desc(),
+    ).all()
+
+    logger.debug("Found %d themes for %s in lookback period", len(rows), ticker)
+
+    if not rows:
+        logger.info(
+            "No theme data found for ticker=%s, timeframe=%s, lookback from %s",
+            ticker, timeframe, asof_date,
+        )
+        return None
+
+    best_theme = rows[0].theme
+    best_pnl = rows[0].sum_pnl
+    best_trades = rows[0].total_trades
+
+    logger.info(
+        "Best theme: %s (pnl=%.2f, trades=%d) for ticker=%s, timeframe=%s",
+        best_theme, best_pnl, best_trades, ticker, timeframe,
+    )
+
+    return best_theme
