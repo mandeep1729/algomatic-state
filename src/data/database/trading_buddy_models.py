@@ -142,6 +142,9 @@ class UserProfile(Base):
     # Site/UI preferences (optional JSONB)
     site_prefs: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # Aggregated trading statistics (optional JSONB)
+    stats: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
