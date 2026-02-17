@@ -7,10 +7,10 @@ Provides:
 import logging
 import re
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_trading_repo
 from src.data.database.trading_repository import TradingBuddyRepository
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,10 @@ class WaitlistResponse(BaseModel):
 
 
 @router.post("", response_model=WaitlistResponse)
-async def join_waitlist(request: WaitlistRequest):
+async def join_waitlist(
+    request: WaitlistRequest,
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
+):
     """Submit a waitlist signup request.
 
     Public endpoint — no authentication required.
@@ -55,14 +58,11 @@ async def join_waitlist(request: WaitlistRequest):
             detail="Invalid email address",
         )
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        entry, created = repo.get_or_create_waitlist_entry(
-            name=name,
-            email=email,
-            referral_source=request.referral_source,
-        )
+    entry, created = repo.get_or_create_waitlist_entry(
+        name=name,
+        email=email,
+        referral_source=request.referral_source,
+    )
 
     if not created:
         logger.info("Waitlist re-submission for email=%s", email)

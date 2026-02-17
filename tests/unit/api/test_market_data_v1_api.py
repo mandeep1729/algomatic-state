@@ -11,7 +11,7 @@ Also tests the utility functions:
 """
 
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -23,6 +23,7 @@ from src.api.market_data_api import (
     parse_lookback,
     router,
 )
+from src.data.database.dependencies import get_market_repo
 
 
 # ---------------------------------------------------------------------------
@@ -31,19 +32,17 @@ from src.api.market_data_api import (
 
 
 @pytest.fixture()
-def mock_db_manager():
-    """Create a mock DatabaseManager whose get_session yields a mock session."""
-    from contextlib import contextmanager
+def mock_repo():
+    """Create a mock OHLCVRepository."""
+    return MagicMock()
 
-    mock_manager = MagicMock()
-    mock_session = MagicMock()
 
-    @contextmanager
-    def _mock_session():
-        yield mock_session
-
-    mock_manager.get_session = _mock_session
-    return mock_manager, mock_session
+def _make_client(mock_repo):
+    """Create a FastAPI TestClient with mocked market repo dependency."""
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_market_repo] = lambda: mock_repo
+    return TestClient(app)
 
 
 def _make_bars_df(n: int = 3) -> pd.DataFrame:
@@ -72,15 +71,6 @@ def _make_features_df(n: int = 3) -> pd.DataFrame:
     df = pd.DataFrame(data, index=timestamps)
     df.index.name = None
     return df
-
-
-def _create_test_client(mock_manager, mock_repo_instance):
-    """Create a FastAPI TestClient with mocked database layer."""
-    app = FastAPI()
-    app.include_router(router)
-    with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-         patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo_instance):
-        yield TestClient(app)
 
 
 # ---------------------------------------------------------------------------
@@ -206,8 +196,7 @@ class TestDetermineDateRange:
         )
         # Should use lookback mode, not the explicit start/end
         assert bar_limit is None
-        # end should be ~now since we did not provide end for lookback (but we did here)
-        # Actually, lookback + end means end=parsed end
+        # end should be parsed end since we provided it
         assert end_dt == datetime(2020, 2, 1, tzinfo=timezone.utc)
         expected_start = datetime(2020, 1, 31, tzinfo=timezone.utc)
         assert start_dt == expected_start
@@ -296,28 +285,22 @@ class TestDetermineDateRange:
 class TestGetMarketData:
     """GET /api/v1/marketdata"""
 
-    def test_returns_bars_with_absolute_range(self, mock_db_manager):
+    def test_returns_bars_with_absolute_range(self, mock_repo):
         """Should return bars for start/end range."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = _make_bars_df(3)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "start": "2024-01-02T00:00:00Z",
-                    "end": "2024-01-03T00:00:00Z",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "start": "2024-01-02T00:00:00Z",
+                "end": "2024-01-03T00:00:00Z",
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -330,27 +313,21 @@ class TestGetMarketData:
         assert "start" in data["range"]
         assert "end" in data["range"]
 
-    def test_returns_bars_with_lookback(self, mock_db_manager):
+    def test_returns_bars_with_lookback(self, mock_repo):
         """Should return bars when using lookback parameter."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = _make_bars_df(2)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "4w",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "4w",
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -358,27 +335,21 @@ class TestGetMarketData:
         # Verify the repo was called with start/end (not limit)
         mock_repo.get_bars.assert_called_once()
 
-    def test_returns_bars_with_last_n_bars(self, mock_db_manager):
+    def test_returns_bars_with_last_n_bars(self, mock_repo):
         """Should return bars when using last_n_bars parameter."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = _make_bars_df(5)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "last_n_bars": 5,
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "last_n_bars": 5,
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -386,139 +357,105 @@ class TestGetMarketData:
         # Should have been called with limit parameter
         mock_repo.get_bars.assert_called_once_with("AAPL", "1Hour", limit=5)
 
-    def test_missing_time_params_returns_400(self, mock_db_manager):
+    def test_missing_time_params_returns_400(self, mock_repo):
         """Should return 400 when no time specification is provided."""
-        mock_manager, _ = mock_db_manager
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={"symbol": "AAPL", "timeframe": "1Hour"},
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={"symbol": "AAPL", "timeframe": "1Hour"},
+        )
 
         assert response.status_code == 400
         assert "Must specify" in response.json()["detail"]
 
-    def test_invalid_timeframe_returns_400(self, mock_db_manager):
+    def test_invalid_timeframe_returns_400(self, mock_repo):
         """Should return 400 for an invalid timeframe."""
-        mock_manager, _ = mock_db_manager
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "INVALID",
-                    "lookback": "4w",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "INVALID",
+                "lookback": "4w",
+            },
+        )
 
         assert response.status_code == 400
         assert "Invalid timeframe" in response.json()["detail"]
 
-    def test_symbol_not_found_returns_404(self, mock_db_manager):
+    def test_symbol_not_found_returns_404(self, mock_repo):
         """Should return 404 when symbol does not exist."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_repo.get_ticker.return_value = None
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={
-                    "symbol": "NOSYMBOL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={
+                "symbol": "NOSYMBOL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+            },
+        )
 
         assert response.status_code == 404
         assert "not found" in response.json()["detail"]
 
-    def test_no_bars_returns_404(self, mock_db_manager):
+    def test_no_bars_returns_404(self, mock_repo):
         """Should return 404 when no bars exist."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = pd.DataFrame(
             columns=["open", "high", "low", "close", "volume"]
         )
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+            },
+        )
 
         assert response.status_code == 404
 
-    def test_invalid_lookback_returns_400(self, mock_db_manager):
+    def test_invalid_lookback_returns_400(self, mock_repo):
         """Should return 400 for invalid lookback format."""
-        mock_manager, _ = mock_db_manager
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "invalid",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "invalid",
+            },
+        )
 
         assert response.status_code == 400
 
-    def test_missing_required_params_returns_422(self, mock_db_manager):
+    def test_missing_required_params_returns_422(self, mock_repo):
         """Should return 422 when required params are missing."""
-        mock_manager, _ = mock_db_manager
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager):
-            client = TestClient(app)
-            response = client.get("/api/v1/marketdata")
+        client = _make_client(mock_repo)
+        response = client.get("/api/v1/marketdata")
 
         assert response.status_code == 422
 
-    def test_start_only_defaults_end_to_now(self, mock_db_manager):
+    def test_start_only_defaults_end_to_now(self, mock_repo):
         """Should default end to now when only start is given."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = _make_bars_df(2)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "start": "2024-01-01T00:00:00Z",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "start": "2024-01-01T00:00:00Z",
+            },
+        )
 
         assert response.status_code == 200
 
@@ -531,28 +468,22 @@ class TestGetMarketData:
 class TestGetIndicators:
     """GET /api/v1/indicators"""
 
-    def test_returns_indicators_with_absolute_range(self, mock_db_manager):
+    def test_returns_indicators_with_absolute_range(self, mock_repo):
         """Should return indicator rows for start/end range."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_features.return_value = _make_features_df(3)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "start": "2024-01-02T00:00:00Z",
-                    "end": "2024-01-03T00:00:00Z",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "start": "2024-01-02T00:00:00Z",
+                "end": "2024-01-03T00:00:00Z",
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -563,52 +494,40 @@ class TestGetIndicators:
         assert "range" in data
         assert data["missing_indicators"] == []
 
-    def test_returns_indicators_with_lookback(self, mock_db_manager):
+    def test_returns_indicators_with_lookback(self, mock_repo):
         """Should return indicators when using lookback parameter."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_features.return_value = _make_features_df(2)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+            },
+        )
 
         assert response.status_code == 200
 
-    def test_indicator_filter_returns_subset(self, mock_db_manager):
+    def test_indicator_filter_returns_subset(self, mock_repo):
         """Should return only requested indicators when filter is specified."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_features.return_value = _make_features_df(2)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                    "indicators": "atr_14,rsi_14",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+                "indicators": "atr_14,rsi_14",
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -617,76 +536,58 @@ class TestGetIndicators:
             indicator_keys = {k for k in row if k != "timestamp"}
             assert indicator_keys <= {"atr_14", "rsi_14"}
 
-    def test_indicator_filter_reports_missing(self, mock_db_manager):
+    def test_indicator_filter_reports_missing(self, mock_repo):
         """Should report missing indicators in the response."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_features.return_value = _make_features_df(2)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                    "indicators": "atr_14,nonexistent_indicator",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+                "indicators": "atr_14,nonexistent_indicator",
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
         assert "nonexistent_indicator" in data["missing_indicators"]
 
-    def test_symbol_not_found_returns_404(self, mock_db_manager):
+    def test_symbol_not_found_returns_404(self, mock_repo):
         """Should return 404 when symbol does not exist."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_repo.get_ticker.return_value = None
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/indicators",
-                params={
-                    "symbol": "NOSYMBOL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/indicators",
+            params={
+                "symbol": "NOSYMBOL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+            },
+        )
 
         assert response.status_code == 404
 
-    def test_no_indicators_returns_404(self, mock_db_manager):
+    def test_no_indicators_returns_404(self, mock_repo):
         """Should return 404 when no indicators exist."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_features.return_value = pd.DataFrame()
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+            },
+        )
 
         assert response.status_code == 404
 
@@ -699,28 +600,22 @@ class TestGetIndicators:
 class TestGetCombined:
     """GET /api/v1/marketdata+indicators"""
 
-    def test_returns_combined_data(self, mock_db_manager):
+    def test_returns_combined_data(self, mock_repo):
         """Should return both bars and indicators."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = _make_bars_df(3)
         mock_repo.get_features.return_value = _make_features_df(3)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata+indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "4w",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata+indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "4w",
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -731,28 +626,22 @@ class TestGetCombined:
         assert len(data["indicators"]) == 3
         assert "range" in data
 
-    def test_returns_bars_without_indicators(self, mock_db_manager):
+    def test_returns_bars_without_indicators(self, mock_repo):
         """Should return bars even if indicators are empty."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = _make_bars_df(3)
         mock_repo.get_features.return_value = pd.DataFrame()
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata+indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata+indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -760,77 +649,59 @@ class TestGetCombined:
         assert data["total_indicator_rows"] == 0
         assert data["indicators"] == []
 
-    def test_no_bars_returns_404(self, mock_db_manager):
+    def test_no_bars_returns_404(self, mock_repo):
         """Should return 404 when no bars exist."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = pd.DataFrame(
             columns=["open", "high", "low", "close", "volume"]
         )
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata+indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata+indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+            },
+        )
 
         assert response.status_code == 404
 
-    def test_symbol_not_found_returns_404(self, mock_db_manager):
+    def test_symbol_not_found_returns_404(self, mock_repo):
         """Should return 404 when symbol does not exist."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_repo.get_ticker.return_value = None
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata+indicators",
-                params={
-                    "symbol": "NOSYMBOL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata+indicators",
+            params={
+                "symbol": "NOSYMBOL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+            },
+        )
 
         assert response.status_code == 404
 
-    def test_indicator_filter_in_combined(self, mock_db_manager):
+    def test_indicator_filter_in_combined(self, mock_repo):
         """Should filter indicators in combined endpoint."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = _make_bars_df(2)
         mock_repo.get_features.return_value = _make_features_df(2)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata+indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "lookback": "1d",
-                    "indicators": "rsi_14",
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata+indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "lookback": "1d",
+                "indicators": "rsi_14",
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()
@@ -838,28 +709,22 @@ class TestGetCombined:
             indicator_keys = {k for k in row if k != "timestamp"}
             assert indicator_keys <= {"rsi_14"}
 
-    def test_with_last_n_bars(self, mock_db_manager):
+    def test_with_last_n_bars(self, mock_repo):
         """Should work with last_n_bars in combined endpoint."""
-        mock_manager, mock_session = mock_db_manager
-        mock_repo = MagicMock()
         mock_ticker = MagicMock()
         mock_repo.get_ticker.return_value = mock_ticker
         mock_repo.get_bars.return_value = _make_bars_df(5)
         mock_repo.get_features.return_value = _make_features_df(5)
 
-        app = FastAPI()
-        app.include_router(router)
-        with patch("src.api.market_data_api.get_db_manager", return_value=mock_manager), \
-             patch("src.api.market_data_api.OHLCVRepository", return_value=mock_repo):
-            client = TestClient(app)
-            response = client.get(
-                "/api/v1/marketdata+indicators",
-                params={
-                    "symbol": "AAPL",
-                    "timeframe": "1Hour",
-                    "last_n_bars": 5,
-                },
-            )
+        client = _make_client(mock_repo)
+        response = client.get(
+            "/api/v1/marketdata+indicators",
+            params={
+                "symbol": "AAPL",
+                "timeframe": "1Hour",
+                "last_n_bars": 5,
+            },
+        )
 
         assert response.status_code == 200
         data = response.json()

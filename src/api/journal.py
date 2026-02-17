@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db
 from src.data.database.journal_models import JournalEntry
 
 logger = logging.getLogger(__name__)
@@ -82,16 +82,6 @@ BEHAVIORAL_TAGS = [
     {"name": "late_entry", "category": "timing", "description": "Entered after the move already started"},
     {"name": "chased", "category": "timing", "description": "Entered at an extended price level"},
 ]
-
-
-# -----------------------------------------------------------------------------
-# Dependencies
-# -----------------------------------------------------------------------------
-
-def get_db():
-    """Get database session."""
-    with get_db_manager().get_session() as session:
-        yield session
 
 
 # -----------------------------------------------------------------------------

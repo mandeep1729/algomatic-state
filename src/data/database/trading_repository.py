@@ -25,6 +25,7 @@ from src.data.database.trading_buddy_models import (
 from src.data.database.broker_models import TradeFill as TradeFillModel
 from src.data.database.strategy_models import Strategy as StrategyModel
 from src.data.database.trade_lifecycle_models import (
+    CampaignCheck as CampaignCheckModel,
     DecisionContext as DecisionContextModel,
     CampaignFill as CampaignFillModel,
 )
@@ -952,3 +953,75 @@ class TradingBuddyRepository:
             .filter(TradeFillModel.account_id == account_id)
             .scalar()
         ) or 0
+
+    # -------------------------------------------------------------------------
+    # Batch-load methods (N+1 elimination)
+    # -------------------------------------------------------------------------
+
+    def get_decision_contexts_for_fills(
+        self, fill_ids: list[int],
+    ) -> dict[int, DecisionContextModel]:
+        """Batch-load decision contexts keyed by fill_id.
+
+        Args:
+            fill_ids: List of TradeFill IDs
+
+        Returns:
+            Dict mapping fill_id -> DecisionContext
+        """
+        if not fill_ids:
+            return {}
+
+        rows = (
+            self.session.query(DecisionContextModel)
+            .filter(DecisionContextModel.fill_id.in_(fill_ids))
+            .all()
+        )
+        return {dc.fill_id: dc for dc in rows}
+
+    def get_strategies_by_ids(
+        self, strategy_ids: list[int],
+    ) -> dict[int, StrategyModel]:
+        """Batch-load strategies keyed by strategy ID.
+
+        Args:
+            strategy_ids: List of Strategy IDs
+
+        Returns:
+            Dict mapping strategy_id -> Strategy
+        """
+        if not strategy_ids:
+            return {}
+
+        rows = (
+            self.session.query(StrategyModel)
+            .filter(StrategyModel.id.in_(strategy_ids))
+            .all()
+        )
+        return {s.id: s for s in rows}
+
+    def get_checks_for_contexts(
+        self, context_ids: list[int],
+    ) -> dict[int, list[CampaignCheckModel]]:
+        """Batch-load campaign checks keyed by decision_context_id.
+
+        Args:
+            context_ids: List of DecisionContext IDs
+
+        Returns:
+            Dict mapping decision_context_id -> list of CampaignCheck
+        """
+        if not context_ids:
+            return {}
+
+        rows = (
+            self.session.query(CampaignCheckModel)
+            .filter(CampaignCheckModel.decision_context_id.in_(context_ids))
+            .order_by(CampaignCheckModel.checked_at.asc())
+            .all()
+        )
+
+        result: dict[int, list[CampaignCheckModel]] = {}
+        for check in rows:
+            result.setdefault(check.decision_context_id, []).append(check)
+        return result

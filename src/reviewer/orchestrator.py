@@ -173,7 +173,7 @@ class ReviewerOrchestrator:
     def _run_checks_for_fill(self, fill_id: int, correlation_id: str) -> None:
         """Run all behavioral checks for a single fill's decision context."""
         from config.settings import get_settings
-        from src.data.database.connection import get_db_manager
+        from src.data.database.dependencies import session_scope
         from src.data.database.trade_lifecycle_models import DecisionContext
         from src.data.database.broker_models import TradeFill
         from src.reviewer.checks.runner import CheckRunner
@@ -184,7 +184,7 @@ class ReviewerOrchestrator:
             return
 
         try:
-            with get_db_manager().get_session() as session:
+            with session_scope() as session:
                 dc = session.query(DecisionContext).filter(
                     DecisionContext.fill_id == fill_id
                 ).first()
@@ -253,7 +253,7 @@ class ReviewerOrchestrator:
         matches and executed_at >= now - recheck_lookback_days.
         """
         from config.settings import get_settings
-        from src.data.database.connection import get_db_manager
+        from src.data.database.dependencies import session_scope
         from src.data.database.trade_lifecycle_models import DecisionContext
         from src.data.database.broker_models import TradeFill
 
@@ -266,7 +266,7 @@ class ReviewerOrchestrator:
         cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
 
         try:
-            with get_db_manager().get_session() as session:
+            with session_scope() as session:
                 fill_ids = (
                     session.query(DecisionContext.fill_id)
                     .join(TradeFill, TradeFill.id == DecisionContext.fill_id)

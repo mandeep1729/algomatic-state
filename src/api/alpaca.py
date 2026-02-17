@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db, session_scope
 from src.data.database.broker_models import BrokerConnection, TradeFill, SnapTradeUser
 from src.execution.client import AlpacaClient, TradeFillInfo
 
@@ -31,12 +31,6 @@ router = APIRouter(prefix="/api/alpaca", tags=["alpaca"])
 # -----------------------------------------------------------------------------
 # Dependencies
 # -----------------------------------------------------------------------------
-
-def get_db():
-    """Get database session."""
-    with get_db_manager().get_session() as session:
-        yield session
-
 
 def get_alpaca_client():
     """Get Alpaca client instance (paper trading by default)."""
@@ -231,7 +225,7 @@ def sync_alpaca_fills_background(user_id: int) -> None:
         return
 
     try:
-        with get_db_manager().get_session() as db:
+        with session_scope() as db:
             # Check last sync time
             latest_trade = db.query(TradeFill).filter(
                 TradeFill.account_id == user_id,

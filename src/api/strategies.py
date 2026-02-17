@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_trading_repo
 from src.data.database.trading_repository import TradingBuddyRepository
 
 logger = logging.getLogger(__name__)
@@ -90,57 +90,54 @@ def _strategy_to_response(strategy) -> StrategyResponse:
 # -----------------------------------------------------------------------------
 
 @router.get("/strategies", response_model=list[StrategyResponse])
-async def list_strategies(user_id: int = Depends(get_current_user)):
+async def list_strategies(
+    user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
+):
     """List all strategies for the authenticated user."""
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        strategies = repo.get_strategies_for_account(user_id, active_only=False)
-        logger.debug("Listed %d strategies for user_id=%d", len(strategies), user_id)
-        return [_strategy_to_response(s) for s in strategies]
+    strategies = repo.get_strategies_for_account(user_id, active_only=False)
+    logger.debug("Listed %d strategies for user_id=%d", len(strategies), user_id)
+    return [_strategy_to_response(s) for s in strategies]
 
 
 @router.post("/strategies", response_model=StrategyResponse, status_code=201)
 async def create_strategy(
     data: StrategyCreate,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Create a new strategy for the authenticated user."""
     if not data.name.strip():
         raise HTTPException(status_code=400, detail="Strategy name is required")
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-
-        # Check for duplicate name
-        existing = repo.get_strategy_by_name(user_id, data.name.strip())
-        if existing:
-            raise HTTPException(
-                status_code=409,
-                detail=f"Strategy with name '{data.name}' already exists",
-            )
-
-        strategy = repo.create_strategy(
-            account_id=user_id,
-            name=data.name.strip(),
-            description=data.description,
+    # Check for duplicate name
+    existing = repo.get_strategy_by_name(user_id, data.name.strip())
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Strategy with name '{data.name}' already exists",
         )
 
-        # Update extra fields
-        extra_fields = {
-            "direction": data.direction,
-            "timeframes": data.timeframes,
-            "entry_criteria": data.entry_criteria,
-            "exit_criteria": data.exit_criteria,
-            "max_risk_pct": data.max_risk_pct,
-            "min_risk_reward": data.min_risk_reward,
-            "is_active": data.is_active,
-        }
-        repo.update_strategy(strategy.id, **extra_fields)
+    strategy = repo.create_strategy(
+        account_id=user_id,
+        name=data.name.strip(),
+        description=data.description,
+    )
 
-        logger.info("Created strategy id=%s name='%s' for user_id=%d", strategy.id, data.name, user_id)
-        return _strategy_to_response(strategy)
+    # Update extra fields
+    extra_fields = {
+        "direction": data.direction,
+        "timeframes": data.timeframes,
+        "entry_criteria": data.entry_criteria,
+        "exit_criteria": data.exit_criteria,
+        "max_risk_pct": data.max_risk_pct,
+        "min_risk_reward": data.min_risk_reward,
+        "is_active": data.is_active,
+    }
+    repo.update_strategy(strategy.id, **extra_fields)
+
+    logger.info("Created strategy id=%s name='%s' for user_id=%d", strategy.id, data.name, user_id)
+    return _strategy_to_response(strategy)
 
 
 @router.put("/strategies/{strategy_id}", response_model=StrategyResponse)
@@ -148,26 +145,23 @@ async def update_strategy(
     strategy_id: int,
     data: StrategyUpdate,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Update an existing strategy."""
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
+    strategy = repo.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail=f"Strategy {strategy_id} not found")
 
-        strategy = repo.get_strategy(strategy_id)
-        if not strategy:
-            raise HTTPException(status_code=404, detail=f"Strategy {strategy_id} not found")
+    if strategy.account_id != user_id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this strategy")
 
-        if strategy.account_id != user_id:
-            raise HTTPException(status_code=403, detail="Not authorized to update this strategy")
+    updates = data.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
 
-        updates = data.model_dump(exclude_none=True)
-        if not updates:
-            raise HTTPException(status_code=400, detail="No fields to update")
+    updated = repo.update_strategy(strategy_id, **updates)
+    if updated is None:
+        raise HTTPException(status_code=404, detail=f"Strategy {strategy_id} not found")
 
-        updated = repo.update_strategy(strategy_id, **updates)
-        if updated is None:
-            raise HTTPException(status_code=404, detail=f"Strategy {strategy_id} not found")
-
-        logger.info("Updated strategy id=%s fields=%s for user_id=%d", strategy_id, list(updates.keys()), user_id)
-        return _strategy_to_response(updated)
+    logger.info("Updated strategy id=%s fields=%s for user_id=%d", strategy_id, list(updates.keys()), user_id)
+    return _strategy_to_response(updated)

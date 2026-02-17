@@ -7,6 +7,7 @@ from typing import Optional
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
 from src.api._data_helpers import (
@@ -14,7 +15,7 @@ from src.api._data_helpers import (
     load_ohlcv_internal,
     PROJECT_ROOT,
 )
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db
 from src.data.database.market_repository import OHLCVRepository
 from src.data.database.models import VALID_TIMEFRAMES
 from src.features.state.hmm.artifacts import get_model_path, list_models
@@ -65,6 +66,7 @@ class PCAAnalyzeResponse(BaseModel):
 async def analyze_symbol(
     symbol: str,
     timeframe: str = Query("1Min", description="Timeframe to analyze"),
+    db: Session = Depends(get_db),
     _user_id: int = Depends(get_current_user),
 ):
     """Analyze a symbol: compute features, train model if needed, compute states.
@@ -100,7 +102,7 @@ async def analyze_symbol(
     messages = []
 
     try:
-        db_manager = get_db_manager()
+        repo = OHLCVRepository(db)
 
         # Step 0: Ensure OHLCV data is loaded
         logger.info("[Analyze] Step 0: Loading OHLCV data for %s/%s", symbol, timeframe)
@@ -144,132 +146,128 @@ async def analyze_symbol(
 
         if need_training:
             logger.info("[Analyze] Training new model for %s", timeframe)
-            with db_manager.get_session() as session:
-                repo = OHLCVRepository(session)
-                ticker = repo.get_ticker(symbol)
-                if not ticker:
-                    raise HTTPException(status_code=404, detail=f"Ticker {symbol} not found")
+            ticker = repo.get_ticker(symbol)
+            if not ticker:
+                raise HTTPException(status_code=404, detail=f"Ticker {symbol} not found")
 
-                features_df = repo.get_features(symbol, timeframe)
-                if features_df.empty or len(features_df) < 200:
-                    logger.warning("Insufficient features for %s: %d bars available, 200 required", symbol, len(features_df))
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Insufficient data for training. Need at least 200 bars, have {len(features_df)}"
-                    )
-
-                available_features = set(features_df.columns)
-                feature_names = [f for f in DEFAULT_FEATURE_SET if f in available_features]
-                if len(feature_names) < 5:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Insufficient features. Need at least 5 features."
-                    )
-
-                split_idx = int(len(features_df) * 0.8)
-                train_df = features_df.iloc[:split_idx]
-                val_df = features_df.iloc[split_idx:]
-
-                gap_handler = GapHandler(timeframe)
-                train_df = gap_handler.handle_gaps(train_df)
-                val_df = gap_handler.handle_gaps(val_df)
-
-                train_df_clean = train_df[feature_names].dropna()
-                val_df_clean = val_df[feature_names].dropna()
-
-                if len(train_df_clean) < 100 or len(val_df_clean) < 20:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="Insufficient clean data after NaN removal"
-                    )
-
-                config = TrainingConfig(
-                    timeframe=timeframe,
-                    symbols=[symbol],
-                    train_start=train_df_clean.index.min(),
-                    train_end=train_df_clean.index.max(),
-                    val_start=val_df_clean.index.min(),
-                    val_end=val_df_clean.index.max(),
-                    feature_names=feature_names,
-                    scaler_type="robust",
-                    encoder_type="pca",
-                    latent_dim=None,
-                    n_states=None,
-                    covariance_type="diag",
-                    random_seed=42,
+            features_df = repo.get_features(symbol, timeframe)
+            if features_df.empty or len(features_df) < 200:
+                logger.warning("Insufficient features for %s: %d bars available, 200 required", symbol, len(features_df))
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Insufficient data for training. Need at least 200 bars, have {len(features_df)}"
                 )
 
-                pipeline = TrainingPipeline(models_root=models_root, random_seed=42)
-                train_result = pipeline.train(config, train_df_clean, val_df_clean)
-
-                result["model_trained"] = True
-                result["model_id"] = train_result.model_id
-                current_model_id = train_result.model_id
-                messages.append(
-                    f"Trained new model {train_result.model_id} with {train_result.hmm.n_states} states"
+            available_features = set(features_df.columns)
+            feature_names = [f for f in DEFAULT_FEATURE_SET if f in available_features]
+            if len(feature_names) < 5:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Insufficient features. Need at least 5 features."
                 )
+
+            split_idx = int(len(features_df) * 0.8)
+            train_df = features_df.iloc[:split_idx]
+            val_df = features_df.iloc[split_idx:]
+
+            gap_handler = GapHandler(timeframe)
+            train_df = gap_handler.handle_gaps(train_df)
+            val_df = gap_handler.handle_gaps(val_df)
+
+            train_df_clean = train_df[feature_names].dropna()
+            val_df_clean = val_df[feature_names].dropna()
+
+            if len(train_df_clean) < 100 or len(val_df_clean) < 20:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Insufficient clean data after NaN removal"
+                )
+
+            config = TrainingConfig(
+                timeframe=timeframe,
+                symbols=[symbol],
+                train_start=train_df_clean.index.min(),
+                train_end=train_df_clean.index.max(),
+                val_start=val_df_clean.index.min(),
+                val_end=val_df_clean.index.max(),
+                feature_names=feature_names,
+                scaler_type="robust",
+                encoder_type="pca",
+                latent_dim=None,
+                n_states=None,
+                covariance_type="diag",
+                random_seed=42,
+            )
+
+            pipeline = TrainingPipeline(models_root=models_root, random_seed=42)
+            train_result = pipeline.train(config, train_df_clean, val_df_clean)
+
+            result["model_trained"] = True
+            result["model_id"] = train_result.model_id
+            current_model_id = train_result.model_id
+            messages.append(
+                f"Trained new model {train_result.model_id} with {train_result.hmm.n_states} states"
+            )
 
         # Step 3: Compute states
         logger.info("[Analyze] Step 3: Computing states for %s/%s", symbol, timeframe)
         if current_model_id:
-            with db_manager.get_session() as session:
-                repo = OHLCVRepository(session)
-                ticker = repo.get_ticker(symbol)
+            ticker = repo.get_ticker(symbol)
 
-                bars_df = repo.get_bars(symbol, timeframe)
-                result["total_bars"] = len(bars_df)
+            bars_df = repo.get_bars(symbol, timeframe)
+            result["total_bars"] = len(bars_df)
 
-                if bars_df.empty:
-                    messages.append("No bars to process")
-                else:
-                    existing_states = repo.get_states(symbol, timeframe, current_model_id)
-                    existing_timestamps = set(existing_states.index) if not existing_states.empty else set()
+            if bars_df.empty:
+                messages.append("No bars to process")
+            else:
+                existing_states = repo.get_states(symbol, timeframe, current_model_id)
+                existing_timestamps = set(existing_states.index) if not existing_states.empty else set()
 
-                    all_timestamps = set(bars_df.index)
-                    missing_timestamps = all_timestamps - existing_timestamps
+                all_timestamps = set(bars_df.index)
+                missing_timestamps = all_timestamps - existing_timestamps
 
-                    if missing_timestamps:
-                        features_df = repo.get_features(symbol, timeframe)
-                        features_to_process = features_df[features_df.index.isin(missing_timestamps)]
+                if missing_timestamps:
+                    features_df = repo.get_features(symbol, timeframe)
+                    features_to_process = features_df[features_df.index.isin(missing_timestamps)]
 
-                        if not features_to_process.empty:
-                            paths = get_model_path(symbol.upper(), timeframe, current_model_id, models_root)
-                            engine = InferenceEngine.from_artifacts(paths)
-                            metadata = paths.load_metadata()
-                            model_features = metadata.feature_names
+                    if not features_to_process.empty:
+                        paths = get_model_path(symbol.upper(), timeframe, current_model_id, models_root)
+                        engine = InferenceEngine.from_artifacts(paths)
+                        metadata = paths.load_metadata()
+                        model_features = metadata.feature_names
 
-                            bar_id_map = repo.get_bar_ids_for_timestamps(
-                                ticker.id, timeframe, list(features_to_process.index)
-                            )
+                        bar_id_map = repo.get_bar_ids_for_timestamps(
+                            ticker.id, timeframe, list(features_to_process.index)
+                        )
 
-                            state_records = []
-                            engine.reset()
+                        state_records = []
+                        engine.reset()
 
-                            for ts, row in features_to_process.iterrows():
-                                features = {name: row.get(name, np.nan) for name in model_features}
-                                output = engine.process(features, symbol, ts)
+                        for ts, row in features_to_process.iterrows():
+                            features = {name: row.get(name, np.nan) for name in model_features}
+                            output = engine.process(features, symbol, ts)
 
-                                bar_id = bar_id_map.get(ts)
-                                if bar_id:
-                                    state_records.append({
-                                        "bar_id": bar_id,
-                                        "state_id": output.state_id,
-                                        "state_prob": float(output.state_prob),
-                                        "log_likelihood": float(output.log_likelihood)
-                                        if not np.isinf(output.log_likelihood) else None,
-                                    })
+                            bar_id = bar_id_map.get(ts)
+                            if bar_id:
+                                state_records.append({
+                                    "bar_id": bar_id,
+                                    "state_id": output.state_id,
+                                    "state_prob": float(output.state_prob),
+                                    "log_likelihood": float(output.log_likelihood)
+                                    if not np.isinf(output.log_likelihood) else None,
+                                })
 
-                            if state_records:
-                                stored = repo.store_states(state_records, current_model_id)
-                                session.commit()
-                                result["states_computed"] = stored
-                                messages.append(f"Computed {stored} states")
-                            else:
-                                messages.append("No new states to compute")
+                        if state_records:
+                            stored = repo.store_states(state_records, current_model_id)
+                            db.commit()
+                            result["states_computed"] = stored
+                            messages.append(f"Computed {stored} states")
                         else:
-                            messages.append("No features available for missing bars")
+                            messages.append("No new states to compute")
                     else:
-                        messages.append("All bars already have states")
+                        messages.append("No features available for missing bars")
+                else:
+                    messages.append("All bars already have states")
         else:
             messages.append("No model available for state computation")
 
@@ -295,6 +293,7 @@ async def analyze_symbol_pca(
     timeframe: str = Query("1Min", description="Timeframe to analyze"),
     n_components: Optional[int] = Query(None, description="Number of PCA components (auto if not specified)"),
     n_states: Optional[int] = Query(None, description="Number of K-means clusters (auto if not specified)"),
+    db: Session = Depends(get_db),
     _user_id: int = Depends(get_current_user),
 ):
     """Analyze a symbol using PCA + K-means state computation.
@@ -336,7 +335,7 @@ async def analyze_symbol_pca(
     messages = []
 
     try:
-        db_manager = get_db_manager()
+        repo = OHLCVRepository(db)
 
         # Step 0: Ensure OHLCV data is loaded
         logger.info("[PCA Analyze] Step 0: Loading OHLCV data for %s/%s", symbol, timeframe)
@@ -361,18 +360,16 @@ async def analyze_symbol_pca(
             messages.append("Features already computed")
 
         # Step 2: Get features from database
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
-            ticker = repo.get_ticker(symbol)
-            if not ticker:
-                raise HTTPException(status_code=404, detail=f"Ticker {symbol} not found")
+        ticker = repo.get_ticker(symbol)
+        if not ticker:
+            raise HTTPException(status_code=404, detail=f"Ticker {symbol} not found")
 
-            features_df = repo.get_features(symbol, timeframe)
-            if features_df.empty or len(features_df) < 200:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Insufficient data for training. Need at least 200 bars, have {len(features_df)}"
-                )
+        features_df = repo.get_features(symbol, timeframe)
+        if features_df.empty or len(features_df) < 200:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient data for training. Need at least 200 bars, have {len(features_df)}"
+            )
 
         pca_features = [
             "r1", "r5", "r15", "r60",
@@ -434,29 +431,26 @@ async def analyze_symbol_pca(
         trainer.metadata.state_mapping = labels_to_dict(labels)
         trainer.save(model_path)
 
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        bar_id_map = repo.get_bar_ids_for_timestamps(
+            ticker.id, timeframe, list(features_df.index)
+        )
 
-            bar_id_map = repo.get_bar_ids_for_timestamps(
-                ticker.id, timeframe, list(features_df.index)
-            )
+        state_records = []
+        for ts, row in state_df.iterrows():
+            bar_id = bar_id_map.get(ts)
+            if bar_id:
+                state_records.append({
+                    "bar_id": bar_id,
+                    "state_id": int(row["state_id"]),
+                    "state_prob": 1.0 - min(row["distance"] / trainer.metadata.ood_threshold, 1.0),
+                    "log_likelihood": -float(row["distance"]),
+                })
 
-            state_records = []
-            for ts, row in state_df.iterrows():
-                bar_id = bar_id_map.get(ts)
-                if bar_id:
-                    state_records.append({
-                        "bar_id": bar_id,
-                        "state_id": int(row["state_id"]),
-                        "state_prob": 1.0 - min(row["distance"] / trainer.metadata.ood_threshold, 1.0),
-                        "log_likelihood": -float(row["distance"]),
-                    })
-
-            if state_records:
-                stored_count = repo.store_states(state_records, f"pca_{model_id}")
-                session.commit()
-                result["states_computed"] = stored_count
-                messages.append(f"Computed {stored_count} states")
+        if state_records:
+            stored_count = repo.store_states(state_records, f"pca_{model_id}")
+            db.commit()
+            result["states_computed"] = stored_count
+            messages.append(f"Computed {stored_count} states")
 
         result["message"] = "; ".join(messages)
         logger.info("[PCA Analyze] Complete: %s", result["message"])

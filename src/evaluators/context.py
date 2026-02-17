@@ -101,10 +101,30 @@ class MarketDataReader(Protocol):
 class RepositoryMarketDataReader:
     """Default ``MarketDataReader`` backed by ``OHLCVRepository``.
 
-    Creates a short-lived DB session per call via ``get_db_manager()``.
-    This preserves the original behaviour of ``ContextPackBuilder``
-    which opened a session inside ``build()``.
+    When constructed with a ``session``, reuses that single session for
+    all method calls (avoiding 3 separate sessions per ``build()``).
+    When no session is provided, creates a short-lived session per call
+    for backward compatibility.
     """
+
+    def __init__(self, session=None):
+        self._session = session
+        self._repo = None
+        if session is not None:
+            from src.data.database.market_repository import OHLCVRepository
+            self._repo = OHLCVRepository(session)
+
+    def _get_repo(self):
+        """Get the OHLCVRepository, creating a temporary session if needed."""
+        if self._repo is not None:
+            return self._repo, None
+
+        from src.data.database.dependencies import session_scope
+        from src.data.database.market_repository import OHLCVRepository
+
+        ctx = session_scope()
+        session = ctx.__enter__()
+        return OHLCVRepository(session), ctx
 
     def get_bars(
         self,
@@ -114,13 +134,12 @@ class RepositoryMarketDataReader:
         end: Optional[datetime] = None,
         limit: Optional[int] = None,
     ) -> pd.DataFrame:
-        from src.data.database.connection import get_db_manager
-        from src.data.database.market_repository import OHLCVRepository
-
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        repo, ctx = self._get_repo()
+        try:
             return repo.get_bars(symbol, timeframe, start=start, end=end, limit=limit)
+        finally:
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
 
     def get_features(
         self,
@@ -129,26 +148,24 @@ class RepositoryMarketDataReader:
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
     ) -> pd.DataFrame:
-        from src.data.database.connection import get_db_manager
-        from src.data.database.market_repository import OHLCVRepository
-
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        repo, ctx = self._get_repo()
+        try:
             return repo.get_features(symbol, timeframe, start=start, end=end)
+        finally:
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
 
     def get_latest_states(
         self,
         symbol: str,
         timeframe: str,
     ) -> pd.DataFrame:
-        from src.data.database.connection import get_db_manager
-        from src.data.database.market_repository import OHLCVRepository
-
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        repo, ctx = self._get_repo()
+        try:
             return repo.get_latest_states(symbol, timeframe)
+        finally:
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
 
 
 @dataclass

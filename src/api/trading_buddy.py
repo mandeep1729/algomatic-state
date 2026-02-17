@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from src.api.auth_middleware import get_current_user
 
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_trading_repo
 from src.data.database.trading_repository import TradingBuddyRepository
 from src.trade.intent import (
     TradeDirection,
@@ -223,6 +223,7 @@ def _build_evaluation_response(result) -> EvaluationResponse:
 async def evaluate_trade_intent(
     request: EvaluateRequest,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Evaluate a trade intent against all configured evaluators.
 
@@ -247,15 +248,11 @@ async def evaluate_trade_intent(
         intent.status = TradeIntentStatus.PENDING_EVALUATION
 
         # Load user-specific evaluator configs
-        db_manager = get_db_manager()
-        evaluator_configs = {}
-        with db_manager.get_session() as session:
-            repo = TradingBuddyRepository(session)
-            evaluator_configs = repo.build_evaluator_configs(account_id)
-            logger.debug(
-                "Loaded evaluator configs for account %d: %d configs",
-                account_id, len(evaluator_configs),
-            )
+        evaluator_configs = repo.build_evaluator_configs(account_id)
+        logger.debug(
+            "Loaded evaluator configs for account %d: %d configs",
+            account_id, len(evaluator_configs),
+        )
 
         # Build context
         context_builder = ContextPackBuilder(ensure_fresh_data=True)

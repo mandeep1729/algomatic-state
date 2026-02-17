@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db
 from src.data.database.trading_repository import TradingBuddyRepository
 from src.data.database.broker_models import TradeFill
 from src.data.database.trade_lifecycle_models import (
@@ -33,16 +33,6 @@ from src.data.database.strategy_models import Strategy
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
-
-
-# -----------------------------------------------------------------------------
-# Dependencies
-# -----------------------------------------------------------------------------
-
-def get_db():
-    """Get database session."""
-    with get_db_manager().get_session() as session:
-        yield session
 
 
 # -----------------------------------------------------------------------------
@@ -345,27 +335,42 @@ def _derive_leg_type(
     return "reduce"
 
 
-def _get_fill_strategy_name(fill: TradeFill, db: Session) -> Optional[str]:
-    """Get strategy name from a fill's decision context."""
-    ctx = db.query(DecisionContext).filter(
-        DecisionContext.fill_id == fill.id
-    ).first()
-    if ctx and ctx.strategy_id:
-        strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
-        if strategy:
-            return strategy.name
-    return None
+def _batch_load_fill_data(
+    fills: list[TradeFill],
+    repo: TradingBuddyRepository,
+) -> tuple[dict, dict]:
+    """Batch-load decision contexts and strategies for a list of fills.
+
+    Returns:
+        Tuple of (contexts_by_fill_id, strategies_by_id)
+    """
+    fill_ids = [f.id for f in fills]
+    contexts_map = repo.get_decision_contexts_for_fills(fill_ids)
+
+    strategy_ids = list({
+        dc.strategy_id for dc in contexts_map.values()
+        if dc.strategy_id is not None
+    })
+    strategies_map = repo.get_strategies_by_ids(strategy_ids)
+
+    return contexts_map, strategies_map
 
 
-def _get_campaign_strategies(fills: list[TradeFill], db: Session) -> list[str]:
-    """Get unique strategy names from all fills' decision contexts."""
+def _get_campaign_strategies(
+    fills: list[TradeFill],
+    contexts_map: dict,
+    strategies_map: dict,
+) -> list[str]:
+    """Get unique strategy names from pre-loaded data (no DB queries)."""
     strategies: list[str] = []
     seen: set = set()
     for fill in fills:
-        name = _get_fill_strategy_name(fill, db)
-        if name and name not in seen:
-            seen.add(name)
-            strategies.append(name)
+        ctx = contexts_map.get(fill.id)
+        if ctx and ctx.strategy_id:
+            strategy = strategies_map.get(ctx.strategy_id)
+            if strategy and strategy.name not in seen:
+                seen.add(strategy.name)
+                strategies.append(strategy.name)
     return strategies
 
 
@@ -374,10 +379,17 @@ def _fill_to_leg_response(
     group_id: int,
     direction: str,
     leg_type: str,
-    db: Session,
+    contexts_map: dict,
+    strategies_map: dict,
 ) -> LegResponse:
-    """Convert a TradeFill to LegResponse for the frontend."""
-    strategy_name = _get_fill_strategy_name(fill, db)
+    """Convert a TradeFill to LegResponse using pre-loaded data."""
+    strategy_name = None
+    ctx = contexts_map.get(fill.id)
+    if ctx and ctx.strategy_id:
+        strategy = strategies_map.get(ctx.strategy_id)
+        if strategy:
+            strategy_name = strategy.name
+
     order_ids = [fill.order_id] if fill.order_id else []
 
     return LegResponse(
@@ -399,59 +411,63 @@ def _fill_to_leg_response(
 def _build_contexts_by_leg(
     fills: list[TradeFill],
     group_id: int,
-    db: Session,
+    contexts_map: dict,
+    strategies_map: dict,
 ) -> dict:
-    """Build contextsByLeg dict mapping legId (fillId) to DecisionContext."""
+    """Build contextsByLeg dict using pre-loaded data (no DB queries)."""
     result = {}
     for fill in fills:
-        ctx = db.query(DecisionContext).filter(
-            DecisionContext.fill_id == fill.id
-        ).first()
-        if ctx:
-            strategy_name = None
-            if ctx.strategy_id:
-                strategy = db.query(Strategy).filter(Strategy.id == ctx.strategy_id).first()
-                if strategy:
-                    strategy_name = strategy.name
-
-            exit_intent = ctx.exit_intent
-            if isinstance(exit_intent, dict):
-                exit_intent = exit_intent.get("type", "unknown")
-
-            result[str(fill.id)] = ContextResponse(
-                contextId=str(ctx.id),
-                scope="leg",
-                campaignId=str(group_id),
-                legId=str(fill.id),
-                contextType=ctx.context_type,
-                strategyTags=[strategy_name] if strategy_name else [],
-                hypothesis=ctx.hypothesis,
-                exitIntent=exit_intent if isinstance(exit_intent, str) else None,
-                feelingsThen=ctx.feelings_then,
-                feelingsNow=ctx.feelings_now,
-                notes=ctx.notes,
-                updatedAt=_format_dt(ctx.updated_at),
-            ).model_dump()
-    return result
-
-
-def _build_checks_by_leg(fills: list[TradeFill], db: Session) -> dict:
-    """Build checksByLeg dict mapping legId (fillId) to CampaignCheck list."""
-    result = {}
-    for fill in fills:
-        ctx = db.query(DecisionContext).filter(
-            DecisionContext.fill_id == fill.id
-        ).first()
+        ctx = contexts_map.get(fill.id)
         if not ctx:
             continue
 
-        checks = (
-            db.query(CampaignCheck)
-            .filter(CampaignCheck.decision_context_id == ctx.id)
-            .order_by(CampaignCheck.checked_at.asc())
-            .all()
-        )
+        strategy_name = None
+        if ctx.strategy_id:
+            strategy = strategies_map.get(ctx.strategy_id)
+            if strategy:
+                strategy_name = strategy.name
 
+        exit_intent = ctx.exit_intent
+        if isinstance(exit_intent, dict):
+            exit_intent = exit_intent.get("type", "unknown")
+
+        result[str(fill.id)] = ContextResponse(
+            contextId=str(ctx.id),
+            scope="leg",
+            campaignId=str(group_id),
+            legId=str(fill.id),
+            contextType=ctx.context_type,
+            strategyTags=[strategy_name] if strategy_name else [],
+            hypothesis=ctx.hypothesis,
+            exitIntent=exit_intent if isinstance(exit_intent, str) else None,
+            feelingsThen=ctx.feelings_then,
+            feelingsNow=ctx.feelings_now,
+            notes=ctx.notes,
+            updatedAt=_format_dt(ctx.updated_at),
+        ).model_dump()
+    return result
+
+
+def _build_checks_by_leg(
+    fills: list[TradeFill],
+    contexts_map: dict,
+    repo: TradingBuddyRepository,
+) -> dict:
+    """Build checksByLeg dict using batch-loaded checks."""
+    context_ids = [
+        contexts_map[f.id].id
+        for f in fills
+        if f.id in contexts_map
+    ]
+    checks_map = repo.get_checks_for_contexts(context_ids)
+
+    result = {}
+    for fill in fills:
+        ctx = contexts_map.get(fill.id)
+        if not ctx:
+            continue
+
+        checks = checks_map.get(ctx.id, [])
         if checks:
             result[str(fill.id)] = [
                 CheckResponse(
@@ -807,7 +823,8 @@ async def list_campaigns(
         group_id = campaign["group_id"]
         fills = repo.get_campaign_fills(group_id)
         agg = _compute_campaign_aggregates(fills)
-        strategies = _get_campaign_strategies(fills, db)
+        contexts_map, strategies_map = _batch_load_fill_data(fills, repo)
+        strategies = _get_campaign_strategies(fills, contexts_map, strategies_map)
 
         result.append(CampaignSummaryResponse(
             campaignId=str(group_id),
@@ -846,6 +863,7 @@ async def get_campaign_detail(
 
     fills = repo.get_campaign_fills(group_id)
     agg = _compute_campaign_aggregates(fills)
+    contexts_map, strategies_map = _batch_load_fill_data(fills, repo)
 
     # Build legs from fills
     legs = []
@@ -858,7 +876,10 @@ async def get_campaign_detail(
             net_qty -= fill.quantity
 
         leg_type = _derive_leg_type(fill, idx, net_qty, net_qty_before)
-        leg = _fill_to_leg_response(fill, group_id, agg["direction"], leg_type, db)
+        leg = _fill_to_leg_response(
+            fill, group_id, agg["direction"], leg_type,
+            contexts_map, strategies_map,
+        )
         legs.append(leg)
 
     # Build campaign metadata
@@ -877,8 +898,8 @@ async def get_campaign_detail(
     )
 
     # Build contexts and checks grouped by legId (fillId)
-    contexts_by_leg = _build_contexts_by_leg(fills, group_id, db)
-    checks_by_leg = _build_checks_by_leg(fills, db)
+    contexts_by_leg = _build_contexts_by_leg(fills, group_id, contexts_map, strategies_map)
+    checks_by_leg = _build_checks_by_leg(fills, contexts_map, repo)
 
     return CampaignDetailResponse(
         campaign=campaign_meta,

@@ -7,9 +7,7 @@ Provides:
 """
 
 import logging
-from contextlib import contextmanager
 from typing import Generator
-from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -144,10 +142,11 @@ def client(db_session: Session) -> TestClient:
     """Create a FastAPI TestClient with dependency overrides.
 
     - get_current_user always returns TEST_USER_ID
-    - get_db_manager returns a mock that yields *db_session*
-    - journal/broker/campaigns get_db also yields *db_session*
+    - All DB dependencies (get_db, get_trading_repo, get_market_repo) use db_session
     """
     from src.api.auth_middleware import get_current_user
+    from src.data.database.dependencies import get_db, get_trading_repo, get_market_repo
+    from src.data.database.trading_repository import TradingBuddyRepository
 
     # Build a minimal FastAPI app with only the routers under test
     from fastapi import FastAPI
@@ -170,36 +169,14 @@ def client(db_session: Session) -> TestClient:
     def override_get_current_user():
         return TEST_USER_ID
 
-    # Create a mock DatabaseManager whose get_session yields our test session
-    mock_db_manager = MagicMock()
-
-    @contextmanager
-    def _mock_get_session():
-        yield db_session
-
-    mock_db_manager.get_session = _mock_get_session
-
-    def override_get_db_manager():
-        return mock_db_manager
-
-    # Override for routers that use their own get_db dependency
     def override_get_db():
         yield db_session
 
+    def override_get_trading_repo():
+        yield TradingBuddyRepository(db_session)
+
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_trading_repo] = override_get_trading_repo
 
-    # Patch get_db_manager at the module level for all routers that import it
-    with patch("src.api.user_profile.get_db_manager", override_get_db_manager), \
-         patch("src.api.strategies.get_db_manager", override_get_db_manager), \
-         patch("src.api.campaigns.get_db_manager", override_get_db_manager):
-
-        # Override get_db used by journal and broker routers
-        from src.api.journal import get_db as journal_get_db
-        from src.api.broker import get_db as broker_get_db
-        from src.api.campaigns import get_db as campaigns_get_db
-
-        app.dependency_overrides[journal_get_db] = override_get_db
-        app.dependency_overrides[broker_get_db] = override_get_db
-        app.dependency_overrides[campaigns_get_db] = override_get_db
-
-        yield TestClient(app)
+    yield TestClient(app)

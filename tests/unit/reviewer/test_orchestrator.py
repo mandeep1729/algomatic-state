@@ -1,6 +1,7 @@
 """Unit tests for ReviewerOrchestrator event handling."""
 
-from unittest.mock import MagicMock, patch, call
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -111,8 +112,8 @@ class TestRunChecksForFill:
     """Tests for _run_checks_for_fill with mocked DB."""
 
     @patch("config.settings.get_settings")
-    @patch("src.data.database.connection.get_db_manager")
-    def test_publishes_review_complete_on_success(self, mock_db_mgr, mock_settings, bus):
+    @patch("src.data.database.dependencies.session_scope")
+    def test_publishes_review_complete_on_success(self, mock_session_scope, mock_settings, bus):
         """Verify REVIEW_COMPLETE event is published after successful checks."""
         # Setup settings mock
         settings = MagicMock()
@@ -120,7 +121,7 @@ class TestRunChecksForFill:
         settings.checks = MagicMock()
         mock_settings.return_value = settings
 
-        # Setup DB mock
+        # Setup DB mock via session_scope context manager
         mock_session = MagicMock()
 
         # Mock DecisionContext query
@@ -138,10 +139,11 @@ class TestRunChecksForFill:
             mock_fill,  # TradeFill query
         ]
 
-        ctx_manager = MagicMock()
-        ctx_manager.__enter__ = MagicMock(return_value=mock_session)
-        ctx_manager.__exit__ = MagicMock(return_value=False)
-        mock_db_mgr.return_value.get_session.return_value = ctx_manager
+        @contextmanager
+        def _mock_scope():
+            yield mock_session
+
+        mock_session_scope.side_effect = _mock_scope
 
         # Mock CheckRunner
         with patch("src.reviewer.checks.runner.CheckRunner") as mock_runner_cls:
@@ -167,8 +169,8 @@ class TestRunChecksForFill:
             assert evt.payload["failed"] == 0
 
     @patch("config.settings.get_settings")
-    @patch("src.data.database.connection.get_db_manager")
-    def test_skips_when_disabled(self, mock_db_mgr, mock_settings, bus):
+    @patch("src.data.database.dependencies.session_scope")
+    def test_skips_when_disabled(self, mock_session_scope, mock_settings, bus):
         """Reviewer checks are skipped when reviewer.enabled=False."""
         settings = MagicMock()
         settings.reviewer.enabled = False
@@ -179,17 +181,17 @@ class TestRunChecksForFill:
         orch._run_checks_for_fill(42, "test-corr-id")
         orch.stop()
 
-        mock_db_mgr.return_value.get_session.assert_not_called()
+        mock_session_scope.assert_not_called()
 
     @patch("config.settings.get_settings")
-    @patch("src.data.database.connection.get_db_manager")
-    def test_publishes_review_failed_on_error(self, mock_db_mgr, mock_settings, bus):
+    @patch("src.data.database.dependencies.session_scope")
+    def test_publishes_review_failed_on_error(self, mock_session_scope, mock_settings, bus):
         """REVIEW_FAILED event is published when checks raise."""
         settings = MagicMock()
         settings.reviewer.enabled = True
         mock_settings.return_value = settings
 
-        mock_db_mgr.return_value.get_session.side_effect = RuntimeError("DB down")
+        mock_session_scope.side_effect = RuntimeError("DB down")
 
         events_published = []
         bus.subscribe(EventType.REVIEW_FAILED, lambda e: events_published.append(e))

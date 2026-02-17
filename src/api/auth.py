@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from config.settings import get_settings
 from src.api.auth_middleware import get_current_user
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_trading_repo
 from src.data.database.trading_repository import TradingBuddyRepository
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,10 @@ def _create_access_token(user_id: int) -> str:
 # ---- Endpoints ----
 
 @router.post("/google", response_model=AuthResponse)
-async def google_login(request: GoogleLoginRequest):
+async def google_login(
+    request: GoogleLoginRequest,
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
+):
     """Authenticate with Google ID token.
 
     Verifies the Google ID token, finds or creates the user account,
@@ -114,60 +117,56 @@ async def google_login(request: GoogleLoginRequest):
 
     logger.info(f"Google login for email={email}, google_id={google_id}")
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
+    # Find existing user by google_id or email
+    account = repo.get_account_by_google_id(google_id)
+    if account is None:
+        account = repo.get_account_by_email(email)
 
-        # Find existing user by google_id or email
-        account = repo.get_account_by_google_id(google_id)
-        if account is None:
-            account = repo.get_account_by_email(email)
+    if account is None:
+        # New user — check waitlist approval (skip in dev mode)
+        if not settings.auth.dev_mode:
+            if not repo.is_email_approved(email):
+                # Auto-add to waitlist so they don't have to fill the form
+                repo.get_or_create_waitlist_entry(name=name, email=email)
+                logger.info("Blocked unapproved login: email=%s", email)
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Your account is pending approval. We'll notify you when access is granted.",
+                )
 
-        if account is None:
-            # New user — check waitlist approval (skip in dev mode)
-            if not settings.auth.dev_mode:
-                if not repo.is_email_approved(email):
-                    # Auto-add to waitlist so they don't have to fill the form
-                    repo.get_or_create_waitlist_entry(name=name, email=email)
-                    logger.info("Blocked unapproved login: email=%s", email)
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Your account is pending approval. We'll notify you when access is granted.",
-                    )
+        # Approved — create new account
+        account = repo.create_account(
+            external_user_id=f"google_{google_id}",
+            name=name,
+            email=email,
+            google_id=google_id,
+            auth_provider="google",
+            profile_picture_url=picture,
+        )
+        # Create default profile
+        repo.create_profile(account.id)
+        logger.info(f"Created new account id={account.id} for {email}")
+    else:
+        # Update existing account with latest Google info
+        if not account.google_id:
+            account.google_id = google_id
+        account.name = name
+        account.profile_picture_url = picture
+        repo.session.flush()
 
-            # Approved — create new account
-            account = repo.create_account(
-                external_user_id=f"google_{google_id}",
-                name=name,
-                email=email,
-                google_id=google_id,
-                auth_provider="google",
-                profile_picture_url=picture,
-            )
-            # Create default profile
-            repo.create_profile(account.id)
-            logger.info(f"Created new account id={account.id} for {email}")
-        else:
-            # Update existing account with latest Google info
-            if not account.google_id:
-                account.google_id = google_id
-            account.name = name
-            account.profile_picture_url = picture
-            session.flush()
+        # Ensure profile exists
+        repo.get_or_create_profile(account.id)
 
-            # Ensure profile exists
-            repo.get_or_create_profile(account.id)
+    # Generate JWT
+    access_token = _create_access_token(account.id)
 
-        # Generate JWT
-        access_token = _create_access_token(account.id)
-
-        user_data = {
-            "id": account.id,
-            "name": account.name,
-            "email": account.email,
-            "profile_picture_url": account.profile_picture_url,
-            "auth_provider": account.auth_provider,
-        }
+    user_data = {
+        "id": account.id,
+        "name": account.name,
+        "email": account.email,
+        "profile_picture_url": account.profile_picture_url,
+        "auth_provider": account.auth_provider,
+    }
 
     return AuthResponse(access_token=access_token, user=user_data)
 
@@ -176,6 +175,7 @@ async def google_login(request: GoogleLoginRequest):
 async def get_me(
     background_tasks: BackgroundTasks,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Return the current authenticated user's info.
 
@@ -186,23 +186,20 @@ async def get_me(
     # Import here to avoid circular dependency
     from src.api.alpaca import sync_alpaca_fills_background
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        account = repo.get_account(user_id)
-        if account is None:
-            raise HTTPException(status_code=404, detail="User not found")
+    account = repo.get_account(user_id)
+    if account is None:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        user_response = UserResponse(
-            id=account.id,
-            name=account.name,
-            email=account.email,
-            profile_picture_url=account.profile_picture_url,
-            google_id=account.google_id,
-            auth_provider=account.auth_provider,
-            is_active=account.is_active,
-            created_at=account.created_at.isoformat(),
-        )
+    user_response = UserResponse(
+        id=account.id,
+        name=account.name,
+        email=account.email,
+        profile_picture_url=account.profile_picture_url,
+        google_id=account.google_id,
+        auth_provider=account.auth_provider,
+        is_active=account.is_active,
+        created_at=account.created_at.isoformat(),
+    )
 
     # Trigger background sync of Alpaca trade fills
     background_tasks.add_task(sync_alpaca_fills_background, user_id)

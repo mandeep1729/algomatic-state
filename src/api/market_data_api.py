@@ -16,10 +16,10 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_market_repo
 from src.data.database.market_repository import OHLCVRepository
 from src.data.database.models import VALID_TIMEFRAMES
 
@@ -363,6 +363,7 @@ async def get_marketdata(
     end: Optional[str] = Query(None, description="End timestamp (ISO-8601)"),
     lookback: Optional[str] = Query(None, description="Relative lookback (e.g. 4w, 1month, 30d)"),
     last_n_bars: Optional[int] = Query(None, description="Number of most recent bars to fetch"),
+    repo: OHLCVRepository = Depends(get_market_repo),
 ) -> MarketDataResponse:
     """Return OHLCV bars for a symbol/timeframe with flexible time queries.
 
@@ -383,22 +384,18 @@ async def get_marketdata(
         symbol, timeframe, start_dt, end_dt, bar_limit,
     )
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = OHLCVRepository(session)
+    ticker = repo.get_ticker(symbol)
+    if ticker is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Symbol '{symbol.upper()}' not found",
+        )
 
-        ticker = repo.get_ticker(symbol)
-        if ticker is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Symbol '{symbol.upper()}' not found",
-            )
-
-        if bar_limit is not None:
-            # Fetch last N bars: query descending then reverse
-            df = repo.get_bars(symbol, timeframe, limit=bar_limit)
-        else:
-            df = repo.get_bars(symbol, timeframe, start=start_dt, end=end_dt)
+    if bar_limit is not None:
+        # Fetch last N bars: query descending then reverse
+        df = repo.get_bars(symbol, timeframe, limit=bar_limit)
+    else:
+        df = repo.get_bars(symbol, timeframe, start=start_dt, end=end_dt)
 
     if df.empty:
         raise HTTPException(
@@ -432,6 +429,7 @@ async def get_indicators(
     lookback: Optional[str] = Query(None, description="Relative lookback (e.g. 4w, 1month, 30d)"),
     last_n_bars: Optional[int] = Query(None, description="Number of most recent indicator rows"),
     indicators: Optional[str] = Query(None, description="Comma-separated indicator subset (e.g. atr_14,sma_20,rsi_14)"),
+    repo: OHLCVRepository = Depends(get_market_repo),
 ) -> IndicatorsResponse:
     """Return computed indicator values for a symbol/timeframe with flexible time queries.
 
@@ -455,18 +453,14 @@ async def get_indicators(
         symbol, timeframe, start_dt, end_dt, bar_limit,
     )
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = OHLCVRepository(session)
+    ticker = repo.get_ticker(symbol)
+    if ticker is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Symbol '{symbol.upper()}' not found",
+        )
 
-        ticker = repo.get_ticker(symbol)
-        if ticker is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Symbol '{symbol.upper()}' not found",
-            )
-
-        features_df = repo.get_features(symbol, timeframe, start=start_dt, end=end_dt)
+    features_df = repo.get_features(symbol, timeframe, start=start_dt, end=end_dt)
 
     if features_df.empty:
         raise HTTPException(
@@ -515,6 +509,7 @@ async def get_marketdata_and_indicators(
     lookback: Optional[str] = Query(None, description="Relative lookback (e.g. 4w, 1month, 30d)"),
     last_n_bars: Optional[int] = Query(None, description="Number of most recent bars/rows"),
     indicators: Optional[str] = Query(None, description="Comma-separated indicator subset"),
+    repo: OHLCVRepository = Depends(get_market_repo),
 ) -> CombinedResponse:
     """Return both OHLCV bars and indicators aligned by timestamp.
 
@@ -536,23 +531,19 @@ async def get_marketdata_and_indicators(
         symbol, timeframe, start_dt, end_dt, bar_limit,
     )
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = OHLCVRepository(session)
+    ticker = repo.get_ticker(symbol)
+    if ticker is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Symbol '{symbol.upper()}' not found",
+        )
 
-        ticker = repo.get_ticker(symbol)
-        if ticker is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Symbol '{symbol.upper()}' not found",
-            )
-
-        if bar_limit is not None:
-            bars_df = repo.get_bars(symbol, timeframe, limit=bar_limit)
-            features_df = repo.get_features(symbol, timeframe)
-        else:
-            bars_df = repo.get_bars(symbol, timeframe, start=start_dt, end=end_dt)
-            features_df = repo.get_features(symbol, timeframe, start=start_dt, end=end_dt)
+    if bar_limit is not None:
+        bars_df = repo.get_bars(symbol, timeframe, limit=bar_limit)
+        features_df = repo.get_features(symbol, timeframe)
+    else:
+        bars_df = repo.get_bars(symbol, timeframe, start=start_dt, end=end_dt)
+        features_df = repo.get_features(symbol, timeframe, start=start_dt, end=end_dt)
 
     if bars_df.empty:
         raise HTTPException(

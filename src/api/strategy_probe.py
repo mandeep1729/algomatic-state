@@ -19,22 +19,12 @@ from sqlalchemy import case, func, extract
 from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db
 from src.data.database.probe_models import ProbeStrategy, StrategyProbeResult
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/strategy-probe", tags=["strategy-probe"])
-
-
-# -----------------------------------------------------------------------------
-# Dependencies
-# -----------------------------------------------------------------------------
-
-def get_db():
-    """Get database session."""
-    with get_db_manager().get_session() as session:
-        yield session
 
 
 # -----------------------------------------------------------------------------

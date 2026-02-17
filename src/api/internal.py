@@ -15,13 +15,15 @@ Endpoints:
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import distinct
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db
 from src.data.database.broker_models import TradeFill
 from src.data.database.trade_lifecycle_models import DecisionContext
 from src.data.database.trading_buddy_models import UserProfile
@@ -88,6 +90,7 @@ async def get_fills_with_context(
     account_id: int,
     lookback_days: int = Query(default=90, ge=1, le=365),
     symbol: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
 ):
     """Get fills with decision contexts for an account within a lookback window.
 
@@ -97,46 +100,45 @@ async def get_fills_with_context(
     cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
 
     try:
-        with get_db_manager().get_session() as session:
-            query = (
-                session.query(TradeFill, DecisionContext, Strategy.name.label("strategy_name"))
-                .outerjoin(DecisionContext, DecisionContext.fill_id == TradeFill.id)
-                .outerjoin(Strategy, Strategy.id == DecisionContext.strategy_id)
-                .filter(
-                    TradeFill.account_id == account_id,
-                    TradeFill.executed_at >= cutoff,
-                )
+        query = (
+            db.query(TradeFill, DecisionContext, Strategy.name.label("strategy_name"))
+            .outerjoin(DecisionContext, DecisionContext.fill_id == TradeFill.id)
+            .outerjoin(Strategy, Strategy.id == DecisionContext.strategy_id)
+            .filter(
+                TradeFill.account_id == account_id,
+                TradeFill.executed_at >= cutoff,
             )
+        )
 
-            if symbol:
-                query = query.filter(TradeFill.symbol == symbol.upper())
+        if symbol:
+            query = query.filter(TradeFill.symbol == symbol.upper())
 
-            query = query.order_by(TradeFill.executed_at.asc())
-            rows = query.all()
+        query = query.order_by(TradeFill.executed_at.asc())
+        rows = query.all()
 
-            fills = []
-            for fill, dc, strategy_name in rows:
-                # Extract timeframe from exit_intent if available
-                timeframe = None
-                if dc and dc.exit_intent and isinstance(dc.exit_intent, dict):
-                    timeframe = dc.exit_intent.get("timeframe")
+        fills = []
+        for fill, dc, strategy_name in rows:
+            # Extract timeframe from exit_intent if available
+            timeframe = None
+            if dc and dc.exit_intent and isinstance(dc.exit_intent, dict):
+                timeframe = dc.exit_intent.get("timeframe")
 
-                fills.append(FillWithContext(
-                    fill_id=fill.id,
-                    account_id=fill.account_id or account_id,
-                    symbol=fill.symbol,
-                    side=fill.side,
-                    quantity=fill.quantity,
-                    price=fill.price,
-                    fees=fill.fees,
-                    executed_at=fill.executed_at.isoformat(),
-                    context_type=dc.context_type if dc else None,
-                    strategy_id=dc.strategy_id if dc else None,
-                    strategy_name=strategy_name,
-                    hypothesis=dc.hypothesis if dc else None,
-                    exit_intent=dc.exit_intent if dc else None,
-                    timeframe=timeframe,
-                ))
+            fills.append(FillWithContext(
+                fill_id=fill.id,
+                account_id=fill.account_id or account_id,
+                symbol=fill.symbol,
+                side=fill.side,
+                quantity=fill.quantity,
+                price=fill.price,
+                fees=fill.fees,
+                executed_at=fill.executed_at.isoformat(),
+                context_type=dc.context_type if dc else None,
+                strategy_id=dc.strategy_id if dc else None,
+                strategy_name=strategy_name,
+                hypothesis=dc.hypothesis if dc else None,
+                exit_intent=dc.exit_intent if dc else None,
+                timeframe=timeframe,
+            ))
 
         logger.info(
             "Returned %d fills for account_id=%s (lookback=%d days)",
@@ -150,27 +152,29 @@ async def get_fills_with_context(
 
 
 @router.get("/accounts/{account_id}/profile", response_model=ProfileResponse)
-async def get_account_profile(account_id: int):
+async def get_account_profile(
+    account_id: int,
+    db: Session = Depends(get_db),
+):
     """Get user profile including account_balance, risk settings, and stats."""
     try:
-        with get_db_manager().get_session() as session:
-            profile = session.query(UserProfile).filter(
-                UserProfile.user_account_id == account_id,
-            ).first()
+        profile = db.query(UserProfile).filter(
+            UserProfile.user_account_id == account_id,
+        ).first()
 
-            if profile is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No profile found for account_id={account_id}",
-                )
-
-            return ProfileResponse(
-                account_id=account_id,
-                account_balance=profile.account_balance,
-                risk_profile=profile.risk_profile or {},
-                profile=profile.profile or {},
-                stats=profile.stats,
+        if profile is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No profile found for account_id={account_id}",
             )
+
+        return ProfileResponse(
+            account_id=account_id,
+            account_balance=profile.account_balance,
+            risk_profile=profile.risk_profile or {},
+            profile=profile.profile or {},
+            stats=profile.stats,
+        )
 
     except HTTPException:
         raise
@@ -180,25 +184,26 @@ async def get_account_profile(account_id: int):
 
 
 @router.put("/accounts/{account_id}/baseline-stats")
-async def save_baseline_stats(account_id: int, request: BaselineStatsRequest):
+async def save_baseline_stats(
+    account_id: int,
+    request: BaselineStatsRequest,
+    db: Session = Depends(get_db),
+):
     """Save computed baseline stats to user_profiles.stats JSONB column."""
     try:
-        with get_db_manager().get_session() as session:
-            profile = session.query(UserProfile).filter(
-                UserProfile.user_account_id == account_id,
-            ).first()
+        profile = db.query(UserProfile).filter(
+            UserProfile.user_account_id == account_id,
+        ).first()
 
-            if profile is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No profile found for account_id={account_id}",
-                )
+        if profile is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No profile found for account_id={account_id}",
+            )
 
-            profile.stats = request.stats
-
-            from sqlalchemy.orm.attributes import flag_modified
-            flag_modified(profile, "stats")
-            session.flush()
+        profile.stats = request.stats
+        flag_modified(profile, "stats")
+        db.flush()
 
         logger.info(
             "Saved baseline stats for account_id=%s (%d keys)",
@@ -214,31 +219,33 @@ async def save_baseline_stats(account_id: int, request: BaselineStatsRequest):
 
 
 @router.put("/fills/{fill_id}/inferred-context")
-async def save_inferred_context(fill_id: int, request: InferredContextRequest):
+async def save_inferred_context(
+    fill_id: int,
+    request: InferredContextRequest,
+    db: Session = Depends(get_db),
+):
     """Merge entry quality results into decision_contexts.inferred_context JSONB.
 
     Performs a shallow merge: existing keys in inferred_context are preserved,
     new keys from the request are added/overwritten.
     """
     try:
-        with get_db_manager().get_session() as session:
-            dc = session.query(DecisionContext).filter(
-                DecisionContext.fill_id == fill_id,
-            ).first()
+        dc = db.query(DecisionContext).filter(
+            DecisionContext.fill_id == fill_id,
+        ).first()
 
-            if dc is None:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No DecisionContext for fill_id={fill_id}",
-                )
+        if dc is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No DecisionContext for fill_id={fill_id}",
+            )
 
-            existing = dc.inferred_context or {}
-            merged = {**existing, **request.inferred_context}
-            dc.inferred_context = merged
+        existing = dc.inferred_context or {}
+        merged = {**existing, **request.inferred_context}
+        dc.inferred_context = merged
 
-            from sqlalchemy.orm.attributes import flag_modified
-            flag_modified(dc, "inferred_context")
-            session.flush()
+        flag_modified(dc, "inferred_context")
+        db.flush()
 
         logger.info(
             "Saved inferred context for fill_id=%s (%d keys merged)",
@@ -256,6 +263,7 @@ async def save_inferred_context(fill_id: int, request: InferredContextRequest):
 @router.get("/accounts", response_model=ActiveAccountsResponse)
 async def get_active_accounts(
     active_since_days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
 ):
     """List account IDs with recent trading activity.
 
@@ -264,19 +272,16 @@ async def get_active_accounts(
     cutoff = datetime.now(timezone.utc) - timedelta(days=active_since_days)
 
     try:
-        with get_db_manager().get_session() as session:
-            from sqlalchemy import distinct
-
-            rows = (
-                session.query(distinct(TradeFill.account_id))
-                .filter(
-                    TradeFill.account_id.isnot(None),
-                    TradeFill.executed_at >= cutoff,
-                )
-                .all()
+        rows = (
+            db.query(distinct(TradeFill.account_id))
+            .filter(
+                TradeFill.account_id.isnot(None),
+                TradeFill.executed_at >= cutoff,
             )
+            .all()
+        )
 
-            account_ids = [row[0] for row in rows]
+        account_ids = [row[0] for row in rows]
 
         logger.info(
             "Found %d active accounts (since %d days ago)",

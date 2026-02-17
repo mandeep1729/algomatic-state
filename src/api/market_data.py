@@ -14,10 +14,10 @@ import math
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_market_repo
 from src.data.database.market_repository import OHLCVRepository
 from src.data.database.models import VALID_TIMEFRAMES
 
@@ -143,6 +143,7 @@ async def get_bars(
     timeframe: str = Query(..., description="Bar timeframe (e.g. 1Min, 15Min, 1Hour, 1Day)"),
     start_timestamp: str = Query(..., description="Start timestamp (ISO format)"),
     end_timestamp: str = Query(..., description="End timestamp (ISO format)"),
+    repo: OHLCVRepository = Depends(get_market_repo),
 ) -> BarsResponse:
     """Return OHLCV bars for a symbol/timeframe within a date range.
 
@@ -159,19 +160,15 @@ async def get_bars(
         symbol, timeframe, start, end,
     )
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = OHLCVRepository(session)
+    # Verify symbol exists
+    ticker = repo.get_ticker(symbol)
+    if ticker is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Symbol '{symbol.upper()}' not found",
+        )
 
-        # Verify symbol exists
-        ticker = repo.get_ticker(symbol)
-        if ticker is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Symbol '{symbol.upper()}' not found",
-            )
-
-        df = repo.get_bars(symbol, timeframe, start=start, end=end)
+    df = repo.get_bars(symbol, timeframe, start=start, end=end)
 
     if df.empty:
         raise HTTPException(
@@ -209,6 +206,7 @@ async def get_indicators(
     timeframe: str = Query(..., description="Bar timeframe (e.g. 1Min, 15Min, 1Hour, 1Day)"),
     start_timestamp: str = Query(..., description="Start timestamp (ISO format)"),
     end_timestamp: str = Query(..., description="End timestamp (ISO format)"),
+    repo: OHLCVRepository = Depends(get_market_repo),
 ) -> IndicatorsResponse:
     """Return computed indicator values for a symbol/timeframe within a date range.
 
@@ -226,18 +224,14 @@ async def get_indicators(
         symbol, timeframe, start, end,
     )
 
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = OHLCVRepository(session)
+    ticker = repo.get_ticker(symbol)
+    if ticker is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Symbol '{symbol.upper()}' not found",
+        )
 
-        ticker = repo.get_ticker(symbol)
-        if ticker is None:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Symbol '{symbol.upper()}' not found",
-            )
-
-        features_df = repo.get_features(symbol, timeframe, start=start, end=end)
+    features_df = repo.get_features(symbol, timeframe, start=start, end=end)
 
     if features_df.empty:
         raise HTTPException(

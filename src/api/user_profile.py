@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_trading_repo
 from src.data.database.trading_repository import TradingBuddyRepository
 
 logger = logging.getLogger(__name__)
@@ -51,63 +51,60 @@ class TradingProfileUpdate(BaseModel):
 
 
 @router.get("/profile", response_model=TradingProfileResponse)
-async def get_profile(user_id: int = Depends(get_current_user)):
+async def get_profile(
+    user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
+):
     """Get the authenticated user's trading profile."""
     logger.debug("GET /api/user/profile for user_id=%d", user_id)
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        profile = repo.get_or_create_profile(user_id)
+    profile = repo.get_or_create_profile(user_id)
 
-        return TradingProfileResponse(
-            experience_level=profile.experience_level or "beginner",
-            trading_style=profile.trading_style or "day_trading",
-            primary_markets=profile.primary_markets or ["US_EQUITIES"],
-            typical_timeframes=profile.default_timeframes or ["1Min", "15Min", "1Hour"],
-            account_size_range=profile.account_size_range or "$10k-$50k",
-        )
+    return TradingProfileResponse(
+        experience_level=profile.experience_level or "beginner",
+        trading_style=profile.trading_style or "day_trading",
+        primary_markets=profile.primary_markets or ["US_EQUITIES"],
+        typical_timeframes=profile.default_timeframes or ["1Min", "15Min", "1Hour"],
+        account_size_range=profile.account_size_range or "$10k-$50k",
+    )
 
 
 @router.put("/profile", response_model=TradingProfileResponse)
 async def update_profile(
     data: TradingProfileUpdate,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Update the authenticated user's trading profile."""
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
+    # Map frontend field names to DB column names
+    updates = {}
+    raw = data.model_dump(exclude_none=True)
+    field_map = {
+        "experience_level": "experience_level",
+        "trading_style": "trading_style",
+        "primary_markets": "primary_markets",
+        "typical_timeframes": "default_timeframes",
+        "account_size_range": "account_size_range",
+    }
+    for frontend_key, db_key in field_map.items():
+        if frontend_key in raw:
+            updates[db_key] = raw[frontend_key]
 
-        # Map frontend field names to DB column names
-        updates = {}
-        raw = data.model_dump(exclude_none=True)
-        field_map = {
-            "experience_level": "experience_level",
-            "trading_style": "trading_style",
-            "primary_markets": "primary_markets",
-            "typical_timeframes": "default_timeframes",
-            "account_size_range": "account_size_range",
-        }
-        for frontend_key, db_key in field_map.items():
-            if frontend_key in raw:
-                updates[db_key] = raw[frontend_key]
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
 
-        if not updates:
-            raise HTTPException(status_code=400, detail="No fields to update")
+    profile = repo.update_profile(user_id, **updates)
+    if profile is None:
+        profile = repo.create_profile(user_id, **updates)
 
-        profile = repo.update_profile(user_id, **updates)
-        if profile is None:
-            profile = repo.create_profile(user_id, **updates)
+    logger.info("Updated trading profile for user_id=%d fields=%s", user_id, list(updates.keys()))
 
-        logger.info("Updated trading profile for user_id=%d fields=%s", user_id, list(updates.keys()))
-
-        return TradingProfileResponse(
-            experience_level=profile.experience_level or "beginner",
-            trading_style=profile.trading_style or "day_trading",
-            primary_markets=profile.primary_markets or ["US_EQUITIES"],
-            typical_timeframes=profile.default_timeframes or ["1Min", "15Min", "1Hour"],
-            account_size_range=profile.account_size_range or "$10k-$50k",
-        )
+    return TradingProfileResponse(
+        experience_level=profile.experience_level or "beginner",
+        trading_style=profile.trading_style or "day_trading",
+        primary_markets=profile.primary_markets or ["US_EQUITIES"],
+        typical_timeframes=profile.default_timeframes or ["1Min", "15Min", "1Hour"],
+        account_size_range=profile.account_size_range or "$10k-$50k",
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -133,67 +130,64 @@ class RiskPreferencesUpdate(BaseModel):
 
 
 @router.get("/risk-preferences", response_model=RiskPreferencesResponse)
-async def get_risk_preferences(user_id: int = Depends(get_current_user)):
+async def get_risk_preferences(
+    user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
+):
     """Get the authenticated user's risk preferences (frontend format)."""
     logger.debug("GET /api/user/risk-preferences for user_id=%d", user_id)
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        profile = repo.get_or_create_profile(user_id)
+    profile = repo.get_or_create_profile(user_id)
 
-        return RiskPreferencesResponse(
-            max_loss_per_trade_pct=profile.max_risk_per_trade_pct,
-            max_daily_loss_pct=profile.max_daily_loss_pct,
-            max_open_positions=profile.max_open_positions,
-            risk_reward_minimum=profile.min_risk_reward_ratio,
-            stop_loss_required=profile.stop_loss_required,
-        )
+    return RiskPreferencesResponse(
+        max_loss_per_trade_pct=profile.max_risk_per_trade_pct,
+        max_daily_loss_pct=profile.max_daily_loss_pct,
+        max_open_positions=profile.max_open_positions,
+        risk_reward_minimum=profile.min_risk_reward_ratio,
+        stop_loss_required=profile.stop_loss_required,
+    )
 
 
 @router.put("/risk-preferences", response_model=RiskPreferencesResponse)
 async def update_risk_preferences(
     data: RiskPreferencesUpdate,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Update the authenticated user's risk preferences (frontend format)."""
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
+    # Map frontend field names to DB column names
+    updates = {}
+    raw = data.model_dump(exclude_none=True)
+    field_map = {
+        "max_loss_per_trade_pct": "max_risk_per_trade_pct",
+        "max_daily_loss_pct": "max_daily_loss_pct",
+        "max_open_positions": "max_open_positions",
+        "risk_reward_minimum": "min_risk_reward_ratio",
+        "stop_loss_required": "stop_loss_required",
+    }
+    for frontend_key, db_key in field_map.items():
+        if frontend_key in raw:
+            updates[db_key] = raw[frontend_key]
 
-        # Map frontend field names to DB column names
-        updates = {}
-        raw = data.model_dump(exclude_none=True)
-        field_map = {
-            "max_loss_per_trade_pct": "max_risk_per_trade_pct",
-            "max_daily_loss_pct": "max_daily_loss_pct",
-            "max_open_positions": "max_open_positions",
-            "risk_reward_minimum": "min_risk_reward_ratio",
-            "stop_loss_required": "stop_loss_required",
-        }
-        for frontend_key, db_key in field_map.items():
-            if frontend_key in raw:
-                updates[db_key] = raw[frontend_key]
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
 
-        if not updates:
-            raise HTTPException(status_code=400, detail="No fields to update")
+    profile = repo.update_profile(user_id, **updates)
+    if profile is None:
+        profile = repo.create_profile(user_id, **updates)
 
-        profile = repo.update_profile(user_id, **updates)
-        if profile is None:
-            profile = repo.create_profile(user_id, **updates)
+    logger.info("Updated risk preferences for user_id=%d fields=%s", user_id, list(updates.keys()))
 
-        logger.info("Updated risk preferences for user_id=%d fields=%s", user_id, list(updates.keys()))
+    # Trigger reviewer to re-check recent legs with updated risk prefs
+    from src.reviewer.publisher import publish_risk_prefs_updated
+    publish_risk_prefs_updated(account_id=user_id)
 
-        # Trigger reviewer to re-check recent legs with updated risk prefs
-        from src.reviewer.publisher import publish_risk_prefs_updated
-        publish_risk_prefs_updated(account_id=user_id)
-
-        return RiskPreferencesResponse(
-            max_loss_per_trade_pct=profile.max_risk_per_trade_pct,
-            max_daily_loss_pct=profile.max_daily_loss_pct,
-            max_open_positions=profile.max_open_positions,
-            risk_reward_minimum=profile.min_risk_reward_ratio,
-            stop_loss_required=profile.stop_loss_required,
-        )
+    return RiskPreferencesResponse(
+        max_loss_per_trade_pct=profile.max_risk_per_trade_pct,
+        max_daily_loss_pct=profile.max_daily_loss_pct,
+        max_open_positions=profile.max_open_positions,
+        risk_reward_minimum=profile.min_risk_reward_ratio,
+        stop_loss_required=profile.stop_loss_required,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -232,39 +226,37 @@ class EvaluationControlsUpdate(BaseModel):
 
 
 @router.get("/evaluation-controls", response_model=EvaluationControlsResponse)
-async def get_evaluation_controls(user_id: int = Depends(get_current_user)):
+async def get_evaluation_controls(
+    user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
+):
     """Get the authenticated user's evaluation controls."""
     logger.debug("GET /api/user/evaluation-controls for user_id=%d", user_id)
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        profile = repo.get_or_create_profile(user_id)
+    profile = repo.get_or_create_profile(user_id)
 
-        controls = profile.evaluation_controls or DEFAULT_EVALUATION_CONTROLS
-        return EvaluationControlsResponse(**controls)
+    controls = profile.evaluation_controls or DEFAULT_EVALUATION_CONTROLS
+    return EvaluationControlsResponse(**controls)
 
 
 @router.put("/evaluation-controls", response_model=EvaluationControlsResponse)
 async def update_evaluation_controls(
     data: EvaluationControlsUpdate,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Update the authenticated user's evaluation controls."""
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        profile = repo.get_or_create_profile(user_id)
+    profile = repo.get_or_create_profile(user_id)
 
-        # Merge with existing controls
-        current = profile.evaluation_controls or DEFAULT_EVALUATION_CONTROLS.copy()
-        updates = data.model_dump(exclude_none=True)
-        current.update(updates)
+    # Merge with existing controls
+    current = profile.evaluation_controls or DEFAULT_EVALUATION_CONTROLS.copy()
+    updates = data.model_dump(exclude_none=True)
+    current.update(updates)
 
-        repo.update_profile(user_id, evaluation_controls=current)
+    repo.update_profile(user_id, evaluation_controls=current)
 
-        logger.info("Updated evaluation controls for user_id=%d", user_id)
+    logger.info("Updated evaluation controls for user_id=%d", user_id)
 
-        return EvaluationControlsResponse(**current)
+    return EvaluationControlsResponse(**current)
 
 
 # -----------------------------------------------------------------------------
@@ -282,46 +274,44 @@ class SitePrefsUpdate(BaseModel):
 
 
 @router.get("/site-prefs", response_model=SitePrefsResponse)
-async def get_site_prefs(user_id: int = Depends(get_current_user)):
+async def get_site_prefs(
+    user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
+):
     """Get the authenticated user's site preferences (table column visibility, etc.)."""
     logger.debug("GET /api/user/site-prefs for user_id=%d", user_id)
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        profile = repo.get_or_create_profile(user_id)
+    profile = repo.get_or_create_profile(user_id)
 
-        site_prefs = profile.site_prefs or {}
-        table_columns = site_prefs.get("table_columns", {})
+    site_prefs = profile.site_prefs or {}
+    table_columns = site_prefs.get("table_columns", {})
 
-        return SitePrefsResponse(table_columns=table_columns)
+    return SitePrefsResponse(table_columns=table_columns)
 
 
 @router.put("/site-prefs", response_model=SitePrefsResponse)
 async def update_site_prefs(
     data: SitePrefsUpdate,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Update the authenticated user's site preferences (table column visibility, etc.)."""
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        profile = repo.get_or_create_profile(user_id)
+    profile = repo.get_or_create_profile(user_id)
 
-        # Merge with existing site_prefs
-        current = profile.site_prefs or {}
-        updates = data.model_dump(exclude_none=True)
+    # Merge with existing site_prefs
+    current = profile.site_prefs or {}
+    updates = data.model_dump(exclude_none=True)
 
-        # Handle table_columns update specifically (merge table entries)
-        if "table_columns" in updates:
-            existing_table_columns = current.get("table_columns", {})
-            existing_table_columns.update(updates["table_columns"])
-            current["table_columns"] = existing_table_columns
+    # Handle table_columns update specifically (merge table entries)
+    if "table_columns" in updates:
+        existing_table_columns = current.get("table_columns", {})
+        existing_table_columns.update(updates["table_columns"])
+        current["table_columns"] = existing_table_columns
 
-        repo.update_profile(user_id, site_prefs=current)
+    repo.update_profile(user_id, site_prefs=current)
 
-        logger.info("Updated site prefs for user_id=%d tables=%s", user_id, list(updates.get("table_columns", {}).keys()))
+    logger.info("Updated site prefs for user_id=%d tables=%s", user_id, list(updates.get("table_columns", {}).keys()))
 
-        return SitePrefsResponse(table_columns=current.get("table_columns", {}))
+    return SitePrefsResponse(table_columns=current.get("table_columns", {}))
 
 
 # -----------------------------------------------------------------------------
@@ -345,42 +335,40 @@ class RiskUpdate(BaseModel):
 
 
 @router.get("/risk", response_model=RiskResponse)
-async def get_risk(user_id: int = Depends(get_current_user)):
+async def get_risk(
+    user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
+):
     """Get the authenticated user's risk preferences (legacy format)."""
     logger.debug("GET /api/user/risk for user_id=%d", user_id)
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        profile = repo.get_or_create_profile(user_id)
+    profile = repo.get_or_create_profile(user_id)
 
-        return RiskResponse(
-            max_position_size_pct=profile.max_position_size_pct,
-            max_risk_per_trade_pct=profile.max_risk_per_trade_pct,
-            max_daily_loss_pct=profile.max_daily_loss_pct,
-            min_risk_reward_ratio=profile.min_risk_reward_ratio,
-        )
+    return RiskResponse(
+        max_position_size_pct=profile.max_position_size_pct,
+        max_risk_per_trade_pct=profile.max_risk_per_trade_pct,
+        max_daily_loss_pct=profile.max_daily_loss_pct,
+        min_risk_reward_ratio=profile.min_risk_reward_ratio,
+    )
 
 
 @router.put("/risk", response_model=RiskResponse)
 async def update_risk(
     data: RiskUpdate,
     user_id: int = Depends(get_current_user),
+    repo: TradingBuddyRepository = Depends(get_trading_repo),
 ):
     """Update the authenticated user's risk preferences (legacy format)."""
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = TradingBuddyRepository(session)
-        updates = data.model_dump(exclude_none=True)
-        if not updates:
-            raise HTTPException(status_code=400, detail="No fields to update")
+    updates = data.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
 
-        profile = repo.update_profile(user_id, **updates)
-        if profile is None:
-            profile = repo.create_profile(user_id, **updates)
+    profile = repo.update_profile(user_id, **updates)
+    if profile is None:
+        profile = repo.create_profile(user_id, **updates)
 
-        return RiskResponse(
-            max_position_size_pct=profile.max_position_size_pct,
-            max_risk_per_trade_pct=profile.max_risk_per_trade_pct,
-            max_daily_loss_pct=profile.max_daily_loss_pct,
-            min_risk_reward_ratio=profile.min_risk_reward_ratio,
-        )
+    return RiskResponse(
+        max_position_size_pct=profile.max_position_size_pct,
+        max_risk_per_trade_pct=profile.max_risk_per_trade_pct,
+        max_daily_loss_pct=profile.max_daily_loss_pct,
+        min_risk_reward_ratio=profile.min_risk_reward_ratio,
+    )

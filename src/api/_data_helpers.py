@@ -19,7 +19,7 @@ from fastapi import HTTPException
 from pydantic import BaseModel
 
 from config.settings import get_settings
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import session_scope
 from src.data.database.models import VALID_TIMEFRAMES
 from src.data.database.market_repository import OHLCVRepository
 from src.data.loaders.database_loader import DatabaseLoader
@@ -200,23 +200,28 @@ async def get_features_internal(
 
 
 async def compute_features_internal(
-    symbol: str, force: bool = False
+    symbol: str, force: bool = False, session=None,
 ) -> ComputeFeaturesResponse:
     """Compute features for all timeframes of a ticker.
 
     Shared helper used by features and analysis routers.
+
+    Args:
+        symbol: Ticker symbol.
+        force: If True, recompute features for all bars.
+        session: Optional SQLAlchemy session. If not provided, a new
+            session is created via ``session_scope()``.
     """
     pipeline = FeaturePipeline.default()
 
-    db_manager = get_db_manager()
     stats = {
         "timeframes_processed": 0,
         "timeframes_skipped": 0,
         "features_stored": 0,
     }
 
-    with db_manager.get_session() as session:
-        repo = OHLCVRepository(session)
+    def _run(sess):
+        repo = OHLCVRepository(sess)
         ticker = repo.get_or_create_ticker(symbol.upper())
 
         for timeframe in VALID_TIMEFRAMES:
@@ -276,7 +281,13 @@ async def compute_features_internal(
             stats["features_stored"] += rows_stored
             logger.info("  %s: Stored %d feature rows", timeframe, rows_stored)
 
-        session.commit()
+        sess.commit()
+
+    if session is not None:
+        _run(session)
+    else:
+        with session_scope() as sess:
+            _run(sess)
 
     return ComputeFeaturesResponse(
         symbol=symbol.upper(),

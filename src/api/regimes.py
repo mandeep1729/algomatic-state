@@ -6,6 +6,7 @@ from typing import Optional
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
 from src.api._data_helpers import (
@@ -14,7 +15,7 @@ from src.api._data_helpers import (
     set_cached_data,
     PROJECT_ROOT,
 )
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db
 from src.data.database.market_repository import OHLCVRepository
 from src.features.state.hmm.artifacts import get_model_path, list_models
 from src.features.state.hmm.inference import InferenceEngine
@@ -77,6 +78,7 @@ async def get_regimes(
     model_id: str = Query(None, description="Model ID (default: latest)"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
     _user_id: int = Depends(get_current_user),
 ):
     """Get HMM regime states for a symbol.
@@ -133,16 +135,14 @@ async def get_regimes(
                     detail=f"Too many missing features. Model requires: {model_features}"
                 )
 
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
-            ticker = repo.get_ticker(symbol.upper())
-            if ticker:
-                bar_id_map = repo.get_bar_ids_for_timestamps(
-                    ticker.id, timeframe, list(features_df.index)
-                )
-            else:
-                bar_id_map = {}
+        repo = OHLCVRepository(db)
+        ticker = repo.get_ticker(symbol.upper())
+        if ticker:
+            bar_id_map = repo.get_bar_ids_for_timestamps(
+                ticker.id, timeframe, list(features_df.index)
+            )
+        else:
+            bar_id_map = {}
 
         timestamps = []
         state_ids = []
@@ -165,11 +165,9 @@ async def get_regimes(
                 })
 
         if state_records:
-            with db_manager.get_session() as session:
-                repo = OHLCVRepository(session)
-                stored_count = repo.store_states(state_records, model_id)
-                session.commit()
-                logger.info("Stored %d states for %s/%s/%s", stored_count, symbol.upper(), timeframe, model_id)
+            stored_count = repo.store_states(state_records, model_id)
+            db.commit()
+            logger.info("Stored %d states for %s/%s/%s", stored_count, symbol.upper(), timeframe, model_id)
 
         state_info = {}
         if metadata.state_mapping:
@@ -231,6 +229,7 @@ async def get_pca_regimes(
     model_id: str = Query("pca_v001", description="Model ID"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
     _user_id: int = Depends(get_current_user),
 ):
     """Get PCA-based regime states for a symbol."""
@@ -253,10 +252,8 @@ async def get_pca_regimes(
         model_path = get_pca_model_path(symbol, timeframe, model_id, models_root)
         engine = PCAStateEngine.from_artifacts(model_path)
 
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
-            features_df = repo.get_features(symbol, timeframe)
+        repo = OHLCVRepository(db)
+        features_df = repo.get_features(symbol, timeframe)
 
         if features_df.empty:
             raise HTTPException(

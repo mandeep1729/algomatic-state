@@ -12,7 +12,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 
 from config.settings import get_settings
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import session_scope
 from src.data.database.trading_repository import TradingBuddyRepository
 
 logger = logging.getLogger(__name__)
@@ -72,8 +72,7 @@ def get_current_user(
         )
 
     # Verify user still exists and is active
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
+    with session_scope() as session:
         repo = TradingBuddyRepository(session)
         account = repo.get_account(int(user_id))
         if account is None or not account.is_active:

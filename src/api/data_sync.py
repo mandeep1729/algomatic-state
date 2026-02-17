@@ -7,6 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from config.settings import get_settings
 from src.api.auth_middleware import get_current_user
@@ -15,7 +16,7 @@ from src.api._data_helpers import (
     invalidate_cache_for_symbol,
     PROJECT_ROOT,
 )
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db
 from src.data.database.market_repository import OHLCVRepository
 from src.data.database.models import VALID_TIMEFRAMES
 
@@ -62,6 +63,7 @@ async def trigger_sync(
     timeframe: str = Query("1Min", description="Timeframe to sync"),
     start_date: Optional[str] = Query(None, description="Start date for historical sync"),
     end_date: Optional[str] = Query(None, description="End date (defaults to now)"),
+    db: Session = Depends(get_db),
     _user_id: int = Depends(get_current_user),
 ):
     """Trigger data synchronization for a symbol.
@@ -103,10 +105,8 @@ async def trigger_sync(
 
         invalidate_cache_for_symbol(symbol)
 
-        db_manager = get_db_manager()
-        with db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
-            df = repo.get_bars(symbol.upper(), timeframe, start, end)
+        repo = OHLCVRepository(db)
+        df = repo.get_bars(symbol.upper(), timeframe, start, end)
 
         return {
             "message": f"Sync completed for {symbol.upper()}/{timeframe}",

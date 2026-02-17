@@ -53,6 +53,7 @@ setup_logging(
 )
 
 from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_market_repo
 from src.data.database.market_repository import OHLCVRepository
 
 # Import all routers
@@ -205,6 +206,7 @@ async def get_bars_for_go(
     timeframe: str = Query("1Min", description="Bar timeframe"),
     start_timestamp: Optional[str] = Query(None, description="Start timestamp (ISO 8601)"),
     end_timestamp: Optional[str] = Query(None, description="End timestamp (ISO 8601)"),
+    repo: OHLCVRepository = Depends(get_market_repo),
 ):
     """Return OHLCV bars in the format expected by go-strats backend client."""
     symbol = symbol.upper()
@@ -214,17 +216,14 @@ async def get_bars_for_go(
     )
 
     try:
-        with get_db_manager().get_session() as session:
-            repo = OHLCVRepository(session)
+        start = datetime.fromisoformat(start_timestamp) if start_timestamp else None
+        end = datetime.fromisoformat(end_timestamp) if end_timestamp else None
+        if start and start.tzinfo is not None:
+            start = start.replace(tzinfo=None)
+        if end and end.tzinfo is not None:
+            end = end.replace(tzinfo=None)
 
-            start = datetime.fromisoformat(start_timestamp) if start_timestamp else None
-            end = datetime.fromisoformat(end_timestamp) if end_timestamp else None
-            if start and start.tzinfo is not None:
-                start = start.replace(tzinfo=None)
-            if end and end.tzinfo is not None:
-                end = end.replace(tzinfo=None)
-
-            df = repo.get_bars(symbol, timeframe, start=start, end=end)
+        df = repo.get_bars(symbol, timeframe, start=start, end=end)
 
         if df.empty:
             raise HTTPException(status_code=404, detail=f"No bars for {symbol}/{timeframe}")
@@ -260,6 +259,7 @@ async def get_indicators_for_go(
     timeframe: str = Query("1Min", description="Bar timeframe"),
     start_timestamp: Optional[str] = Query(None, description="Start timestamp (ISO 8601)"),
     end_timestamp: Optional[str] = Query(None, description="End timestamp (ISO 8601)"),
+    repo: OHLCVRepository = Depends(get_market_repo),
 ):
     """Return computed indicators in the format expected by go-strats backend client."""
     symbol = symbol.upper()
@@ -269,23 +269,18 @@ async def get_indicators_for_go(
     )
 
     try:
-        with get_db_manager().get_session() as session:
-            repo = OHLCVRepository(session)
+        start = datetime.fromisoformat(start_timestamp) if start_timestamp else None
+        end = datetime.fromisoformat(end_timestamp) if end_timestamp else None
+        if start and start.tzinfo is not None:
+            start = start.replace(tzinfo=None)
+        if end and end.tzinfo is not None:
+            end = end.replace(tzinfo=None)
 
-            start = datetime.fromisoformat(start_timestamp) if start_timestamp else None
-            end = datetime.fromisoformat(end_timestamp) if end_timestamp else None
-            if start and start.tzinfo is not None:
-                start = start.replace(tzinfo=None)
-            if end and end.tzinfo is not None:
-                end = end.replace(tzinfo=None)
-
-            features_df = repo.get_features(symbol, timeframe, start=start, end=end)
+        features_df = repo.get_features(symbol, timeframe, start=start, end=end)
 
         if features_df.empty:
             logger.info("No stored features for %s/%s, computing from OHLCV", symbol, timeframe)
-            with get_db_manager().get_session() as session:
-                repo = OHLCVRepository(session)
-                ohlcv_df = repo.get_bars(symbol, timeframe, start=start, end=end)
+            ohlcv_df = repo.get_bars(symbol, timeframe, start=start, end=end)
 
             if ohlcv_df.empty:
                 raise HTTPException(status_code=404, detail=f"No data for {symbol}/{timeframe}")

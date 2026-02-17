@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from src.api.auth_middleware import get_current_user
-from src.data.database.connection import get_db_manager
+from src.data.database.dependencies import get_db
 from src.data.database.broker_models import SnapTradeUser, BrokerConnection, TradeFill
 from src.data.database.trade_lifecycle_models import DecisionContext
 from src.data.database.strategy_models import Strategy
@@ -29,11 +29,6 @@ router = APIRouter(prefix="/api/broker", tags=["broker"])
 # -----------------------------------------------------------------------------
 # Dependency
 # -----------------------------------------------------------------------------
-
-def get_db():
-    """Get database session."""
-    with get_db_manager().get_session() as session:
-        yield session
 
 def get_snaptrade_client():
     """Get SnapTrade client instance."""

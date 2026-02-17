@@ -1,6 +1,7 @@
 """Database module for PostgreSQL integration."""
 
 from src.data.database.connection import DatabaseManager, get_db_manager
+from src.data.database.dependencies import get_db, get_trading_repo, get_market_repo, session_scope
 from src.data.database.models import Base, Ticker, OHLCVBar, DataSyncLog, ComputedFeature
 from src.data.database.market_repository import OHLCVRepository
 from src.data.database.trading_buddy_models import (
@@ -20,6 +21,11 @@ __all__ = [
     # Connection
     "DatabaseManager",
     "get_db_manager",
+    # Dependencies (unified DB access)
+    "get_db",
+    "get_trading_repo",
+    "get_market_repo",
+    "session_scope",
     # Core models
     "Base",
     "Ticker",
