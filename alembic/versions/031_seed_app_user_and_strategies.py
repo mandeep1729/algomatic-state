@@ -65,12 +65,12 @@ def _esc(text: str) -> str:
 
 STRATEGIES = [
     {
-        "name": "Momentum: Multi-Timeframe Momentum Trend-Follow",
+        "name": "Momentum Family",
         "description": (
             "A vanilla trend-following momentum strategy that buys strength and "
             "sells weakness using a higher-timeframe trend filter and a lower-timeframe trigger."
         ),
-        "timeframes": '["1Day"]',
+        "timeframes": '["1Min", "5Min", "15Min", "1Hour", "1Day"]',
         "entry_criteria": (
             "Long:\\n"
             "- Price > SMA_200 (trend filter)\\n"
@@ -100,12 +100,12 @@ STRATEGIES = [
         "family": "momentum",
     },
     {
-        "name": "Pattern: Bull Flag / Bear Flag Continuation",
+        "name": "Pattern Family",
         "description": (
             "A classical continuation-pattern strategy that enters after a sharp impulse "
             "move and a tight consolidation (flag), then breaks out in the direction of the impulse."
         ),
-        "timeframes": '["15Min", "1Hour", "1Day"]',
+        "timeframes": '["1Min", "5Min", "15Min", "1Hour", "1Day"]',
         "entry_criteria": (
             "Long:\\n"
             "- Impulse leg: price rises >= 3% (daily) or >= 1.0 * ATR (intraday) within 1-5 bars\\n"
@@ -135,12 +135,12 @@ STRATEGIES = [
         "family": "breakout",
     },
     {
-        "name": "Breakout: 20-Day Donchian Channel Breakout",
+        "name": "Breakout Family",
         "description": (
             "A classic breakout system that enters when price exceeds recent highs/lows, "
             "using Donchian channels with volatility-scaled stops."
         ),
-        "timeframes": '["1Day"]',
+        "timeframes": '["1Min", "5Min", "15Min", "1Hour", "1Day"]',
         "entry_criteria": (
             "Long:\\n"
             "- Today''s high > prior 20-day highest high (exclude current bar)\\n"
@@ -166,12 +166,12 @@ STRATEGIES = [
         "family": "breakout",
     },
     {
-        "name": "Mean-Reversion: Bollinger Band Reversion to Mean",
+        "name": "Mean-Reversion Family",
         "description": (
             "A simple mean-reversion strategy that fades short-term extremes "
             "using Bollinger Bands and exits near the midline/mean."
         ),
-        "timeframes": '["1Hour", "1Day"]',
+        "timeframes": '["1Min", "5Min", "15Min", "1Hour", "1Day"]',
         "entry_criteria": (
             "Long:\\n"
             "- Regime filter: Close within +/-10% of SMA_200, SMA_200 slope flat over last 20 bars\\n"
@@ -199,12 +199,12 @@ STRATEGIES = [
         "family": "mean_reversion",
     },
     {
-        "name": "Volume Flow: OBV + Price Structure Breakout",
+        "name": "Volume Flow Family",
         "description": (
             "A benchmark volume-flow strategy that requires volume accumulation/distribution "
             "(OBV) to lead price, then enters on a simple structure break."
         ),
-        "timeframes": '["1Hour", "1Day"]',
+        "timeframes": '["1Min", "5Min", "15Min", "1Hour", "1Day"]',
         "entry_criteria": (
             "Long:\\n"
             "- OBV above OBV_SMA_20 and making a 20-bar high (volume flow leading)\\n"
@@ -232,13 +232,13 @@ STRATEGIES = [
         "family": "breakout",
     },
     {
-        "name": "Regime: Regime-Switch Trend vs Range Playbook",
+        "name": "Regime Family",
         "description": (
             "A benchmark regime strategy that classifies the market into trend or range "
             "using simple volatility and trend-strength proxies, then applies the "
             "corresponding baseline strategy."
         ),
-        "timeframes": '["1Day"]',
+        "timeframes": '["1Min", "5Min", "15Min", "1Hour", "1Day"]',
         "entry_criteria": (
             "Trend regime:\\n"
             "- If ADX_14 >= 20 and Close > SMA_200: allow only long breakout/momentum entries\\n"
