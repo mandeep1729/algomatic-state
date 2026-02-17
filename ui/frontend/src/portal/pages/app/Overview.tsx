@@ -7,6 +7,8 @@ import { DirectionBadge } from '../../components/badges';
 import { OHLCVChart } from '../../../components/OHLCVChart';
 import { useChartContext } from '../../context/ChartContext';
 import { format } from 'date-fns';
+import { StatCard } from '../../components/ui/StatCard';
+import { Section } from '../../components/ui/Section';
 
 export default function Overview() {
   const [recentTrades, setRecentTrades] = useState<TradeSummary[]>([]);
@@ -479,58 +481,3 @@ export default function Overview() {
   );
 }
 
-// --- Sub-components ---
-
-function StatCard({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-  accent?: 'red' | 'green' | 'yellow';
-}) {
-  const colorClass = accent === 'red'
-    ? 'text-[var(--accent-red)]'
-    : accent === 'green'
-      ? 'text-[var(--accent-green)]'
-      : accent === 'yellow'
-        ? 'text-[var(--accent-yellow)]'
-        : 'text-[var(--text-primary)]';
-
-  return (
-    <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] px-4 py-3">
-      <div className="text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">{label}</div>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        <span className={`text-xl font-semibold ${colorClass}`}>{value}</span>
-        {sub && <span className="text-xs text-[var(--text-secondary)]">{sub}</span>}
-      </div>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: { label: string; to: string };
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-lg font-medium">{title}</h2>
-        {action && (
-          <Link to={action.to} className="text-xs text-[var(--accent-blue)] hover:underline">
-            {action.label}
-          </Link>
-        )}
-      </div>
-      {children}
-    </div>
-  );
-}
