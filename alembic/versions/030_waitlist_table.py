@@ -7,8 +7,8 @@ Stores users who want access to the platform. Status values:
 
 Approval is manual (direct DB update) — no admin UI yet.
 
-Revision ID: 028
-Revises: 027
+Revision ID: 030
+Revises: 029
 Create Date: 2026-02-16
 """
 
@@ -16,8 +16,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers
-revision = "028"
-down_revision = "027"
+revision = "030"
+down_revision = "029"
 branch_labels = None
 depends_on = None
 
