@@ -667,22 +667,6 @@ class AlpacaClient:
         )
         return clock.is_open
 
-    def get_market_hours(self) -> dict[str, datetime]:
-        """Get market hours for today.
-
-        Returns:
-            Dict with 'open' and 'close' times
-        """
-        clock = self._retry_with_backoff(
-            "get_clock",
-            self._client.get_clock,
-        )
-        return {
-            "open": clock.next_open,
-            "close": clock.next_close,
-            "is_open": clock.is_open,
-        }
-
     def _convert_time_in_force(self, tif: OrderTimeInForce) -> AlpacaTimeInForce:
         """Convert our time in force to Alpaca's."""
         mapping = {

@@ -494,28 +494,6 @@ class DatabaseLoader(BaseDataLoader):
             )
             return False
 
-    def _compute_technical_indicators(
-        self,
-        repo: OHLCVRepository,
-        ticker,
-        symbol: str,
-        version: str = "v1.0",
-    ) -> None:
-        """Compute and store all features for all timeframes.
-
-        This method computes comprehensive features using the full FeaturePipeline
-        and stores them in the computed_features table.
-
-        Args:
-            repo: OHLCV repository instance
-            ticker: Ticker database object
-            symbol: Stock symbol
-            version: Feature version string for tracking
-        """
-        self._compute_indicators_for_timeframes(
-            repo, ticker, symbol, list(VALID_TIMEFRAMES), version
-        )
-
     def _compute_indicators_for_timeframes(
         self,
         repo: OHLCVRepository,

@@ -273,23 +273,6 @@ class OrderTracker:
 
         return None
 
-    def get_fills_since(self, since: datetime) -> list[Order]:
-        """Get all fills since a given time.
-
-        Args:
-            since: Datetime to filter fills
-
-        Returns:
-            List of filled orders
-        """
-        orders = self._client.get_orders(status="closed", limit=100)
-        return [
-            o for o in orders
-            if o.status == OrderStatus.FILLED
-            and o.filled_at is not None
-            and o.filled_at >= since
-        ]
-
     def _poll_loop(self) -> None:
         """Background polling loop."""
         while self._running:

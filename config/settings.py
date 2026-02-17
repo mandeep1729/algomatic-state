@@ -3,7 +3,7 @@
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -408,24 +408,6 @@ class Settings(BaseSettings):
             return cls()
 
         return cls(**config_dict)
-
-    def to_yaml(self, path: str | Path) -> None:
-        """Save settings to YAML file.
-
-        Args:
-            path: Path to save configuration
-        """
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-
-        # Convert to dict, excluding secrets
-        config_dict = self.model_dump(
-            exclude={"alpaca": {"api_key", "secret_key"}},
-        )
-
-        with open(path, "w") as f:
-            yaml.dump(config_dict, f, default_flow_style=False, sort_keys=False)
-
 
 @lru_cache
 def get_settings() -> Settings:

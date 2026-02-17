@@ -199,37 +199,6 @@ class Evaluator(ABC):
             evidence=evidence or [],
         )
 
-    def create_evidence(
-        self,
-        metric_name: str,
-        value: float,
-        threshold: Optional[float] = None,
-        comparison: Optional[str] = None,
-        unit: Optional[str] = None,
-        **context_kwargs,
-    ) -> Evidence:
-        """Helper to create evidence.
-
-        Args:
-            metric_name: Name of the metric
-            value: Current value
-            threshold: Threshold for comparison
-            comparison: Comparison operator
-            unit: Unit of measurement
-            **context_kwargs: Additional context data
-
-        Returns:
-            Evidence
-        """
-        return Evidence(
-            metric_name=metric_name,
-            value=value,
-            threshold=threshold,
-            comparison=comparison,
-            unit=unit,
-            context=context_kwargs,
-        )
-
     def is_enabled(self, config: Optional[EvaluatorConfig] = None) -> bool:
         """Check if this evaluator is enabled.
 

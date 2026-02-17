@@ -46,9 +46,6 @@ from src.features.state.hmm.hmm_model import (
 )
 from src.features.state.hmm.inference import (
     InferenceEngine,
-    MultiTimeframeInferenceEngine,
-    TemporalInferenceEngine,
-    RollingFeatureBuffer,
     create_inference_engine,
 )
 from src.features.state.hmm.data_pipeline import (
@@ -82,18 +79,12 @@ from src.features.state.hmm.validation import (
     PosteriorAnalyzer,
     StateConditionedReturnAnalyzer,
     OODMonitor,
-    WalkForwardBacktest,
     generate_validation_report,
 )
 from src.features.state.hmm.monitoring import (
-    MetricsCollector,
     MonitoringMetrics,
-    DriftDetector,
     DriftAlert,
-    ShadowInference,
-    ModelRolloutManager,
-    RetrainingScheduler,
-    MonitoringDashboard,
+    RetrainingTrigger,
 )
 
 __all__ = [
@@ -137,9 +128,6 @@ __all__ = [
     "match_states_hungarian",
     # Inference
     "InferenceEngine",
-    "MultiTimeframeInferenceEngine",
-    "TemporalInferenceEngine",
-    "RollingFeatureBuffer",
     "create_inference_engine",
     # Data Pipeline
     "FeatureLoader",
@@ -169,15 +157,9 @@ __all__ = [
     "PosteriorAnalyzer",
     "StateConditionedReturnAnalyzer",
     "OODMonitor",
-    "WalkForwardBacktest",
     "generate_validation_report",
     # Monitoring
-    "MetricsCollector",
     "MonitoringMetrics",
-    "DriftDetector",
     "DriftAlert",
-    "ShadowInference",
-    "ModelRolloutManager",
-    "RetrainingScheduler",
-    "MonitoringDashboard",
+    "RetrainingTrigger",
 ]

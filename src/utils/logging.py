@@ -417,13 +417,3 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
-def get_trade_logger(name: str) -> TradeLogger:
-    """Get a trade logger instance.
-
-    Args:
-        name: Logger name
-
-    Returns:
-        TradeLogger instance
-    """
-    return TradeLogger(name)

@@ -140,38 +140,6 @@ class FeatureLoader:
 
         return df
 
-    def load_features_multi_symbol(
-        self,
-        symbols: list[str],
-        timeframe: str,
-        start: datetime,
-        end: datetime,
-        feature_names: list[str],
-    ) -> dict[str, pd.DataFrame]:
-        """Load features for multiple symbols.
-
-        Args:
-            symbols: List of ticker symbols
-            timeframe: Bar timeframe
-            start: Start timestamp
-            end: End timestamp
-            feature_names: List of feature names
-
-        Returns:
-            Dictionary mapping symbol -> DataFrame
-        """
-        result = {}
-        for symbol in symbols:
-            try:
-                df = self.load_features(symbol, timeframe, start, end, feature_names)
-                if not df.empty:
-                    result[symbol] = df
-            except ValueError:
-                continue
-
-        return result
-
-
 class GapHandler:
     """Handle data gaps in feature time series."""
 
@@ -209,7 +177,7 @@ class GapHandler:
         }
         return durations[timeframe]
 
-    def detect_gaps(self, df: pd.DataFrame) -> pd.Series:
+    def _detect_gaps(self, df: pd.DataFrame) -> pd.Series:
         """Detect gaps in time series.
 
         Args:
@@ -235,18 +203,16 @@ class GapHandler:
 
         return has_gap
 
-    def mark_gaps(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Add gap marker column to DataFrame.
+    def _compute_gap_sizes(self, index: pd.DatetimeIndex) -> pd.Series:
+        """Compute gap sizes in bars."""
+        if len(index) < 2:
+            return pd.Series(0, index=index)
 
-        Args:
-            df: Input DataFrame
+        time_diffs = index.to_series().diff()
+        gap_bars = (time_diffs / self.bar_duration).fillna(1).astype(int)
+        gap_bars = gap_bars.clip(lower=1)
 
-        Returns:
-            DataFrame with 'has_gap' column added
-        """
-        df = df.copy()
-        df["has_gap"] = self.detect_gaps(df)
-        return df
+        return gap_bars
 
     def handle_gaps(
         self,
@@ -260,12 +226,12 @@ class GapHandler:
             price_features: Features that should NOT be forward-filled
 
         Returns:
-            DataFrame with gaps handled
+            DataFrame with gaps handled and 'has_gap' column added
         """
         price_features = price_features or []
-        df = self.mark_gaps(df)
-
-        gaps = self.detect_gaps(df)
+        df = df.copy()
+        gaps = self._detect_gaps(df)
+        df["has_gap"] = gaps
         gap_sizes = self._compute_gap_sizes(df.index)
 
         for col in df.columns:
@@ -281,17 +247,6 @@ class GapHandler:
                 df.loc[mask, col] = df[col].ffill().loc[mask]
 
         return df
-
-    def _compute_gap_sizes(self, index: pd.DatetimeIndex) -> pd.Series:
-        """Compute gap sizes in bars."""
-        if len(index) < 2:
-            return pd.Series(0, index=index)
-
-        time_diffs = index.to_series().diff()
-        gap_bars = (time_diffs / self.bar_duration).fillna(1).astype(int)
-        gap_bars = gap_bars.clip(lower=1)
-
-        return gap_bars
 
 
 class TimeSplitter:

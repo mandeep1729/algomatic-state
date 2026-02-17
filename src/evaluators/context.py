@@ -380,34 +380,6 @@ class ContextPack:
         value = features_df[name].iloc[-1]
         return float(value) if not pd.isna(value) else None
 
-    def get_feature_series(
-        self,
-        name: str,
-        timeframe: Optional[str] = None,
-        lookback: Optional[int] = None,
-    ) -> Optional[pd.Series]:
-        """Get a feature series.
-
-        Args:
-            name: Feature name
-            timeframe: Timeframe (defaults to primary)
-            lookback: Number of bars to include (defaults to all)
-
-        Returns:
-            Feature series or None
-        """
-        tf = timeframe or self.primary_timeframe
-        features_df = self.features.get(tf)
-        if features_df is None or features_df.empty:
-            return None
-        if name not in features_df.columns:
-            return None
-
-        series = features_df[name]
-        if lookback is not None:
-            series = series.tail(lookback)
-        return series
-
     def to_dict(self) -> dict:
         """Convert to dictionary (for caching/serialization)."""
         return {
@@ -908,11 +880,6 @@ class ContextPackBuilder:
             conflicts=conflicts,
             htf_trend=htf_trend,
         )
-
-    def clear_cache(self) -> None:
-        """Clear the context cache."""
-        self._cache.clear()
-        logger.debug("Cleared ContextPack cache")
 
 
 # Singleton builder instance

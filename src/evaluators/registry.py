@@ -126,8 +126,3 @@ def list_evaluators() -> list[dict]:
     return result
 
 
-def clear_registry() -> None:
-    """Clear the evaluator registry (mainly for testing)."""
-    global _EVALUATOR_REGISTRY
-    _EVALUATOR_REGISTRY.clear()
-    logger.debug("Cleared evaluator registry")
