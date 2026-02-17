@@ -9,7 +9,10 @@
 
 namespace ie {
 
-struct Ticker;  // forward declaration — already defined in db.h, but we keep it compatible
+struct Ticker {
+    int64_t id;
+    std::string symbol;
+};
 
 /// gRPC client for the data-service, drop-in replacement for Database.
 class DataServiceClient {

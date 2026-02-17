@@ -14,7 +14,7 @@ namespace ie {
 // Smaller batches reduce PostgreSQL memory pressure and allow incremental commits.
 constexpr size_t WRITE_BATCH_SIZE = 5000;
 
-Service::Service(const Config& config, Database& db, RedisBus& redis)
+Service::Service(const Config& config, DataServiceClient& db, RedisBus& redis)
     : config_(config), db_(db), redis_(redis) {}
 
 

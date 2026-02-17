@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
+    pkg-config \
     libhiredis-dev \
     libgrpc++-dev \
     libprotobuf-dev \
@@ -29,8 +30,19 @@ RUN wget -q https://github.com/TA-Lib/ta-lib/releases/download/v0.4.0/ta-lib-0.4
 
 WORKDIR /build
 
-# Copy generated proto C++ sources
-COPY proto/gen/cpp/ proto_gen/
+# Generate C++ proto stubs from .proto files
+COPY proto/market/ /proto/market/
+RUN mkdir -p proto_gen \
+    && protoc -I/proto \
+       --experimental_allow_proto3_optional \
+       --cpp_out=proto_gen \
+       --grpc_out=proto_gen \
+       --plugin=protoc-gen-grpc=$(which grpc_cpp_plugin) \
+       /proto/market/v1/ticker.proto \
+       /proto/market/v1/bar.proto \
+       /proto/market/v1/feature.proto \
+       /proto/market/v1/sync_log.proto \
+       /proto/market/v1/service.proto
 
 # Copy source
 COPY indicator-engine/CMakeLists.txt .

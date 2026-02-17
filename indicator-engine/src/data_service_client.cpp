@@ -1,5 +1,4 @@
 #include "data_service_client.h"
-#include "db.h"  // For Ticker struct
 
 #include <grpcpp/grpcpp.h>
 #include <spdlog/spdlog.h>

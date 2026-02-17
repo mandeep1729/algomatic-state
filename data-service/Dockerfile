@@ -16,7 +16,8 @@ COPY data-service/ .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /data-service ./cmd/data-service
 
 # Install grpc_health_probe for container health checks.
-RUN GOBIN=/usr/local/bin go install github.com/grpc-ecosystem/grpc-health-probe@latest
+RUN CGO_ENABLED=0 go install github.com/grpc-ecosystem/grpc-health-probe@latest \
+    && cp /go/bin/grpc-health-probe /grpc_health_probe
 
 # --- Runtime ---
 FROM alpine:3.20
@@ -24,7 +25,7 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /data-service /usr/local/bin/data-service
-COPY --from=builder /usr/local/bin/grpc_health_probe /usr/local/bin/grpc_health_probe
+COPY --from=builder /grpc_health_probe /usr/local/bin/grpc_health_probe
 
 EXPOSE 50051
 
