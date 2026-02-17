@@ -101,7 +101,48 @@ algomatic-state/
 │   ├── state_vector_feature_spec.yaml  # HMM feature spec
 │   └── seed/                   # Database seed data (initial tickers, etc.)
 │
-├── src/                        # Source code
+├── proto/                      # Protobuf definitions (shared between Go services and Python)
+│   ├── market/v1/              # Market data service protos
+│   │   ├── ticker.proto
+│   │   ├── bar.proto
+│   │   ├── feature.proto
+│   │   ├── sync_log.proto
+│   │   └── service.proto
+│   └── probe/v1/               # Probe data service protos
+│       └── service.proto
+│
+├── data-service/               # Go gRPC data-service (owns market data tables)
+│   ├── cmd/data-service/       # Entry point (main.go)
+│   ├── internal/
+│   │   ├── config/             # Configuration
+│   │   ├── db/                 # Database connection pool (pgx)
+│   │   ├── repository/         # Market data + probe repositories
+│   │   └── server/             # gRPC server implementations
+│   ├── Dockerfile
+│   ├── go.mod / go.sum
+│   └── proto/gen/go/           # Generated Go gRPC stubs
+│
+├── marketdata-service/         # Go market data aggregator (fetches from Alpaca, writes via gRPC)
+│   ├── cmd/marketdata-service/ # Entry point
+│   ├── internal/
+│   │   ├── aggregator/         # Timeframe aggregation
+│   │   ├── alpaca/             # Alpaca API client
+│   │   ├── config/             # Configuration
+│   │   ├── dataclient/         # gRPC client to data-service
+│   │   ├── redisbus/           # Redis pub/sub integration
+│   │   └── service/            # Orchestration service
+│   └── Dockerfile
+│
+├── indicator-engine/           # C++ high-performance indicator computation
+│   ├── src/                    # Source files (indicators, pipeline, gRPC service)
+│   ├── tests/                  # Unit tests
+│   └── Dockerfile
+│
+├── go-strats/                  # Go strategy backtesting framework
+│   ├── cmd/probe/              # CLI entry point
+│   └── pkg/                    # Core packages (api, backend, conditions, engine, persistence)
+│
+├── src/                        # Python source code
 │   ├── __init__.py
 │   │
 │   ├── agent/                  # Standalone trading agents
@@ -130,21 +171,31 @@ algomatic-state/
 │   │   ├── journal.py          # Trade journal endpoints
 │   │   ├── waitlist.py         # Waitlist submission endpoints
 │   │   ├── auth.py             # Google OAuth authentication endpoints
-│   │   ├── auth_middleware.py  # JWT token validation middleware
-│   │   └── user_profile.py     # User profile and risk preference endpoints
+│   │   ├── auth_middleware.py   # JWT token validation middleware
+│   │   ├── user_profile.py     # User profile and risk preference endpoints
+│   │   ├── _data_helpers.py    # Shared data utilities (feature computation)
+│   │   ├── market_data.py      # Market data endpoints (v1)
+│   │   ├── market_data_api.py  # Market data endpoints (v2)
+│   │   ├── data_sync.py        # Data sync endpoints
+│   │   ├── analysis.py         # HMM analysis endpoints
+│   │   ├── regimes.py          # Regime state endpoints (HMM + PCA)
+│   │   └── internal.py         # Internal/admin endpoints
 │   │
 │   ├── data/                   # Data layer
 │   │   ├── __init__.py
+│   │   ├── grpc_client.py      # MarketDataGrpcClient (drop-in replacement for OHLCVRepository)
+│   │   ├── timeframe_aggregator.py # Build higher-TF bars from 1Min data
 │   │   ├── loaders/
 │   │   │   ├── __init__.py
 │   │   │   ├── base.py         # Abstract loader interface
 │   │   │   ├── csv_loader.py   # Local CSV files
-│   │   │   ├── database_loader.py # PostgreSQL database
+│   │   │   ├── database_loader.py # DatabaseLoader (uses gRPC for market data access)
 │   │   │   ├── alpaca_loader.py # Alpaca API
 │   │   │   └── multi_asset.py  # Multi-asset loading with timestamp alignment
 │   │   ├── database/
 │   │   │   ├── __init__.py
 │   │   │   ├── connection.py   # Database connection and session management
+│   │   │   ├── dependencies.py # FastAPI DI + context managers (get_db, get_*_repo, grpc_market_client)
 │   │   │   ├── models.py       # Core models (Ticker, OHLCVBar, DataSyncLog, ComputedFeature)
 │   │   │   ├── broker_models.py # Broker integration (BrokerConnection, TradeFill, SnapTradeUser)
 │   │   │   ├── trading_buddy_models.py # Trading Buddy (UserAccount, UserProfile, UserRule, Waitlist)
@@ -152,15 +203,18 @@ algomatic-state/
 │   │   │   ├── trade_lifecycle_models.py # DecisionContext, CampaignCheck, CampaignFill
 │   │   │   ├── journal_models.py  # Journal entries
 │   │   │   ├── probe_models.py    # Strategy probe tables
-│   │   │   ├── market_repository.py   # Market data access layer
-│   │   │   └── trading_repository.py  # Trading Buddy data access layer
+│   │   │   ├── market_repository.py   # OHLCVRepository (legacy, used only for Alembic/testing)
+│   │   │   ├── trading_repository.py  # TradingBuddyRepository (user accounts, profiles, strategies)
+│   │   │   ├── broker_repository.py   # BrokerRepository (fills, contexts, connections, P&L)
+│   │   │   ├── journal_repository.py  # JournalRepository (journal CRUD)
+│   │   │   └── probe_repository.py    # ProbeRepository (strategy probe aggregations)
 │   │   ├── cache.py            # Data caching
 │   │   ├── schemas.py          # Pandera OHLCV schema validation
 │   │   └── quality.py          # Data quality checks
 │   │
-│   ├── messaging/              # In-memory pub/sub message bus
+│   ├── messaging/              # Pub/sub message bus (in-memory + Redis backends)
 │   │   ├── __init__.py
-│   │   ├── events.py           # Event, EventType (REQUEST/UPDATED/FAILED)
+│   │   ├── events.py           # Event, EventType
 │   │   └── bus.py              # MessageBus, get_message_bus singleton
 │   │
 │   ├── marketdata/             # Market data provider abstraction
@@ -168,7 +222,7 @@ algomatic-state/
 │   │   ├── base.py             # MarketDataProvider ABC
 │   │   ├── alpaca_provider.py  # Alpaca data provider
 │   │   ├── finnhub_provider.py # Finnhub data provider
-│   │   ├── service.py          # MarketDataService (ensure_data, gap detection)
+│   │   ├── service.py          # MarketDataService (ensure_data, gap detection, uses gRPC)
 │   │   ├── orchestrator.py     # MarketDataOrchestrator (bus <-> service)
 │   │   └── utils.py            # Rate limiter, retry, normalisation
 │   │
@@ -279,15 +333,7 @@ algomatic-state/
 │
 ├── alembic/                    # Database migrations
 │   ├── env.py
-│   └── versions/               # 31 migrations (001-031)
-│       ├── 001_initial_schema.py
-│       ├── ...
-│       ├── 026_restructure_trade_lifecycle.py  # Drops intents, lots, old campaigns
-│       ├── 027_drop_campaigns_table.py         # Self-contained campaign_fills
-│       ├── 028_campaign_checks_require_context.py
-│       ├── 029_add_strategy_implied_family.py
-│       ├── 030_waitlist_table.py
-│       └── 031_seed_app_user_and_strategies.py
+│   └── versions/               # 33 migrations (001-033)
 │
 ├── ui/                         # Web UI
 │   ├── backend/
@@ -307,20 +353,9 @@ algomatic-state/
 │               ├── metadata.json
 │               └── feature_spec.yaml
 │
-├── Dockerfile                  # Docker image for trading agents
-├── docker-compose.yml          # PostgreSQL + pgAdmin services
+├── Dockerfile                  # Docker image for Python backend + reviewer service
+├── docker-compose.yml          # Full stack: postgres, redis, data-service, indicator-engine, marketdata-service, reviewer-service
 ├── docker-compose.agents.yml   # Trading agent services (momentum, breakout, contrarian, vwap)
-│
-├── go-strats/                  # Go strategy backtesting framework
-│   ├── cmd/                    # CLI entry points
-│   └── pkg/                    # Core packages (api, backend, conditions, engine, etc.)
-│
-├── indicator-engine/           # High-performance C++ indicator computation engine
-│   ├── src/                    # Source files (indicators, pipeline, service)
-│   └── tests/                  # Unit tests
-│
-├── proposed-ui/                # Proposed React UI for Position Campaigns
-│   └── src/                    # React components with mock data
 │
 └── docs/                       # Documentation
     ├── ARCHITECTURE.md         # System design and data flow
@@ -341,9 +376,50 @@ algomatic-state/
 
 ## Core Components
 
-### 1. Data Layer
+### 1. Data Layer & gRPC Architecture
 
-**Purpose**: Load, validate, and cache OHLCV market data from multiple sources.
+**Purpose**: Load, validate, and cache OHLCV market data from multiple sources. All market data access flows through the Go data-service via gRPC.
+
+#### Data Access Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Python Backend                          │
+│                                                            │
+│  FastAPI Routes ──► Depends(get_market_grpc_client)        │
+│  Background Services ──► grpc_market_client() ctx mgr      │
+│                              │                             │
+│              MarketDataGrpcClient (src/data/grpc_client.py)│
+└──────────────────────────────┼─────────────────────────────┘
+                               │ gRPC (port 50051)
+┌──────────────────────────────┼─────────────────────────────┐
+│              Go data-service (data-service/)                │
+│                                                             │
+│  MarketDataService (gRPC server)                           │
+│       │                                                     │
+│       ├──► ticker_repo.go    → tickers table               │
+│       ├──► bar_repo.go       → ohlcv_bars table            │
+│       ├──► feature_repo.go   → computed_features table     │
+│       ├──► sync_log_repo.go  → data_sync_log table         │
+│       └──► probe_*_repo.go   → probe tables                │
+│                              │                              │
+│              PostgreSQL (pgx connection pool)               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key principle**: Market data tables (`tickers`, `ohlcv_bars`, `computed_features`, `data_sync_log`, `probe_strategies`, `strategy_probe_results`, `strategy_probe_trades`) are owned exclusively by the Go data-service. All reads and writes go through gRPC. Trading tables (`user_accounts`, `user_profiles`, `trade_fills`, `decision_contexts`, `strategies`, `campaigns`, `journal_entries`, etc.) are accessed directly by Python via SQLAlchemy repositories.
+
+#### Python Repository Layer
+
+| Repository | Domain | Access Pattern |
+|------------|--------|----------------|
+| `MarketDataGrpcClient` | Market data (bars, features, tickers, sync logs) | gRPC to data-service |
+| `TradingBuddyRepository` | User accounts, profiles, strategies | Direct SQLAlchemy |
+| `BrokerRepository` | Fills, decision contexts, broker connections, P&L | Direct SQLAlchemy |
+| `JournalRepository` | Journal entries | Direct SQLAlchemy |
+| `ProbeRepository` | Strategy probe aggregation queries | Direct SQLAlchemy |
+
+All repositories are injected via FastAPI `Depends()` functions defined in `src/data/database/dependencies.py`.
 
 #### BaseDataLoader (Abstract)
 ```python
@@ -362,6 +438,7 @@ class BaseDataLoader(ABC):
 **Implementations**:
 - `CSVLoader`: Reads local CSV files with configurable date parsing
 - `AlpacaLoader`: Fetches historical bars from Alpaca API with pagination
+- `DatabaseLoader`: Loads from database via gRPC, with auto-fetch from Alpaca for missing data
 
 **Data Schema** (enforced via pandera):
 ```
@@ -899,9 +976,16 @@ AlgomaticError (base)
 ## Deployment Architecture
 
 ### Development
-- Local Python environment
-- SQLite for caching
-- File-based logging
+- Local Python backend + Docker Compose for infrastructure (postgres, redis, data-service, indicator-engine, marketdata-service)
+- `AUTH_DEV_MODE=true` bypasses OAuth (uses user_id=1)
+- Backend: `uv run uvicorn ui.backend.api:app --host 0.0.0.0 --port $SERVER_PORT`
+- Frontend: `npm run dev` in `ui/frontend/`
+
+### Docker Compose (Full Stack)
+```bash
+docker compose up -d                    # All services
+docker compose --profile tools up -d    # Include pgAdmin
+```
 
 ### Paper Trading
 - Cloud VM (or local always-on machine)
@@ -913,25 +997,45 @@ AlgomaticError (base)
 - Cloud VM with monitoring
 - Alpaca live endpoint
 - Alerting (email/Slack)
-- Database for trade history
 - Automated failover
+
+## Docker Services
+
+The full stack runs via `docker-compose.yml`:
+
+| Service | Image | Purpose |
+|---------|-------|---------|
+| `postgres` | postgres:16-alpine | Primary database |
+| `redis` | redis:7-alpine | Message bus (reviewer events) and caching |
+| `data-service` | Go binary (built from `data-service/Dockerfile`) | gRPC server owning market data tables |
+| `indicator-engine` | C++ binary (built from `indicator-engine/Dockerfile`) | High-performance indicator computation |
+| `marketdata-service` | Go binary (built from `marketdata-service/Dockerfile`) | Market data fetching (Alpaca) + aggregation |
+| `reviewer-service` | Python (built from `Dockerfile`) | Event-driven behavioral checks |
+| `pgadmin` | dpage/pgadmin4 | Database management UI (profile: tools) |
+
+Service dependencies: `data-service` → `postgres`; `indicator-engine` / `marketdata-service` → `data-service` + `redis`; `reviewer-service` → `postgres` + `data-service` + `redis`.
 
 ## Technology Stack
 
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
-| Language | Python 3.12+ | Ecosystem, Alpaca SDK |
+| Language (primary) | Python 3.12+ | Ecosystem, Alpaca SDK |
+| Language (data services) | Go 1.24+ | Performance, concurrency for gRPC services |
+| Language (indicators) | C++ | High-performance indicator computation |
 | Data | pandas, numpy, pyarrow | Standard for financial data |
 | Database | PostgreSQL 16, SQLAlchemy, Alembic | Persistent storage with migrations |
+| Database (Go) | pgx | High-performance PostgreSQL driver for Go |
+| RPC | gRPC, Protocol Buffers | Cross-language market data access |
 | ML | scikit-learn | PCA, clustering, preprocessing |
 | HMM | hmmlearn | Gaussian HMM for regime tracking |
 | TA | TA-Lib, pandas-ta | Technical indicators |
 | Validation | pandera | DataFrame schema validation |
 | Config | pydantic, pydantic-settings, pyyaml | Type-safe configuration |
 | Market Data | alpaca-py, finnhub-python | Multi-provider data fetching |
+| Message Bus | Redis | Event-driven reviewer service |
 | Web Backend | FastAPI, uvicorn | REST API |
 | Web Frontend | React 18, TypeScript, Vite | Visualization UI |
 | Charting | TradingView Lightweight Charts, Plotly | Interactive charts |
 | HTTP Client | httpx | Async HTTP (agent scheduler) |
 | Containerisation | Docker, Docker Compose | Deployment |
-| Testing | pytest | Standard Python testing |
+| Testing | pytest (Python), go test (Go) | Standard testing frameworks |

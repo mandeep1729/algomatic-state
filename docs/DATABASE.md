@@ -360,9 +360,24 @@ The following tables were removed as part of the trade lifecycle restructuring:
 
 The simplified model treats fills as the atomic unit, with decision_contexts capturing trader reasoning per fill and campaign_fills providing derived groupings.
 
+## Data Access Architecture
+
+Market data tables (`tickers`, `ohlcv_bars`, `computed_features`, `data_sync_log`, `probe_strategies`, `strategy_probe_results`, `strategy_probe_trades`) are owned by the **Go data-service** and accessed via gRPC. All Python code uses `MarketDataGrpcClient` (`src/data/grpc_client.py`) instead of direct SQLAlchemy queries for these tables.
+
+Trading tables (`user_accounts`, `user_profiles`, `trade_fills`, `decision_contexts`, `strategies`, `campaigns`, `journal_entries`, `broker_connections`, etc.) are accessed directly by Python through dedicated repository classes:
+
+| Repository | File | Domain |
+|------------|------|--------|
+| `TradingBuddyRepository` | `trading_repository.py` | User accounts, profiles, strategies |
+| `BrokerRepository` | `broker_repository.py` | Fills, contexts, connections, P&L |
+| `JournalRepository` | `journal_repository.py` | Journal CRUD |
+| `ProbeRepository` | `probe_repository.py` | Strategy probe aggregation queries |
+
+All repositories are injected via FastAPI `Depends()` functions from `src/data/database/dependencies.py`.
+
 ## Migrations
 
-Alembic is used for database migrations. The project currently has 31 migrations (001-031).
+Alembic is used for database migrations. The project currently has 33 migrations (001-033).
 
 ```bash
 # Run pending migrations
@@ -413,31 +428,27 @@ alembic history
 | 029 | Add implied_strategy_family to strategies |
 | 030 | Waitlist table |
 | 031 | Seed app user and benchmark strategies |
+| 032 | Add user account stats columns |
+| 033 | Add user profiles stats |
 
 ## Docker Services
 
-### PostgreSQL
-
-```yaml
-services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: algomatic-postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-```
-
-### pgAdmin (Optional)
+### Full Stack
 
 ```bash
-# Start pgAdmin for database management UI
-docker-compose --profile tools up -d
-
-# Access at http://localhost:5050
-# Default login: admin@algomatic.local / admin
+docker compose up -d          # Start all services
+docker compose --profile tools up -d  # Include pgAdmin
 ```
+
+| Service | Image | Purpose |
+|---------|-------|---------|
+| `postgres` | postgres:16-alpine | Primary database (port 5432) |
+| `redis` | redis:7-alpine | Message bus + caching (port 6379) |
+| `data-service` | Go binary | gRPC server owning market data tables (port 50051) |
+| `indicator-engine` | C++ binary | High-performance indicator computation |
+| `marketdata-service` | Go binary | Market data fetching (Alpaca) + aggregation |
+| `reviewer-service` | Python | Event-driven behavioral checks |
+| `pgadmin` | dpage/pgadmin4 | Database management UI (port 5050, profile: tools) |
 
 ## Configuration
 
@@ -456,6 +467,23 @@ docker-compose --profile tools up -d
 
 ### Python Usage
 
+Market data access (via gRPC to data-service):
+```python
+# In FastAPI routes (dependency injection)
+from src.data.database.dependencies import get_market_grpc_client
+
+@router.get("/bars")
+def get_bars(repo=Depends(get_market_grpc_client)):
+    return repo.get_bars("AAPL", "1Min", start=start, end=end)
+
+# In background services (context manager)
+from src.data.database.dependencies import grpc_market_client
+
+with grpc_market_client() as repo:
+    bars = repo.get_bars("AAPL", "1Min")
+```
+
+Trading data access (direct SQLAlchemy):
 ```python
 from config.settings import get_settings
 
@@ -466,26 +494,32 @@ print(settings.database.url)
 
 ## Smart Data Fetching
 
-The `DatabaseLoader` implements intelligent incremental fetching:
+The `DatabaseLoader` implements intelligent incremental fetching via the gRPC data-service:
 
-1. **Check existing data**: Query database for the latest timestamp
+1. **Check existing data**: Query data-service for the latest timestamp
 2. **Determine gaps**: Compare requested range with existing data
 3. **Fetch only new data**: Request Alpaca API for missing periods only
-4. **Store and return**: Insert new bars and return complete dataset
+4. **Store and return**: Insert new bars via gRPC and return complete dataset
 
 ```
 Request: AAPL 1Min data for Jan 1-15
            |
            v
     +--------------+
-    | DB has data  |
-    | Jan 1-10     |
+    | gRPC: latest |
+    | bar is Jan 10|
     +--------------+
            |
            v
     +--------------+
     | Fetch Alpaca |
     | Jan 11-15    |  <-- Only fetches missing data
+    +--------------+
+           |
+           v
+    +--------------+
+    | gRPC: insert |
+    | new bars     |
     +--------------+
            |
            v

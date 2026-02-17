@@ -66,11 +66,14 @@ The project has three major subsystems:
 
 6. **Reviewer Service** (`src/reviewer/`) -- Event-driven service that subscribes to review events on the Redis message bus and runs behavioral checks against trade fills and decision contexts.
 
-Supporting infrastructure: data loaders (`src/data/`), database models and repositories (`src/data/database/`), broker integration (`src/api/broker.py`, `src/api/alpaca.py`, `src/execution/snaptrade_client.py`), backtesting (`src/backtest/`), configuration (`config/settings.py`), authentication (`src/api/auth.py`, `src/api/auth_middleware.py`).
+7. **Go Data Service** (`data-service/`, `proto/`) -- gRPC service (Go) that owns all market data tables (`tickers`, `ohlcv_bars`, `computed_features`, `data_sync_log`, probe tables). All Python market data access flows through `MarketDataGrpcClient` (`src/data/grpc_client.py`) via gRPC. Trading tables remain in Python via SQLAlchemy repositories.
 
-Experimental components:
-- `go-strats/` -- Go-based strategy backtesting framework
-- `indicator-engine/` -- High-performance C++ indicator computation engine
-- `proposed-ui/` -- React UI scaffold for Position Campaigns experience
+8. **Go Market Data Service** (`marketdata-service/`) -- Go service that fetches market data from Alpaca, aggregates timeframes, and writes to the data-service via gRPC.
+
+Supporting infrastructure: data loaders (`src/data/`), database models and repositories (`src/data/database/`), repository layer (`BrokerRepository`, `JournalRepository`, `ProbeRepository`, `TradingBuddyRepository`), unified dependency injection (`src/data/database/dependencies.py`), broker integration (`src/api/broker.py`, `src/api/alpaca.py`, `src/execution/snaptrade_client.py`), backtesting (`src/backtest/`), configuration (`config/settings.py`), authentication (`src/api/auth.py`, `src/api/auth_middleware.py`).
+
+Additional components:
+- `go-strats/` -- Go strategy backtesting framework (uses gRPC for persistence)
+- `indicator-engine/` -- C++ high-performance indicator computation (gRPC client to data-service)
 
 See `docs/ARCHITECTURE.md` for detailed architecture, and `docs/archive/Trading_Buddy_Detailed_TODOs.md` for the Trading Buddy implementation roadmap.
