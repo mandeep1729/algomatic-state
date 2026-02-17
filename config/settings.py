@@ -344,6 +344,20 @@ class AuthConfig(BaseSettings):
         return v
 
 
+class DataServiceConfig(BaseSettings):
+    """gRPC data-service configuration."""
+
+    model_config = SettingsConfigDict(env_prefix="DS_")
+
+    host: str = Field(default="localhost", description="Data service gRPC host")
+    port: int = Field(default=50051, description="Data service gRPC port")
+
+    @property
+    def target(self) -> str:
+        """Return host:port target string for gRPC channel."""
+        return f"{self.host}:{self.port}"
+
+
 class ServerConfig(BaseSettings):
     """Backend server configuration."""
 
@@ -382,6 +396,7 @@ class Settings(BaseSettings):
     reviewer: ReviewerConfig = Field(default_factory=ReviewerConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
+    data_service: DataServiceConfig = Field(default_factory=DataServiceConfig)
 
     @model_validator(mode="after")
     def validate_production_safety(self) -> "Settings":

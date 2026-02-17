@@ -33,14 +33,25 @@ struct IndicatorConfig {
     int lookback_buffer = 250;
 };
 
+struct DataServiceConfig {
+    std::string host = "localhost";
+    int port = 50051;
+
+    std::string addr() const;
+};
+
 struct Config {
-    DatabaseConfig database;
+    DatabaseConfig database;  // Kept for backward compatibility; unused when data_service is configured.
+    DataServiceConfig data_service;
     RedisConfig redis;
     ServiceConfig service;
     IndicatorConfig indicators;
 
     /// Load from JSON file, then override with environment variables.
     static Config load(const std::string& path);
+
+    /// Returns the data-service gRPC address (host:port).
+    std::string data_service_addr() const;
 };
 
 } // namespace ie

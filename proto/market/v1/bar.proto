@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package market.v1;
+
+option go_package = "github.com/algomatic/data-service/proto/gen/go/market/v1;marketv1";
+
+import "google/protobuf/timestamp.proto";
+
+// OHLCVBar represents a single OHLCV candlestick bar.
+message OHLCVBar {
+  int64 id = 1;
+  int32 ticker_id = 2;
+  string timeframe = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  double open = 5;
+  double high = 6;
+  double low = 7;
+  double close = 8;
+  int64 volume = 9;
+  optional int32 trade_count = 10;
+  string source = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+// GetBars — paginated unary for bounded reads.
+message GetBarsRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  optional google.protobuf.Timestamp start = 3;
+  optional google.protobuf.Timestamp end = 4;
+  int32 page_size = 5;        // default 2000
+  string page_token = 6;      // opaque cursor (last timestamp)
+}
+
+message GetBarsResponse {
+  repeated OHLCVBar bars = 1;
+  string next_page_token = 2;  // empty when no more pages
+  int32 total_count = 3;
+}
+
+// StreamBars — server streaming for unbounded reads (used by C++ indicator-engine).
+message StreamBarsRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  optional google.protobuf.Timestamp start = 3;
+  optional google.protobuf.Timestamp end = 4;
+}
+
+message BulkInsertBarsRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  string source = 3;
+  repeated OHLCVBar bars = 4;  // max 1000 per call
+}
+
+message BulkInsertBarsResponse {
+  int32 rows_inserted = 1;
+}
+
+message DeleteBarsRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  optional google.protobuf.Timestamp start = 3;
+  optional google.protobuf.Timestamp end = 4;
+}
+
+message DeleteBarsResponse {
+  int32 rows_deleted = 1;
+}
+
+message GetLatestTimestampRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+}
+
+message GetLatestTimestampResponse {
+  optional google.protobuf.Timestamp timestamp = 1;
+}
+
+message GetEarliestTimestampRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+}
+
+message GetEarliestTimestampResponse {
+  optional google.protobuf.Timestamp timestamp = 1;
+}
+
+message GetBarCountRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  optional google.protobuf.Timestamp start = 3;
+  optional google.protobuf.Timestamp end = 4;
+}
+
+message GetBarCountResponse {
+  int64 count = 1;
+}
+
+message GetBarIdsForTimestampsRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  repeated google.protobuf.Timestamp timestamps = 3;
+}
+
+message GetBarIdsForTimestampsResponse {
+  // Map from timestamp (RFC3339) to bar ID.
+  map<string, int64> timestamp_to_id = 1;
+}

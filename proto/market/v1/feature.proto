@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package market.v1;
+
+option go_package = "github.com/algomatic/data-service/proto/gen/go/market/v1;marketv1";
+
+import "google/protobuf/timestamp.proto";
+
+// ComputedFeature represents computed indicators/features for a bar.
+message ComputedFeature {
+  int64 id = 1;
+  int64 bar_id = 2;
+  int32 ticker_id = 3;
+  string timeframe = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  map<string, double> features = 6;
+  string feature_version = 7;
+  optional string model_id = 8;
+  optional int32 state_id = 9;
+  optional double state_prob = 10;
+  optional double log_likelihood = 11;
+  google.protobuf.Timestamp created_at = 12;
+}
+
+message GetFeaturesRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  optional google.protobuf.Timestamp start = 3;
+  optional google.protobuf.Timestamp end = 4;
+  int32 page_size = 5;        // default 2000
+  string page_token = 6;
+}
+
+message GetFeaturesResponse {
+  repeated ComputedFeature features = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+}
+
+message GetExistingFeatureBarIdsRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  optional google.protobuf.Timestamp start = 3;
+  optional google.protobuf.Timestamp end = 4;
+}
+
+message GetExistingFeatureBarIdsResponse {
+  repeated int64 bar_ids = 1;
+}
+
+message BulkUpsertFeaturesRequest {
+  repeated ComputedFeature features = 1;  // max 5000 per call
+}
+
+message BulkUpsertFeaturesResponse {
+  int32 rows_upserted = 1;
+}
+
+// State operations for HMM/PCA model states.
+message StoreStatesRequest {
+  repeated ComputedFeature states = 1;
+  string model_id = 2;
+}
+
+message StoreStatesResponse {
+  int32 rows_stored = 1;
+}
+
+message GetStatesRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  string model_id = 3;
+  optional google.protobuf.Timestamp start = 4;
+  optional google.protobuf.Timestamp end = 5;
+}
+
+message GetStatesResponse {
+  repeated ComputedFeature states = 1;
+}
+
+message GetLatestStatesRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+}
+
+message GetLatestStatesResponse {
+  repeated ComputedFeature states = 1;
+}

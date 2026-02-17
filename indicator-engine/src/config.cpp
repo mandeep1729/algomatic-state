@@ -98,7 +98,27 @@ Config Config::load(const std::string& path) {
     cfg.service.feature_version = env_or("FEATURE_VERSION", cfg.service.feature_version);
     cfg.service.interval_minutes = env_int_or("ENGINE_INTERVAL_MINUTES", cfg.service.interval_minutes);
 
+    // DATA_SERVICE_ADDR can be "host:port" or just set host/port separately.
+    std::string ds_addr = env_or("DATA_SERVICE_ADDR", "");
+    if (!ds_addr.empty()) {
+        auto colon = ds_addr.find(':');
+        if (colon != std::string::npos) {
+            cfg.data_service.host = ds_addr.substr(0, colon);
+            cfg.data_service.port = std::atoi(ds_addr.substr(colon + 1).c_str());
+        } else {
+            cfg.data_service.host = ds_addr;
+        }
+    }
+
     return cfg;
+}
+
+std::string DataServiceConfig::addr() const {
+    return host + ":" + std::to_string(port);
+}
+
+std::string Config::data_service_addr() const {
+    return data_service.addr();
 }
 
 } // namespace ie

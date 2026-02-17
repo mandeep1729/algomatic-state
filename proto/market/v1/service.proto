@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package market.v1;
+
+option go_package = "github.com/algomatic/data-service/proto/gen/go/market/v1;marketv1";
+
+import "market/v1/ticker.proto";
+import "market/v1/bar.proto";
+import "market/v1/feature.proto";
+import "market/v1/sync_log.proto";
+
+// MarketDataService provides unified access to market data tables.
+// All database connections are owned by this service — clients use gRPC.
+service MarketDataService {
+  // Ticker operations
+  rpc GetTicker(GetTickerRequest) returns (GetTickerResponse);
+  rpc ListTickers(ListTickersRequest) returns (ListTickersResponse);
+  rpc GetOrCreateTicker(GetOrCreateTickerRequest) returns (GetOrCreateTickerResponse);
+  rpc BulkUpsertTickers(BulkUpsertTickersRequest) returns (BulkUpsertTickersResponse);
+
+  // Bar operations
+  rpc GetBars(GetBarsRequest) returns (GetBarsResponse);
+  rpc StreamBars(StreamBarsRequest) returns (stream OHLCVBar);
+  rpc BulkInsertBars(BulkInsertBarsRequest) returns (BulkInsertBarsResponse);
+  rpc DeleteBars(DeleteBarsRequest) returns (DeleteBarsResponse);
+  rpc GetLatestTimestamp(GetLatestTimestampRequest) returns (GetLatestTimestampResponse);
+  rpc GetEarliestTimestamp(GetEarliestTimestampRequest) returns (GetEarliestTimestampResponse);
+  rpc GetBarCount(GetBarCountRequest) returns (GetBarCountResponse);
+  rpc GetBarIdsForTimestamps(GetBarIdsForTimestampsRequest) returns (GetBarIdsForTimestampsResponse);
+
+  // Feature operations
+  rpc GetFeatures(GetFeaturesRequest) returns (GetFeaturesResponse);
+  rpc GetExistingFeatureBarIds(GetExistingFeatureBarIdsRequest) returns (GetExistingFeatureBarIdsResponse);
+  rpc BulkUpsertFeatures(BulkUpsertFeaturesRequest) returns (BulkUpsertFeaturesResponse);
+  rpc StoreStates(StoreStatesRequest) returns (StoreStatesResponse);
+  rpc GetStates(GetStatesRequest) returns (GetStatesResponse);
+  rpc GetLatestStates(GetLatestStatesRequest) returns (GetLatestStatesResponse);
+
+  // Sync log operations
+  rpc GetSyncLog(GetSyncLogRequest) returns (GetSyncLogResponse);
+  rpc UpdateSyncLog(UpdateSyncLogRequest) returns (UpdateSyncLogResponse);
+  rpc ListSyncLogs(ListSyncLogsRequest) returns (ListSyncLogsResponse);
+}

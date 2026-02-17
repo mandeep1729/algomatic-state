@@ -12,6 +12,18 @@ import (
 	"github.com/algomatic/marketdata-service/internal/db"
 )
 
+// DBClient abstracts database operations so both db.Client (direct pgx)
+// and dataclient.Client (gRPC) can be used.
+type DBClient interface {
+	GetOrCreateTicker(ctx context.Context, symbol string) (int, error)
+	GetActiveTickers(ctx context.Context) ([]string, error)
+	GetLatestTimestamp(ctx context.Context, tickerID int, timeframe string) (*time.Time, error)
+	GetBars1Min(ctx context.Context, tickerID int, after time.Time) ([]db.OHLCVBar, error)
+	BulkInsertBars(ctx context.Context, tickerID int, timeframe, source string, bars []db.OHLCVBar) (int, error)
+	UpdateSyncLog(ctx context.Context, entry db.SyncLogEntry) error
+	HealthCheck(ctx context.Context) error
+}
+
 // pendingRequest tracks in-flight requests for request coalescing.
 type pendingRequest struct {
 	done   chan struct{}
@@ -21,7 +33,7 @@ type pendingRequest struct {
 
 // Service orchestrates market data fetching and aggregation.
 type Service struct {
-	db     *db.Client
+	db     DBClient
 	alpaca *alpaca.Client
 	logger *slog.Logger
 
@@ -30,7 +42,7 @@ type Service struct {
 }
 
 // NewService creates a new market data service.
-func NewService(dbClient *db.Client, alpacaClient *alpaca.Client, logger *slog.Logger) *Service {
+func NewService(dbClient DBClient, alpacaClient *alpaca.Client, logger *slog.Logger) *Service {
 	if logger == nil {
 		logger = slog.Default()
 	}

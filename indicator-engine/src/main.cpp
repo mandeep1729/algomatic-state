@@ -1,5 +1,5 @@
 #include "config.h"
-#include "db.h"
+#include "data_service_client.h"
 #include "redis_bus.h"
 #include "service.h"
 
@@ -60,13 +60,15 @@ int main(int argc, char* argv[]) {
     std::signal(SIGTERM, signal_handler);
 
     try {
-        // Initialize database
-        ie::Database db(config.database);
+        // Initialize gRPC client to data-service
+        std::string data_service_addr = config.data_service_addr();
+        spdlog::info("Connecting to data-service at {}", data_service_addr);
+        ie::DataServiceClient db(data_service_addr);
         if (!db.health_check()) {
-            spdlog::error("Database health check failed");
+            spdlog::error("Data service health check failed");
             return 1;
         }
-        spdlog::info("Database connected");
+        spdlog::info("Data service connected");
 
         // Initialize Redis
         ie::RedisBus redis(config.redis);

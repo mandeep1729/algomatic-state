@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package market.v1;
+
+option go_package = "github.com/algomatic/data-service/proto/gen/go/market/v1;marketv1";
+
+import "google/protobuf/timestamp.proto";
+
+// DataSyncLog tracks data synchronization progress per ticker/timeframe.
+message DataSyncLog {
+  int32 id = 1;
+  int32 ticker_id = 2;
+  string timeframe = 3;
+  optional google.protobuf.Timestamp last_synced_timestamp = 4;
+  optional google.protobuf.Timestamp first_synced_timestamp = 5;
+  google.protobuf.Timestamp last_sync_at = 6;
+  int32 bars_fetched = 7;
+  int32 total_bars = 8;
+  string status = 9;
+  optional string error_message = 10;
+}
+
+message GetSyncLogRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+}
+
+message GetSyncLogResponse {
+  optional DataSyncLog sync_log = 1;
+}
+
+message UpdateSyncLogRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  optional google.protobuf.Timestamp last_synced_timestamp = 3;
+  optional google.protobuf.Timestamp first_synced_timestamp = 4;
+  int32 bars_fetched = 5;
+  string status = 6;
+  optional string error_message = 7;
+}
+
+message UpdateSyncLogResponse {
+  DataSyncLog sync_log = 1;
+}
+
+message ListSyncLogsRequest {
+  optional string symbol = 1;  // filter by ticker symbol
+}
+
+message ListSyncLogsResponse {
+  repeated DataSyncLog sync_logs = 1;
+}

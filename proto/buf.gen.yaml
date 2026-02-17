@@ -1,0 +1,24 @@
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/algomatic/data-service/proto/gen/go
+plugins:
+  # Go
+  - remote: buf.build/protocolbuffers/go
+    out: gen/go
+    opt: paths=source_relative
+  - remote: buf.build/grpc/go
+    out: gen/go
+    opt: paths=source_relative
+  # Python
+  - remote: buf.build/protocolbuffers/python
+    out: gen/python
+  - remote: buf.build/grpc/python
+    out: gen/python
+  # C++
+  - remote: buf.build/protocolbuffers/cpp
+    out: gen/cpp
+  - remote: buf.build/grpc/cpp
+    out: gen/cpp

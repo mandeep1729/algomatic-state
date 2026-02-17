@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package market.v1;
+
+option go_package = "github.com/algomatic/data-service/proto/gen/go/market/v1;marketv1";
+
+import "google/protobuf/timestamp.proto";
+
+// Ticker represents a tradeable instrument.
+message Ticker {
+  int32 id = 1;
+  string symbol = 2;
+  string name = 3;
+  string exchange = 4;
+  string asset_type = 5;
+  bool is_active = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message GetTickerRequest {
+  string symbol = 1;
+}
+
+message GetTickerResponse {
+  Ticker ticker = 1;
+}
+
+message ListTickersRequest {
+  bool active_only = 1;
+}
+
+message ListTickersResponse {
+  repeated Ticker tickers = 1;
+}
+
+message GetOrCreateTickerRequest {
+  string symbol = 1;
+  string name = 2;
+  string exchange = 3;
+  string asset_type = 4;
+}
+
+message GetOrCreateTickerResponse {
+  Ticker ticker = 1;
+  bool created = 2;
+}
+
+message BulkUpsertTickersRequest {
+  repeated Ticker tickers = 1;
+}
+
+message BulkUpsertTickersResponse {
+  int32 upserted_count = 1;
+}

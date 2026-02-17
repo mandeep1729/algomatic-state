@@ -1,7 +1,7 @@
 #pragma once
 
 #include "config.h"
-#include "db.h"
+#include "data_service_client.h"
 #include "pipeline.h"
 #include "redis_bus.h"
 
@@ -12,7 +12,7 @@ namespace ie {
 /// Service that manages periodic and on-demand indicator computation.
 class Service {
 public:
-    Service(const Config& config, Database& db, RedisBus& redis);
+    Service(const Config& config, DataServiceClient& db, RedisBus& redis);
 
     /// Run the periodic batch computation loop.
     void run_service_loop();
@@ -25,7 +25,7 @@ public:
 
 private:
     const Config& config_;
-    Database& db_;
+    DataServiceClient& db_;
     RedisBus& redis_;
     Pipeline pipeline_;
     std::atomic<bool> running_{true};

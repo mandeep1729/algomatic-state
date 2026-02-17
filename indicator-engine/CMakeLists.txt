@@ -31,12 +31,27 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(nlohmann_json spdlog googletest)
 
+# ---- gRPC and Protobuf ----
+find_package(Protobuf REQUIRED)
+find_package(gRPC REQUIRED)
+
+# Generated proto sources (copied into build context by Dockerfile)
+set(PROTO_GEN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/proto_gen)
+
+file(GLOB PROTO_SRCS ${PROTO_GEN_DIR}/*.pb.cc)
+file(GLOB GRPC_SRCS ${PROTO_GEN_DIR}/*.grpc.pb.cc)
+
+add_library(market_proto STATIC ${PROTO_SRCS} ${GRPC_SRCS})
+target_include_directories(market_proto PUBLIC ${PROTO_GEN_DIR})
+target_link_libraries(market_proto PUBLIC
+    protobuf::libprotobuf
+    gRPC::grpc++
+)
+
 # ---- System libraries ----
-find_library(LIBPQ pq REQUIRED)
 find_library(LIBHIREDIS hiredis REQUIRED)
 find_library(LIBTALIB ta_lib NAMES ta_lib ta-lib)
 
-find_path(PQ_INCLUDE_DIR libpq-fe.h PATHS /usr/include/postgresql)
 find_path(HIREDIS_INCLUDE_DIR hiredis/hiredis.h)
 find_path(TALIB_INCLUDE_DIR ta-lib/ta_libc.h ta_libc.h)
 
@@ -44,7 +59,7 @@ find_path(TALIB_INCLUDE_DIR ta-lib/ta_libc.h ta_libc.h)
 add_executable(indicator-engine
     src/main.cpp
     src/config.cpp
-    src/db.cpp
+    src/data_service_client.cpp
     src/redis_bus.cpp
     src/pipeline.cpp
     src/json_builder.cpp
@@ -60,7 +75,6 @@ add_executable(indicator-engine
 
 target_include_directories(indicator-engine PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
-    ${PQ_INCLUDE_DIR}
     ${HIREDIS_INCLUDE_DIR}
     ${TALIB_INCLUDE_DIR}
 )
@@ -68,7 +82,7 @@ target_include_directories(indicator-engine PRIVATE
 target_link_libraries(indicator-engine PRIVATE
     nlohmann_json::nlohmann_json
     spdlog::spdlog
-    ${LIBPQ}
+    market_proto
     ${LIBHIREDIS}
 )
 

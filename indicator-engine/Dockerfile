@@ -9,8 +9,10 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
     git \
-    libpq-dev \
     libhiredis-dev \
+    libgrpc++-dev \
+    libprotobuf-dev \
+    protobuf-compiler-grpc \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
@@ -27,10 +29,13 @@ RUN wget -q https://github.com/TA-Lib/ta-lib/releases/download/v0.4.0/ta-lib-0.4
 
 WORKDIR /build
 
+# Copy generated proto C++ sources
+COPY proto/gen/cpp/ proto_gen/
+
 # Copy source
-COPY CMakeLists.txt .
-COPY src/ src/
-COPY tests/ tests/
+COPY indicator-engine/CMakeLists.txt .
+COPY indicator-engine/src/ src/
+COPY indicator-engine/tests/ tests/
 
 # Configure and build
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
@@ -46,8 +51,9 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
     libhiredis0.14 \
+    libgrpc++1 \
+    libprotobuf23 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -59,7 +65,7 @@ RUN ldconfig
 COPY --from=builder /build/build/indicator-engine /usr/local/bin/indicator-engine
 
 # Default config (readable by all)
-COPY --chmod=644 config.json.example /etc/indicator-engine/config.json
+COPY --chmod=644 indicator-engine/config.json.example /etc/indicator-engine/config.json
 
 # User is set at runtime via docker-compose (user: "${UID}:${GID}")
 ENTRYPOINT ["indicator-engine"]

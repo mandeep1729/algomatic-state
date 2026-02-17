@@ -15,7 +15,7 @@ import (
 
 	"github.com/algomatic/marketdata-service/internal/alpaca"
 	"github.com/algomatic/marketdata-service/internal/config"
-	"github.com/algomatic/marketdata-service/internal/db"
+	"github.com/algomatic/marketdata-service/internal/dataclient"
 	"github.com/algomatic/marketdata-service/internal/redisbus"
 	"github.com/algomatic/marketdata-service/internal/service"
 )
@@ -41,7 +41,6 @@ func main() {
 	logger.Info("Starting marketdata-service",
 		"mode", cfg.Service.Mode,
 		"interval_minutes", cfg.Service.IntervalMinutes,
-		"db_host", cfg.Database.Host,
 		"redis_host", cfg.Redis.Host,
 	)
 
@@ -49,12 +48,16 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Initialize database client.
-	dbCtx, dbCancel := context.WithTimeout(ctx, 15*time.Second)
-	dbClient, err := db.NewClient(dbCtx, cfg.Database.ConnString(), logger)
-	dbCancel()
+	// Initialize gRPC client to data-service.
+	dataServiceAddr := os.Getenv("DATA_SERVICE_ADDR")
+	if dataServiceAddr == "" {
+		dataServiceAddr = "localhost:50051"
+	}
+	logger.Info("Connecting to data-service", "addr", dataServiceAddr)
+
+	dbClient, err := dataclient.NewClient(ctx, dataServiceAddr, logger)
 	if err != nil {
-		logger.Error("Failed to connect to database", "error", err)
+		logger.Error("Failed to connect to data-service", "error", err)
 		os.Exit(1)
 	}
 	defer dbClient.Close()
@@ -79,7 +82,7 @@ func main() {
 
 	// Health checks.
 	if err := dbClient.HealthCheck(ctx); err != nil {
-		logger.Error("Database health check failed", "error", err)
+		logger.Error("Data service health check failed", "error", err)
 		os.Exit(1)
 	}
 	if err := bus.HealthCheck(ctx); err != nil {

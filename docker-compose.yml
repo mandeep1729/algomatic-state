@@ -32,18 +32,38 @@ services:
       retries: 5
     restart: unless-stopped
 
+  data-service:
+    build:
+      context: .
+      dockerfile: data-service/Dockerfile
+    container_name: algomatic-data-service
+    environment:
+      - DS_DB_HOST=postgres
+      - DS_DB_PORT=5432
+      - DS_DB_NAME=${DB_NAME}
+      - DS_DB_USER=${DB_USER}
+      - DS_DB_PASSWORD=${DB_PASSWORD}
+      - DS_GRPC_PORT=50051
+      - DS_DB_MAX_CONNS=25
+      - DS_LOG_LEVEL=${DS_LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "grpc_health_probe", "-addr=:50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   indicator-engine:
     build:
-      context: ./indicator-engine
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: indicator-engine/Dockerfile
     container_name: algomatic-indicator-engine
     user: "${DOCKER_UID}:${DOCKER_GID}"
     environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
+      - DATA_SERVICE_ADDR=data-service:50051
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - ENGINE_MODE=${ENGINE_MODE:-both}
@@ -51,7 +71,7 @@ services:
       - ENGINE_INTERVAL_MINUTES=${ENGINE_INTERVAL_MINUTES:-15}
       - FEATURE_VERSION=${FEATURE_VERSION:-v2.0}
     depends_on:
-      postgres:
+      data-service:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -69,11 +89,7 @@ services:
     container_name: algomatic-marketdata-service
     user: "${DOCKER_UID}:${DOCKER_GID}"
     environment:
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=${DB_NAME}
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
+      - DATA_SERVICE_ADDR=data-service:50051
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - ALPACA_API_KEY=${ALPACA_API_KEY}
@@ -84,7 +100,7 @@ services:
     volumes:
       - ${LOGS_DIR:-./logs}/marketdata-service:/var/log/marketdata-service
     depends_on:
-      postgres:
+      data-service:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -105,6 +121,8 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
+      - DS_HOST=data-service
+      - DS_PORT=50051
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MESSAGING_BACKEND=redis
@@ -113,6 +131,8 @@ services:
       - ${LOGS_DIR:-./logs}/reviewer-service:/var/log/reviewer-service
     depends_on:
       postgres:
+        condition: service_healthy
+      data-service:
         condition: service_healthy
       redis:
         condition: service_healthy

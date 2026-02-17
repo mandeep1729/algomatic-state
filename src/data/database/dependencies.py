@@ -61,6 +61,29 @@ def get_market_repo():
         yield OHLCVRepository(session)
 
 
+def get_market_grpc_client():
+    """FastAPI dependency returning a MarketDataGrpcClient.
+
+    Uses gRPC to communicate with the data-service instead of direct DB access.
+
+    Usage::
+
+        @router.get("/bars")
+        async def get_bars(repo = Depends(get_market_grpc_client)):
+            ...
+    """
+    import grpc
+    from config.settings import get_settings
+    from src.data.grpc_client import MarketDataGrpcClient
+
+    settings = get_settings()
+    channel = grpc.insecure_channel(settings.data_service.target)
+    try:
+        yield MarketDataGrpcClient(channel)
+    finally:
+        channel.close()
+
+
 @contextmanager
 def session_scope() -> Generator[Session, None, None]:
     """Context manager for non-DI database access.
