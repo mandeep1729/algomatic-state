@@ -5,7 +5,7 @@ for assembling market context data used by evaluators.
 
 The ``MarketDataReader`` protocol decouples the builder from the
 database layer.  The default implementation (``RepositoryMarketDataReader``)
-delegates to ``OHLCVRepository`` so existing behaviour is preserved.
+delegates to the Go data-service via gRPC.
 """
 
 import logging
@@ -32,7 +32,7 @@ class MarketDataReader(Protocol):
 
     Implementations may read from a database, REST API, in-memory cache,
     or any other data source.  The three methods mirror the subset of
-    ``OHLCVRepository`` that the builder actually uses.
+    the data-service gRPC client that the builder actually uses.
     """
 
     def get_bars(
@@ -99,32 +99,29 @@ class MarketDataReader(Protocol):
 
 
 class RepositoryMarketDataReader:
-    """Default ``MarketDataReader`` backed by ``OHLCVRepository``.
+    """Default ``MarketDataReader`` backed by the Go data-service via gRPC.
 
-    When constructed with a ``session``, reuses that single session for
-    all method calls (avoiding 3 separate sessions per ``build()``).
-    When no session is provided, creates a short-lived session per call
-    for backward compatibility.
+    Creates a single gRPC channel that is reused across all method calls.
+    The channel is created lazily on first use.
     """
 
     def __init__(self, session=None):
-        self._session = session
-        self._repo = None
-        if session is not None:
-            from src.data.database.market_repository import OHLCVRepository
-            self._repo = OHLCVRepository(session)
+        self._client = None
+        self._channel = None
 
-    def _get_repo(self):
-        """Get the OHLCVRepository, creating a temporary session if needed."""
-        if self._repo is not None:
-            return self._repo, None
+    def _get_client(self):
+        """Get or create the gRPC market data client."""
+        if self._client is not None:
+            return self._client
 
-        from src.data.database.dependencies import session_scope
-        from src.data.database.market_repository import OHLCVRepository
+        import grpc
+        from config.settings import get_settings
+        from src.data.grpc_client import MarketDataGrpcClient
 
-        ctx = session_scope()
-        session = ctx.__enter__()
-        return OHLCVRepository(session), ctx
+        settings = get_settings()
+        self._channel = grpc.insecure_channel(settings.data_service.target)
+        self._client = MarketDataGrpcClient(self._channel)
+        return self._client
 
     def get_bars(
         self,
@@ -134,12 +131,7 @@ class RepositoryMarketDataReader:
         end: Optional[datetime] = None,
         limit: Optional[int] = None,
     ) -> pd.DataFrame:
-        repo, ctx = self._get_repo()
-        try:
-            return repo.get_bars(symbol, timeframe, start=start, end=end, limit=limit)
-        finally:
-            if ctx is not None:
-                ctx.__exit__(None, None, None)
+        return self._get_client().get_bars(symbol, timeframe, start=start, end=end, limit=limit)
 
     def get_features(
         self,
@@ -148,24 +140,14 @@ class RepositoryMarketDataReader:
         start: Optional[datetime] = None,
         end: Optional[datetime] = None,
     ) -> pd.DataFrame:
-        repo, ctx = self._get_repo()
-        try:
-            return repo.get_features(symbol, timeframe, start=start, end=end)
-        finally:
-            if ctx is not None:
-                ctx.__exit__(None, None, None)
+        return self._get_client().get_features(symbol, timeframe, start=start, end=end)
 
     def get_latest_states(
         self,
         symbol: str,
         timeframe: str,
     ) -> pd.DataFrame:
-        repo, ctx = self._get_repo()
-        try:
-            return repo.get_latest_states(symbol, timeframe)
-        finally:
-            if ctx is not None:
-                ctx.__exit__(None, None, None)
+        return self._get_client().get_latest_states(symbol, timeframe)
 
 
 @dataclass
@@ -421,7 +403,7 @@ class ContextPackBuilder:
 
     Reads bars, features, and regime states through a
     ``MarketDataReader``.  The default reader delegates to
-    ``OHLCVRepository`` so existing behaviour is preserved.
+    the Go data-service via gRPC.
 
     Usage:
         builder = ContextPackBuilder()

@@ -14,6 +14,14 @@ from src.data.loaders.database_loader import (
 )
 
 
+def _patch_grpc(mock_repo):
+    """Return a patch context manager that makes grpc_market_client() yield mock_repo."""
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__ = MagicMock(return_value=mock_repo)
+    mock_ctx.__exit__ = MagicMock(return_value=False)
+    return patch("src.data.loaders.database_loader.grpc_market_client", return_value=mock_ctx)
+
+
 @pytest.fixture
 def sample_1min_df():
     """Create sample 1-minute OHLCV data for testing aggregation."""
@@ -252,7 +260,7 @@ class TestDatabaseLoaderLoad:
         with patch.object(loader, "_sync_missing_data") as mock_sync:
             mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
 
-            with patch("src.data.loaders.database_loader.OHLCVRepository", return_value=mock_repo):
+            with _patch_grpc(mock_repo):
                 loader.load("AAPL", timeframe="1Min")
 
             mock_sync.assert_called_once()
@@ -271,7 +279,7 @@ class TestDatabaseLoaderLoad:
         with patch.object(loader, "_sync_missing_data") as mock_sync:
             mock_db_manager.get_session.return_value.__enter__.return_value = mock_session
 
-            with patch("src.data.loaders.database_loader.OHLCVRepository", return_value=mock_repo):
+            with _patch_grpc(mock_repo):
                 loader.load("AAPL", timeframe="1Min")
 
             mock_sync.assert_not_called()

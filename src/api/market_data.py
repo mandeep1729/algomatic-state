@@ -17,8 +17,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from src.data.database.dependencies import get_market_repo
-from src.data.database.market_repository import OHLCVRepository
+from src.data.database.dependencies import get_market_grpc_client
 from src.data.database.models import VALID_TIMEFRAMES
 
 logger = logging.getLogger(__name__)
@@ -143,7 +142,7 @@ async def get_bars(
     timeframe: str = Query(..., description="Bar timeframe (e.g. 1Min, 15Min, 1Hour, 1Day)"),
     start_timestamp: str = Query(..., description="Start timestamp (ISO format)"),
     end_timestamp: str = Query(..., description="End timestamp (ISO format)"),
-    repo: OHLCVRepository = Depends(get_market_repo),
+    repo=Depends(get_market_grpc_client),
 ) -> BarsResponse:
     """Return OHLCV bars for a symbol/timeframe within a date range.
 
@@ -206,7 +205,7 @@ async def get_indicators(
     timeframe: str = Query(..., description="Bar timeframe (e.g. 1Min, 15Min, 1Hour, 1Day)"),
     start_timestamp: str = Query(..., description="Start timestamp (ISO format)"),
     end_timestamp: str = Query(..., description="End timestamp (ISO format)"),
-    repo: OHLCVRepository = Depends(get_market_repo),
+    repo=Depends(get_market_grpc_client),
 ) -> IndicatorsResponse:
     """Return computed indicator values for a symbol/timeframe within a date range.
 

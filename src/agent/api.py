@@ -56,8 +56,7 @@ def market_data(
     """
     from src.messaging.events import Event, EventType
     from src.messaging.bus import get_message_bus
-    from src.data.database.connection import get_db_manager
-    from src.data.database.market_repository import OHLCVRepository
+    from src.data.database.dependencies import grpc_market_client
 
     config = _get_config()
     # Use provided timeframe or fall back to agent's configured timeframe
@@ -86,10 +85,8 @@ def market_data(
         source="agent.api",
     ))
 
-    # Read from DB at the requested timeframe
-    db_manager = get_db_manager()
-    with db_manager.get_session() as session:
-        repo = OHLCVRepository(session)
+    # Read from data-service via gRPC
+    with grpc_market_client() as repo:
         df = repo.get_bars(symbol.upper(), tf, start, end)
 
     records = df.reset_index().to_dict(orient="records")

@@ -9,6 +9,14 @@ import pytest
 from src.marketdata.service import MarketDataService
 
 
+def _patch_grpc(mock_repo):
+    """Return a patch context manager that makes grpc_market_client() yield mock_repo."""
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__ = MagicMock(return_value=mock_repo)
+    mock_ctx.__exit__ = MagicMock(return_value=False)
+    return patch("src.marketdata.service.grpc_market_client", return_value=mock_ctx)
+
+
 @pytest.fixture
 def sample_1min_df():
     """60 minutes of 1Min OHLCV bars."""
@@ -105,7 +113,7 @@ class TestEnsureData1Min:
         mock_provider.fetch_1min_bars.return_value = sample_1min_df
         mock_repo.bulk_insert_bars.return_value = len(sample_1min_df)
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Min"], start=datetime(2024, 1, 2))
 
@@ -118,7 +126,7 @@ class TestEnsureData1Min:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         mock_repo.get_latest_timestamp.return_value = now
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Min"], end=now)
 
@@ -134,7 +142,7 @@ class TestEnsureData1Min:
         mock_repo.bulk_insert_bars.return_value = 10
 
         end = datetime(2024, 1, 2, 11, 0)
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Min"], end=end)
 
@@ -149,7 +157,7 @@ class TestEnsureData1Min:
     ):
         mock_provider.fetch_1min_bars.return_value = pd.DataFrame()
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Min"], start=datetime(2024, 1, 2))
 
@@ -160,7 +168,7 @@ class TestEnsureData1Min:
     ):
         mock_provider.fetch_1min_bars.side_effect = ConnectionError("timeout")
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Min"], start=datetime(2024, 1, 2))
 
@@ -182,7 +190,7 @@ class TestEnsureDataDaily:
         # Return None for both 1Min and 1Day latest
         mock_repo.get_latest_timestamp.return_value = None
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Day"], start=datetime(2024, 1, 2))
 
@@ -195,7 +203,7 @@ class TestEnsureDataDaily:
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         mock_repo.get_latest_timestamp.return_value = now
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Day"], end=now)
 
@@ -217,7 +225,7 @@ class TestEnsureDataAggregation:
         # First call for 1Min bulk_insert, second for 5Min bulk_insert
         mock_repo.bulk_insert_bars.side_effect = [60, 12]
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["5Min"], start=datetime(2024, 1, 2))
 
@@ -233,7 +241,7 @@ class TestEnsureDataAggregation:
         mock_repo.get_bars.return_value = sample_1min_df
         mock_repo.bulk_insert_bars.side_effect = [60, 12]
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data(
                 "AAPL", ["1Min", "5Min"], start=datetime(2024, 1, 2),
@@ -248,7 +256,7 @@ class TestEnsureDataAggregation:
         mock_provider.fetch_1min_bars.return_value = pd.DataFrame()
         mock_repo.get_bars.return_value = pd.DataFrame()
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["15Min"], start=datetime(2024, 1, 2))
 
@@ -270,7 +278,7 @@ class TestEnsureDataMixed:
         # 1Min, 5Min, 1Hour, 1Day
         mock_repo.bulk_insert_bars.side_effect = [60, 12, 1, 20]
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data(
                 "aapl",  # should be uppercased
@@ -293,7 +301,7 @@ class TestEdgeCases:
     def test_symbol_uppercased(self, mock_provider, mock_db_manager, mock_repo):
         mock_provider.fetch_1min_bars.return_value = pd.DataFrame()
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             svc.ensure_data("aapl", ["1Min"], start=datetime(2024, 1, 2))
 
@@ -302,7 +310,7 @@ class TestEdgeCases:
     def test_end_defaults_to_now(self, mock_provider, mock_db_manager, mock_repo):
         mock_provider.fetch_1min_bars.return_value = pd.DataFrame()
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             before = datetime.now(timezone.utc).replace(tzinfo=None)
             svc.ensure_data("AAPL", ["1Min"])
@@ -318,7 +326,7 @@ class TestEdgeCases:
         mock_repo.bulk_insert_bars.return_value = 60
 
         end = datetime(2024, 1, 2, 11, 0)
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Min"], end=end)
 
@@ -347,7 +355,7 @@ class TestEdgeCases:
         mock_provider.fetch_1min_bars.return_value = df
         mock_repo.bulk_insert_bars.return_value = 5
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             result = svc.ensure_data("AAPL", ["1Min"], start=datetime(2024, 1, 2))
 
@@ -361,7 +369,7 @@ class TestEdgeCases:
         mock_provider.fetch_1min_bars.return_value = sample_1min_df
         mock_repo.bulk_insert_bars.return_value = 60
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             svc.ensure_data("AAPL", ["1Min"], start=datetime(2024, 1, 2))
 
@@ -375,7 +383,7 @@ class TestEdgeCases:
     ):
         mock_provider.fetch_1min_bars.side_effect = RuntimeError("API down")
 
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             svc = _make_service(mock_provider, mock_db_manager)
             svc.ensure_data("AAPL", ["1Min"], start=datetime(2024, 1, 2))
 

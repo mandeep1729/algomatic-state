@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Optional
 import pandas as pd
 
 from src.data.database.connection import DatabaseManager, get_db_manager
+from src.data.database.dependencies import grpc_market_client
 from src.data.database.models import VALID_TIMEFRAMES
-from src.data.database.market_repository import OHLCVRepository
 from src.data.loaders.base import BaseDataLoader
 from src.data.schemas import validate_ohlcv
 
@@ -145,14 +145,12 @@ class DatabaseLoader(BaseDataLoader):
         if end is None:
             end = datetime.now(timezone.utc).replace(tzinfo=None)
 
-        with self.db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
-
+        with grpc_market_client() as repo:
             # Smart fetch: check what we have vs what we need
             if self.auto_fetch and self.provider:
                 self._sync_missing_data(repo, symbol, timeframe, start, end)
 
-            # Load from database
+            # Load from data-service
             df = repo.get_bars(symbol, timeframe, start, end)
 
         if self.validate and not df.empty:
@@ -190,7 +188,7 @@ class DatabaseLoader(BaseDataLoader):
 
     def _sync_missing_data(
         self,
-        repo: OHLCVRepository,
+        repo,
         symbol: str,
         timeframe: str,
         start: Optional[datetime],
@@ -273,13 +271,11 @@ class DatabaseLoader(BaseDataLoader):
         if df.index.tz is not None:
             df.index = df.index.tz_localize(None)
 
-        with self.db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
-
+        with grpc_market_client() as repo:
             # Get or create ticker
             ticker = repo.get_or_create_ticker(symbol.upper())
 
-            # Insert into database
+            # Insert via data-service
             rows_inserted = repo.bulk_insert_bars(
                 df=df,
                 ticker_id=ticker.id,
@@ -287,7 +283,7 @@ class DatabaseLoader(BaseDataLoader):
                 source="csv_import",
             )
 
-            # Update sync log (update_sync_log normalizes naive → UTC)
+            # Update sync log
             if rows_inserted > 0:
                 repo.update_sync_log(
                     ticker_id=ticker.id,
@@ -338,21 +334,19 @@ class DatabaseLoader(BaseDataLoader):
         if self.validate:
             df = validate_ohlcv(df)
 
-        with self.db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
-
+        with grpc_market_client() as repo:
             # Get or create ticker
             ticker = repo.get_or_create_ticker(symbol.upper())
 
-            # Insert into database
+            # Insert via data-service
             rows_inserted = repo.bulk_insert_bars(
                 df=df,
                 ticker_id=ticker.id,
                 timeframe=timeframe,
-                source="csv_import",  # Same source for parquet imports
+                source="parquet_import",
             )
 
-            # Update sync log (update_sync_log normalizes naive → UTC)
+            # Update sync log
             if rows_inserted > 0:
                 repo.update_sync_log(
                     ticker_id=ticker.id,
@@ -372,8 +366,7 @@ class DatabaseLoader(BaseDataLoader):
         Returns:
             List of symbol strings
         """
-        with self.db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        with grpc_market_client() as repo:
             tickers = repo.list_tickers(active_only=True)
             return [t.symbol for t in tickers]
 
@@ -386,8 +379,7 @@ class DatabaseLoader(BaseDataLoader):
         Returns:
             Dictionary with data summary per timeframe
         """
-        with self.db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        with grpc_market_client() as repo:
             return repo.get_data_summary(symbol)
 
     def get_sync_status(self, symbol: str) -> list[dict]:
@@ -399,12 +391,11 @@ class DatabaseLoader(BaseDataLoader):
         Returns:
             List of sync log entries as dictionaries
         """
-        with self.db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        with grpc_market_client() as repo:
             logs = repo.get_all_sync_logs(symbol)
             return [
                 {
-                    "symbol": log.ticker.symbol,
+                    "symbol": symbol.upper(),
                     "timeframe": log.timeframe,
                     "last_synced_timestamp": log.last_synced_timestamp.isoformat() if log.last_synced_timestamp else None,
                     "first_synced_timestamp": log.first_synced_timestamp.isoformat() if log.first_synced_timestamp else None,
@@ -496,7 +487,7 @@ class DatabaseLoader(BaseDataLoader):
 
     def _compute_indicators_for_timeframes(
         self,
-        repo: OHLCVRepository,
+        repo,
         ticker,
         symbol: str,
         timeframes: list[str],

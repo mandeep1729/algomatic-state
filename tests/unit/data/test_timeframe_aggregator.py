@@ -13,6 +13,16 @@ from src.data.timeframe_aggregator import (
 )
 
 
+def _patch_grpc(mock_repo=None):
+    """Return a patch context manager that makes grpc_market_client() yield mock_repo."""
+    if mock_repo is None:
+        mock_repo = MagicMock()
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__ = MagicMock(return_value=mock_repo)
+    mock_ctx.__exit__ = MagicMock(return_value=False)
+    return patch("src.data.timeframe_aggregator.grpc_market_client", return_value=mock_ctx)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -408,6 +418,7 @@ class TestAggregateMissingTimeframes:
         )
 
         with (
+            _patch_grpc(),
             patch.object(agg, "_aggregate_intraday", return_value=4) as mock_intra,
             patch.object(agg, "_aggregate_daily", return_value=5) as mock_daily,
         ):
@@ -421,7 +432,10 @@ class TestAggregateMissingTimeframes:
         """The ticker symbol is normalised to uppercase."""
         agg = TimeframeAggregator(db_manager=mock_db_manager)
 
-        with patch.object(agg, "_aggregate_intraday", return_value=0) as mock_intra:
+        with (
+            _patch_grpc(),
+            patch.object(agg, "_aggregate_intraday", return_value=0) as mock_intra,
+        ):
             agg.aggregate_missing_timeframes("aapl", target_timeframes=["15Min"])
 
         mock_intra.assert_called_once()
@@ -432,7 +446,10 @@ class TestAggregateMissingTimeframes:
         """Only the requested timeframes are processed."""
         agg = TimeframeAggregator(db_manager=mock_db_manager)
 
-        with patch.object(agg, "_aggregate_intraday", return_value=10) as mock_intra:
+        with (
+            _patch_grpc(),
+            patch.object(agg, "_aggregate_intraday", return_value=10) as mock_intra,
+        ):
             result = agg.aggregate_missing_timeframes(
                 "SPY", target_timeframes=["1Hour"]
             )
@@ -444,9 +461,10 @@ class TestAggregateMissingTimeframes:
         """Unknown timeframes produce 0 and a warning."""
         agg = TimeframeAggregator(db_manager=mock_db_manager)
 
-        result = agg.aggregate_missing_timeframes(
-            "SPY", target_timeframes=["2Hour"]
-        )
+        with _patch_grpc():
+            result = agg.aggregate_missing_timeframes(
+                "SPY", target_timeframes=["2Hour"]
+            )
 
         assert result == {"2Hour": 0}
 
@@ -457,6 +475,7 @@ class TestAggregateMissingTimeframes:
         )
 
         with (
+            _patch_grpc(),
             patch.object(agg, "_aggregate_intraday", return_value=0),
             patch.object(agg, "_aggregate_daily", return_value=0),
         ):

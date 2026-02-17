@@ -7,7 +7,6 @@ from typing import Optional
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
 
 from src.api.auth_middleware import get_current_user
 from src.api._data_helpers import (
@@ -15,8 +14,7 @@ from src.api._data_helpers import (
     load_ohlcv_internal,
     PROJECT_ROOT,
 )
-from src.data.database.dependencies import get_db
-from src.data.database.market_repository import OHLCVRepository
+from src.data.database.dependencies import get_market_grpc_client
 from src.data.database.models import VALID_TIMEFRAMES
 from src.features.state.hmm.artifacts import get_model_path, list_models
 from src.features.state.hmm.inference import InferenceEngine
@@ -66,7 +64,7 @@ class PCAAnalyzeResponse(BaseModel):
 async def analyze_symbol(
     symbol: str,
     timeframe: str = Query("1Min", description="Timeframe to analyze"),
-    db: Session = Depends(get_db),
+    repo=Depends(get_market_grpc_client),
     _user_id: int = Depends(get_current_user),
 ):
     """Analyze a symbol: compute features, train model if needed, compute states.
@@ -102,8 +100,6 @@ async def analyze_symbol(
     messages = []
 
     try:
-        repo = OHLCVRepository(db)
-
         # Step 0: Ensure OHLCV data is loaded
         logger.info("[Analyze] Step 0: Loading OHLCV data for %s/%s", symbol, timeframe)
         try:
@@ -259,7 +255,6 @@ async def analyze_symbol(
 
                         if state_records:
                             stored = repo.store_states(state_records, current_model_id)
-                            db.commit()
                             result["states_computed"] = stored
                             messages.append(f"Computed {stored} states")
                         else:
@@ -293,7 +288,7 @@ async def analyze_symbol_pca(
     timeframe: str = Query("1Min", description="Timeframe to analyze"),
     n_components: Optional[int] = Query(None, description="Number of PCA components (auto if not specified)"),
     n_states: Optional[int] = Query(None, description="Number of K-means clusters (auto if not specified)"),
-    db: Session = Depends(get_db),
+    repo=Depends(get_market_grpc_client),
     _user_id: int = Depends(get_current_user),
 ):
     """Analyze a symbol using PCA + K-means state computation.
@@ -335,8 +330,6 @@ async def analyze_symbol_pca(
     messages = []
 
     try:
-        repo = OHLCVRepository(db)
-
         # Step 0: Ensure OHLCV data is loaded
         logger.info("[PCA Analyze] Step 0: Loading OHLCV data for %s/%s", symbol, timeframe)
         try:
@@ -448,7 +441,6 @@ async def analyze_symbol_pca(
 
         if state_records:
             stored_count = repo.store_states(state_records, f"pca_{model_id}")
-            db.commit()
             result["states_computed"] = stored_count
             messages.append(f"Computed {stored_count} states")
 

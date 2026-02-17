@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Optional
 import pandas as pd
 
 from src.data.database.connection import DatabaseManager, get_db_manager
-from src.data.database.market_repository import OHLCVRepository
+from src.data.database.dependencies import grpc_market_client
 from src.data.loaders.database_loader import aggregate_ohlcv, AGGREGATABLE_TIMEFRAMES
 
 if TYPE_CHECKING:
@@ -49,7 +49,7 @@ class TimeframeAggregator:
     an external :class:`MarketDataProvider`.
 
     All writes use ``ON CONFLICT DO NOTHING`` via
-    :meth:`OHLCVRepository.bulk_insert_bars` so the operation is idempotent
+    ``bulk_insert_bars`` so the operation is idempotent
     and safe to run repeatedly.
     """
 
@@ -101,9 +101,7 @@ class TimeframeAggregator:
 
         results: dict[str, int] = {}
 
-        with self.db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
-
+        with grpc_market_client() as repo:
             for timeframe in target_timeframes:
                 if timeframe == "1Day":
                     count = self._aggregate_daily(repo, symbol)
@@ -126,7 +124,7 @@ class TimeframeAggregator:
 
     def _aggregate_intraday(
         self,
-        repo: OHLCVRepository,
+        repo,
         symbol: str,
         target_timeframe: str,
     ) -> int:
@@ -207,7 +205,7 @@ class TimeframeAggregator:
 
     def _aggregate_daily(
         self,
-        repo: OHLCVRepository,
+        repo,
         symbol: str,
     ) -> int:
         """Fetch daily bars from the configured provider.
@@ -287,7 +285,7 @@ class TimeframeAggregator:
 
     @staticmethod
     def aggregate_intraday_range(
-        repo: OHLCVRepository,
+        repo,
         ticker,
         symbol: str,
         target_timeframe: str,
@@ -324,7 +322,7 @@ class TimeframeAggregator:
 
     @staticmethod
     def aggregate_intraday_from_df(
-        repo: OHLCVRepository,
+        repo,
         ticker,
         df_1min: pd.DataFrame,
         target_timeframe: str,

@@ -9,7 +9,7 @@ from typing import Optional
 import pandas as pd
 
 from src.data.database.connection import DatabaseManager, get_db_manager
-from src.data.database.market_repository import OHLCVRepository
+from src.data.database.dependencies import grpc_market_client
 from src.data.loaders.database_loader import AGGREGATABLE_TIMEFRAMES
 from src.marketdata.base import MarketDataProvider
 
@@ -158,8 +158,7 @@ class MarketDataService:
             symbol, timeframes, start, end,
         )
 
-        with self.db_manager.get_session() as session:
-            repo = OHLCVRepository(session)
+        with grpc_market_client() as repo:
             ticker = repo.get_or_create_ticker(symbol)
 
             # Always ensure 1Min first (other intraday TFs aggregate from it)
@@ -190,7 +189,7 @@ class MarketDataService:
 
     def _ensure_1min(
         self,
-        repo: OHLCVRepository,
+        repo,
         ticker,
         symbol: str,
         start: Optional[datetime],
@@ -220,7 +219,7 @@ class MarketDataService:
 
     def _ensure_daily(
         self,
-        repo: OHLCVRepository,
+        repo,
         ticker,
         symbol: str,
         start: Optional[datetime],
@@ -249,7 +248,7 @@ class MarketDataService:
 
     def _fetch_and_insert(
         self,
-        repo: OHLCVRepository,
+        repo,
         ticker,
         symbol: str,
         timeframe: str,
@@ -303,7 +302,7 @@ class MarketDataService:
 
     def _aggregate_timeframe(
         self,
-        repo: OHLCVRepository,
+        repo,
         ticker,
         symbol: str,
         target_tf: str,

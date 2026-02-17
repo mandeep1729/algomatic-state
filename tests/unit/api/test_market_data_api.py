@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from src.api.market_data import router
-from src.data.database.dependencies import get_market_repo
+from src.data.database.dependencies import get_market_grpc_client
 
 
 # ---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ def client(mock_repo):
     """Create a FastAPI TestClient with mocked market repo dependency."""
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_market_repo] = lambda: mock_repo
+    app.dependency_overrides[get_market_grpc_client] = lambda: mock_repo
     yield TestClient(app)
 
 

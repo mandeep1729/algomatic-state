@@ -136,6 +136,14 @@ class TestTimezoneEnforcement:
                 pytest.fail("Should not reject naive timestamps")
 
 
+def _patch_grpc(mock_repo):
+    """Return a patch context manager that makes grpc_market_client() yield mock_repo."""
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__ = MagicMock(return_value=mock_repo)
+    mock_ctx.__exit__ = MagicMock(return_value=False)
+    return patch("src.marketdata.service.grpc_market_client", return_value=mock_ctx)
+
+
 class TestMarketDataServiceCoalescing:
     """Verify request coalescing in MarketDataService."""
 
@@ -145,17 +153,13 @@ class TestMarketDataServiceCoalescing:
         mock_provider.source_name = "test"
 
         mock_db = MagicMock()
-        mock_session = MagicMock()
         mock_repo = MagicMock()
         mock_repo.get_or_create_ticker.return_value = MagicMock(id=1)
         mock_repo.get_latest_timestamp.return_value = None
         mock_provider.fetch_1min_bars.return_value = pd.DataFrame()
         mock_provider.fetch_daily_bars.return_value = pd.DataFrame()
 
-        mock_db.get_session.return_value.__enter__ = MagicMock(return_value=mock_session)
-        mock_db.get_session.return_value.__exit__ = MagicMock(return_value=False)
-
-        with patch("src.marketdata.service.OHLCVRepository", return_value=mock_repo):
+        with _patch_grpc(mock_repo):
             service = MarketDataService(mock_provider, mock_db)
 
             # Pass timezone-aware end

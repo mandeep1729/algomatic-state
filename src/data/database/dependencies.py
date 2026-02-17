@@ -147,3 +147,27 @@ def session_scope() -> Generator[Session, None, None]:
     """
     with get_db_manager().get_session() as session:
         yield session
+
+
+@contextmanager
+def grpc_market_client():
+    """Context manager for background tasks needing market data via gRPC.
+
+    Use in helpers, orchestrators, scripts — anywhere outside FastAPI's
+    dependency injection that needs market data access.
+
+    Usage::
+
+        with grpc_market_client() as repo:
+            df = repo.get_bars("AAPL", "1Min")
+    """
+    import grpc
+    from config.settings import get_settings
+    from src.data.grpc_client import MarketDataGrpcClient
+
+    settings = get_settings()
+    channel = grpc.insecure_channel(settings.data_service.target)
+    try:
+        yield MarketDataGrpcClient(channel)
+    finally:
+        channel.close()

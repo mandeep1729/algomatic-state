@@ -19,8 +19,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
-from src.data.database.dependencies import get_market_repo
-from src.data.database.market_repository import OHLCVRepository
+from src.data.database.dependencies import get_market_grpc_client
 from src.data.database.models import VALID_TIMEFRAMES
 
 logger = logging.getLogger(__name__)
@@ -363,7 +362,7 @@ async def get_marketdata(
     end: Optional[str] = Query(None, description="End timestamp (ISO-8601)"),
     lookback: Optional[str] = Query(None, description="Relative lookback (e.g. 4w, 1month, 30d)"),
     last_n_bars: Optional[int] = Query(None, description="Number of most recent bars to fetch"),
-    repo: OHLCVRepository = Depends(get_market_repo),
+    repo=Depends(get_market_grpc_client),
 ) -> MarketDataResponse:
     """Return OHLCV bars for a symbol/timeframe with flexible time queries.
 
@@ -429,7 +428,7 @@ async def get_indicators(
     lookback: Optional[str] = Query(None, description="Relative lookback (e.g. 4w, 1month, 30d)"),
     last_n_bars: Optional[int] = Query(None, description="Number of most recent indicator rows"),
     indicators: Optional[str] = Query(None, description="Comma-separated indicator subset (e.g. atr_14,sma_20,rsi_14)"),
-    repo: OHLCVRepository = Depends(get_market_repo),
+    repo=Depends(get_market_grpc_client),
 ) -> IndicatorsResponse:
     """Return computed indicator values for a symbol/timeframe with flexible time queries.
 
@@ -509,7 +508,7 @@ async def get_marketdata_and_indicators(
     lookback: Optional[str] = Query(None, description="Relative lookback (e.g. 4w, 1month, 30d)"),
     last_n_bars: Optional[int] = Query(None, description="Number of most recent bars/rows"),
     indicators: Optional[str] = Query(None, description="Comma-separated indicator subset"),
-    repo: OHLCVRepository = Depends(get_market_repo),
+    repo=Depends(get_market_grpc_client),
 ) -> CombinedResponse:
     """Return both OHLCV bars and indicators aligned by timestamp.
 
