@@ -67,6 +67,9 @@ class DecisionContext(Base):
     feelings_now: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # System-inferred context (market regime, volatility state, etc.)
+    inferred_context: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.utcnow,
