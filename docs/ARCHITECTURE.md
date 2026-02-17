@@ -125,6 +125,10 @@ algomatic-state/
 │   │   ├── broker.py           # SnapTrade broker integration routes
 │   │   ├── alpaca.py           # Direct Alpaca trade sync endpoints
 │   │   ├── campaigns.py        # Position campaigns and P&L endpoints
+│   │   ├── strategies.py       # User-defined trading strategies CRUD
+│   │   ├── strategy_probe.py   # Strategy probe endpoints
+│   │   ├── journal.py          # Trade journal endpoints
+│   │   ├── waitlist.py         # Waitlist submission endpoints
 │   │   ├── auth.py             # Google OAuth authentication endpoints
 │   │   ├── auth_middleware.py  # JWT token validation middleware
 │   │   └── user_profile.py     # User profile and risk preference endpoints
@@ -143,9 +147,11 @@ algomatic-state/
 │   │   │   ├── connection.py   # Database connection and session management
 │   │   │   ├── models.py       # Core models (Ticker, OHLCVBar, DataSyncLog, ComputedFeature)
 │   │   │   ├── broker_models.py # Broker integration (BrokerConnection, TradeFill, SnapTradeUser)
-│   │   │   ├── trading_buddy_models.py # Trading Buddy (UserAccount, TradeIntent, etc.)
+│   │   │   ├── trading_buddy_models.py # Trading Buddy (UserAccount, UserProfile, UserRule, Waitlist)
 │   │   │   ├── strategy_models.py # User-defined trading strategies
-│   │   │   ├── trade_lifecycle_models.py # Position lots, campaigns, legs, decision contexts
+│   │   │   ├── trade_lifecycle_models.py # DecisionContext, CampaignCheck, CampaignFill
+│   │   │   ├── journal_models.py  # Journal entries
+│   │   │   ├── probe_models.py    # Strategy probe tables
 │   │   │   ├── market_repository.py   # Market data access layer
 │   │   │   └── trading_repository.py  # Trading Buddy data access layer
 │   │   ├── cache.py            # Data caching
@@ -273,17 +279,15 @@ algomatic-state/
 │
 ├── alembic/                    # Database migrations
 │   ├── env.py
-│   └── versions/
+│   └── versions/               # 31 migrations (001-031)
 │       ├── 001_initial_schema.py
-│       ├── 002_add_computed_features.py
-│       ├── 003_remove_vwap.py
-│       ├── 004_consolidate_states_to_features.py
-│       ├── 005_trading_buddy_tables.py
-│       ├── 006_broker_integration_tables.py
-│       ├── 007_auth_and_user_profiles.py
-│       ├── 008_trade_lifecycle_schema.py
-│       ├── 009_position_campaigns.py
-│       └── 010_strategies_first_class.py
+│       ├── ...
+│       ├── 026_restructure_trade_lifecycle.py  # Drops intents, lots, old campaigns
+│       ├── 027_drop_campaigns_table.py         # Self-contained campaign_fills
+│       ├── 028_campaign_checks_require_context.py
+│       ├── 029_add_strategy_implied_family.py
+│       ├── 030_waitlist_table.py
+│       └── 031_seed_app_user_and_strategies.py
 │
 ├── ui/                         # Web UI
 │   ├── backend/
@@ -436,7 +440,7 @@ Gaussian HMM
 ```
 
 #### Multi-Timeframe Design
-- Separate models per timeframe: 1m, 5m, 15m, 1h, 1d
+- Separate models per timeframe: 1Min, 15Min, 1Hour, 1Day
 - Different K (state count) per timeframe
 - Higher TF states for risk-on/off; lower TF for timing
 
@@ -692,6 +696,28 @@ get_current_user() Middleware (validates JWT)
 - JWT expiration configurable via `AUTH_JWT_EXPIRY_HOURS`
 - Google OAuth client ID via `AUTH_GOOGLE_CLIENT_ID`
 
+### 12. Behavioral Checks Engine
+
+**Purpose**: Run behavioral checks against trades at the point of execution. Produces pass/fail results with nudge text that persist to `campaign_checks`.
+
+**Location**: `src/checks/`
+
+- `base.py`: BaseCheck ABC for individual check implementations
+- `risk_sanity.py`: Risk sanity checks (position sizing, stop distance, overtrading)
+- `runner.py`: CheckRunner that executes all registered checks against a decision context
+
+### 13. Reviewer Service
+
+**Purpose**: Event-driven service that subscribes to review events on the message bus and runs behavioral checks against position campaigns.
+
+**Location**: `src/reviewer/`
+
+- `main.py`: Standalone entry point (runs as a separate process)
+- `orchestrator.py`: Event subscriber and check dispatcher
+- `publisher.py`: Review event publishing helpers
+
+Events handled: `REVIEW_LEG_CREATED`, `REVIEW_CAMPAIGNS_POPULATED`, `REVIEW_CONTEXT_UPDATED`, `REVIEW_RISK_PREFS_UPDATED`.
+
 ## Data Flow Diagrams
 
 ### Training Flow
@@ -766,18 +792,18 @@ New Bar Close (timeframe τ)
 
 ### Multi-Timeframe Synchronization
 ```
-1m bar close → compute 1m state
-              │
-5m bar close → compute 5m state (every 5 bars)
-              │
-15m bar close → compute 15m state (every 15 bars)
-              │
-1h bar close → compute 1h state
-              │
-1d bar close → compute 1d state
+1Min bar close → compute 1Min state
+               │
+15Min bar close → compute 15Min state (every 15 bars)
+               │
+1Hour bar close → compute 1Hour state
+               │
+1Day bar close → compute 1Day state
 
 Higher TF states carry forward until next update.
 ```
+
+Supported timeframes: **1Min, 15Min, 1Hour, 1Day** only.
 
 ## Configuration Architecture
 

@@ -30,9 +30,6 @@ class SnapTradeClient:
                 consumer_key=self.consumer_key,
                 client_id=self.client_id,
             )
-            # Check status (optional, but good for verification)
-            # status = self.client.api_status.check() 
-            # logger.info(f"SnapTrade API Status: {status}")
         except Exception as e:
             logger.error(f"Failed to initialize SnapTrade client: {e}", exc_info=True)
             self.client = None
@@ -136,11 +133,6 @@ class SnapTradeClient:
             return None
 
         try:
-            # accounts = self.client.account_information.list_user_accounts(
-            #     user_id=user_id,
-            #     user_secret=user_secret
-            # )
-            # For simplicity, getting all user holdings usually aggregates or we iterate
             response = self.client.account_information.get_all_user_holdings(
                 user_id=user_id,
                 user_secret=user_secret

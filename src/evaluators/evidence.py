@@ -7,10 +7,9 @@ multiple evaluators for building evidence.
 import logging
 from typing import Literal, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 
-from src.trade.evaluation import Evidence, Severity
+from src.trade.evaluation import Evidence
 
 logger = logging.getLogger(__name__)
 
@@ -143,46 +142,6 @@ def compare_to_atr(
     return multiple, evidence
 
 
-def compute_percentile(
-    value: float,
-    series: pd.Series,
-    metric_name: str = "percentile",
-) -> Tuple[float, Evidence]:
-    """Compute percentile rank of a value in a series.
-
-    Args:
-        value: Current value
-        series: Historical series
-        metric_name: Name for the evidence
-
-    Returns:
-        Tuple of (percentile, evidence)
-    """
-    series = series.dropna()
-    if len(series) < 1:
-        return 50.0, Evidence(
-            metric_name=metric_name,
-            value=50.0,
-            unit="%",
-            context={"error": "no_data"},
-        )
-
-    percentile = (series < value).mean() * 100
-
-    evidence = Evidence(
-        metric_name=metric_name,
-        value=percentile,
-        unit="%",
-        context={
-            "sample_size": len(series),
-            "min": float(series.min()),
-            "max": float(series.max()),
-        },
-    )
-
-    return percentile, evidence
-
-
 def compute_distance_to_level(
     price: float,
     level: float,
@@ -274,57 +233,3 @@ def format_ratio(numerator: float, denominator: float, decimals: int = 2) -> str
     return f"{ratio:.{decimals}f}:1"
 
 
-def severity_from_zscore(
-    zscore: float,
-    warning_threshold: float = 1.5,
-    critical_threshold: float = 2.5,
-    blocker_threshold: float = 3.5,
-) -> Severity:
-    """Determine severity based on z-score magnitude.
-
-    Args:
-        zscore: Z-score value
-        warning_threshold: Threshold for WARNING
-        critical_threshold: Threshold for CRITICAL
-        blocker_threshold: Threshold for BLOCKER
-
-    Returns:
-        Severity level
-    """
-    abs_z = abs(zscore)
-
-    if abs_z >= blocker_threshold:
-        return Severity.BLOCKER
-    elif abs_z >= critical_threshold:
-        return Severity.CRITICAL
-    elif abs_z >= warning_threshold:
-        return Severity.WARNING
-    else:
-        return Severity.INFO
-
-
-def aggregate_evidence(evidence_list: list[Evidence]) -> dict:
-    """Aggregate multiple evidence items into a summary.
-
-    Args:
-        evidence_list: List of evidence items
-
-    Returns:
-        Summary dictionary
-    """
-    if not evidence_list:
-        return {"count": 0}
-
-    summary = {
-        "count": len(evidence_list),
-        "metrics": {},
-    }
-
-    for e in evidence_list:
-        summary["metrics"][e.metric_name] = {
-            "value": e.value,
-            "threshold": e.threshold,
-            "violated": e.threshold_violated,
-        }
-
-    return summary

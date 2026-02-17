@@ -280,25 +280,6 @@ def _safe_parse_timestamp(value: str) -> datetime:
     )
 
 
-def _parse_timestamp_param(value: str, param_name: str) -> datetime:
-    """Parse a query-parameter timestamp, converting errors to HTTPException.
-
-    Args:
-        value: Timestamp string.
-        param_name: Parameter name for error messages.
-
-    Returns:
-        Parsed UTC-aware datetime.
-
-    Raises:
-        HTTPException: 400 if parsing fails.
-    """
-    try:
-        return _safe_parse_timestamp(value)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
 def _validate_timeframe(timeframe: str) -> None:
     """Raise HTTPException 400 if timeframe is not valid."""
     if timeframe not in VALID_TIMEFRAMES:

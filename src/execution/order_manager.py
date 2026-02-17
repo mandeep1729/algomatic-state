@@ -368,34 +368,6 @@ class OrderManager:
         )
         return self.submit_order(order)
 
-    def submit_limit_sell(
-        self,
-        symbol: str,
-        quantity: float,
-        limit_price: float,
-        time_in_force: OrderTimeInForce | None = None,
-    ) -> Order:
-        """Submit a limit sell order.
-
-        Args:
-            symbol: Asset symbol
-            quantity: Number of shares
-            limit_price: Limit price
-            time_in_force: Time in force (None = use default)
-
-        Returns:
-            Submitted order
-        """
-        order = Order.limit_order(
-            symbol=symbol,
-            side=OrderSide.SELL,
-            quantity=quantity,
-            limit_price=limit_price,
-            time_in_force=time_in_force or self._default_time_in_force,
-            client_order_id=self.generate_client_order_id(),
-        )
-        return self.submit_order(order)
-
     def cancel_order(self, client_order_id: str) -> bool:
         """Cancel an order by client order ID.
 

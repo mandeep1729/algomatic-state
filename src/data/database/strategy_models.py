@@ -60,6 +60,11 @@ class Strategy(Base):
     # trade evaluation. Example: {"max_position_size_pct": 2.5, "max_risk_per_trade_pct": 0.5}
     risk_profile: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # Auto-populated strategy theme family (trend, breakout, momentum, mean_reversion, volatility).
+    # Detected by the application when user-defined strategy name matches a known theme.
+    # Never set by user directly.
+    implied_strategy_family: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.utcnow,

@@ -70,6 +70,10 @@ async def trigger_sync(
     MarketDataOrchestrator handles fetching from the provider and
     inserting into the database.
     """
+    logger.debug(
+        "POST /api/sync/%s: timeframe=%s, start_date=%s, end_date=%s",
+        symbol, timeframe, start_date, end_date,
+    )
     if timeframe not in VALID_TIMEFRAMES:
         raise HTTPException(
             status_code=400,
@@ -127,6 +131,10 @@ async def import_data(
     _user_id: int = Depends(get_current_user),
 ):
     """Import data from a local file into the database."""
+    logger.info(
+        "POST /api/import: symbol=%s, file_path=%s, timeframe=%s",
+        symbol, file_path, timeframe,
+    )
     if timeframe not in VALID_TIMEFRAMES:
         raise HTTPException(
             status_code=400,

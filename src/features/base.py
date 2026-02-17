@@ -159,34 +159,6 @@ def rolling_beta(
     Returns:
         Tuple of (beta series, residual volatility series)
     """
-    def _beta_resid(data: np.ndarray) -> tuple[float, float]:
-        """Compute beta and residual std from stacked [asset, market] data."""
-        n = len(data) // 2
-        y = data[:n]  # asset returns
-        x = data[n:]  # market returns
-
-        if np.any(np.isnan(y)) or np.any(np.isnan(x)):
-            return np.nan, np.nan
-
-        x_mean = x.mean()
-        y_mean = y.mean()
-        cov = np.sum((x - x_mean) * (y - y_mean))
-        var = np.sum((x - x_mean) ** 2)
-
-        if var < EPS:
-            return 0.0, np.std(y)
-
-        beta = cov / var
-        alpha = y_mean - beta * x_mean
-        residuals = y - (alpha + beta * x)
-        resid_std = np.std(residuals)
-
-        return beta, resid_std
-
-    # Stack asset and market returns for rolling window
-    combined = pd.concat([asset_returns, market_returns], axis=0)
-
-    # We need a custom rolling approach since we have two series
     betas = []
     resid_stds = []
 
@@ -221,3 +193,5 @@ def rolling_beta(
     resid_series = pd.Series(resid_stds, index=asset_returns.index)
 
     return beta_series, resid_series
+
+

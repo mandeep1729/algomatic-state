@@ -70,21 +70,6 @@ class OHLCVRepository:
         """
         return symbol.upper()
 
-    def _get_bars_base_query(self, symbol: str, timeframe: str):
-        """Get base query for OHLCV bars filtered by symbol and timeframe.
-
-        Args:
-            symbol: Stock symbol
-            timeframe: Bar timeframe
-
-        Returns:
-            SQLAlchemy query object with symbol/timeframe filters applied
-        """
-        return self.session.query(OHLCVBar).join(Ticker).filter(
-            Ticker.symbol == self._normalize_symbol(symbol),
-            OHLCVBar.timeframe == timeframe,
-        )
-
     # -------------------------------------------------------------------------
     # Ticker Operations
     # -------------------------------------------------------------------------
@@ -888,37 +873,6 @@ class OHLCVRepository:
         logger.debug(f"Retrieved latest state for {symbol}/{timeframe}: state_id={df.iloc[0]['state_id']}, model={df.iloc[0]['model_id']}")
         return df
 
-    def get_state_counts(
-        self,
-        symbol: str,
-        timeframe: str,
-        model_id: str,
-    ) -> dict[int, int]:
-        """Get count of bars per state from computed_features.
-
-        Args:
-            symbol: Stock symbol
-            timeframe: Bar timeframe
-            model_id: Model identifier
-
-        Returns:
-            Dictionary mapping state_id -> count
-        """
-        query = self.session.query(
-            ComputedFeature.state_id,
-            func.count(ComputedFeature.id),
-        ).join(
-            Ticker, ComputedFeature.ticker_id == Ticker.id
-        ).filter(
-            Ticker.symbol == self._normalize_symbol(symbol),
-            ComputedFeature.timeframe == timeframe,
-            ComputedFeature.model_id == model_id,
-            ComputedFeature.state_id.isnot(None),
-        ).group_by(ComputedFeature.state_id)
-
-        results = query.all()
-        return {state_id: count for state_id, count in results}
-
     def get_bar_ids_for_timestamps(
         self,
         ticker_id: int,
@@ -950,37 +904,3 @@ class OHLCVRepository:
 
         return {b.timestamp: b.id for b in bars}
 
-    def delete_states(
-        self,
-        symbol: str,
-        timeframe: str,
-        model_id: str,
-    ) -> int:
-        """Clear state assignments for a symbol/timeframe/model in computed_features.
-
-        Args:
-            symbol: Stock symbol
-            timeframe: Bar timeframe
-            model_id: Model identifier
-
-        Returns:
-            Number of rows updated (state cleared)
-        """
-        ticker = self.get_ticker(symbol)
-        if ticker is None:
-            return 0
-
-        # Clear state columns for this ticker/timeframe/model
-        count = self.session.query(ComputedFeature).filter(
-            ComputedFeature.ticker_id == ticker.id,
-            ComputedFeature.timeframe == timeframe,
-            ComputedFeature.model_id == model_id,
-        ).update({
-            "model_id": None,
-            "state_id": None,
-            "state_prob": None,
-            "log_likelihood": None,
-        }, synchronize_session=False)
-
-        logger.info(f"Cleared {count} state assignments for {symbol}/{timeframe} model={model_id}")
-        return count

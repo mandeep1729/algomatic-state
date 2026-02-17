@@ -147,38 +147,6 @@ def print_state_labels(labels: dict[int, StateLabel], verbose: bool = False) -> 
     print("=" * 70)
 
 
-def _print_state_feature_stats(state_id: int, s: dict) -> None:
-    """Print feature statistics for a single state."""
-    print(f"\nState {state_id}:")
-    print(f"  Return features (r5, r15, r60):")
-    for feat in ["r5", "r15", "r60"]:
-        if feat in s:
-            print(f"    {feat}: {s[feat]:+.4f}")
-    print(f"  Volatility features:")
-    for feat in ["vol_z_60"]:
-        if feat in s:
-            print(f"    {feat}: {s[feat]:+.4f}")
-    print(f"  Transition dynamics:")
-    print(f"    Self-transition prob: {s['self_transition_prob']:.3f}")
-    print(f"    Expected duration: {s['expected_duration']:.1f} bars")
-
-
-def print_state_statistics(engine: StateLabelingEngine) -> None:
-    """Print detailed statistics for each state."""
-    stats = engine.get_state_statistics()
-    if not stats:
-        print("\nStatistics not available (inverse transform failed)")
-        return
-
-    print("\n" + "=" * 70)
-    print("STATE STATISTICS (scaled feature space)")
-    print("=" * 70)
-
-    for state_id in sorted(stats.keys()):
-        _print_state_feature_stats(state_id, stats[state_id])
-    print("=" * 70)
-
-
 def save_labels_to_metadata(paths: ArtifactPaths, labels: dict[int, StateLabel]) -> None:
     """Save state labels to metadata.json."""
     with open(paths.metadata_path) as f:
@@ -244,9 +212,6 @@ def _analyze_model(args, paths) -> None:
     labels = engine.label_states()
 
     print_state_labels(labels, verbose=args.verbose)
-
-    if args.verbose:
-        print_state_statistics(engine)
 
     if args.save:
         save_labels_to_metadata(paths, labels)

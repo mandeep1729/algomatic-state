@@ -305,42 +305,6 @@ class StateLabelingEngine:
         logger.info(f"Generated labels for {len(labels)} states: {[l.label for l in labels.values()]}")
         return labels
 
-    def get_state_statistics(self) -> dict[int, dict]:
-        """Get detailed statistics for each state.
-
-        Returns:
-            Dictionary mapping state_id -> statistics dict
-        """
-        try:
-            scaled_centroids = self._inverse_transform_centroids()
-        except (ValueError, AttributeError):
-            logger.warning("Could not compute state statistics: inverse transform failed")
-            return {}
-
-        stats = {}
-        for state_id in range(self.hmm.n_states):
-            state_stats = {}
-
-            # Get values for key features
-            for feature in self.RETURN_FEATURES + self.VOLATILITY_FEATURES:
-                if feature in self._feature_idx:
-                    idx = self._feature_idx[feature]
-                    state_stats[feature] = float(scaled_centroids[state_id, idx])
-
-            # Get transition probabilities
-            trans_probs = self.hmm.transition_matrix[state_id]
-            state_stats["self_transition_prob"] = float(trans_probs[state_id])
-            state_stats["expected_duration"] = (
-                1.0 / (1.0 - trans_probs[state_id])
-                if trans_probs[state_id] < 1.0
-                else float("inf")
-            )
-
-            stats[state_id] = state_stats
-
-        return stats
-
-
 def label_states_from_artifacts(
     hmm: GaussianHMMWrapper,
     scaler: BaseScaler,

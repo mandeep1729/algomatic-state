@@ -6,20 +6,16 @@ Implements:
 - Posterior confidence analysis
 - OOD rate monitoring
 - State-conditioned returns
-- Walk-forward backtest comparison
 - Validation report generation
 """
 
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import numpy as np
-import pandas as pd
 
-from src.features.state.hmm.contracts import HMMOutput
 from src.features.state.hmm.hmm_model import GaussianHMMWrapper
 
 logger = logging.getLogger(__name__)
@@ -463,109 +459,6 @@ class ModelValidator:
             n_samples=len(Z_clean),
             metrics=metrics,
         )
-
-
-class WalkForwardBacktest:
-    """Walk-forward backtest comparison."""
-
-    def __init__(
-        self,
-        baseline_sharpe: float = 0.0,
-    ):
-        """Initialize backtest.
-
-        Args:
-            baseline_sharpe: Baseline strategy Sharpe ratio
-        """
-        self.baseline_sharpe = baseline_sharpe
-
-    def compare_strategies(
-        self,
-        states: np.ndarray,
-        returns: np.ndarray,
-        good_states: list[int],
-        n_states: int,
-    ) -> dict[str, Any]:
-        """Compare baseline vs state-gated strategies.
-
-        Args:
-            states: Array of state IDs
-            returns: Array of returns
-            good_states: States to trade in
-            n_states: Total number of states
-
-        Returns:
-            Dictionary with comparison metrics
-        """
-        baseline_returns = returns
-        baseline_metrics = self._compute_metrics(baseline_returns, "baseline")
-
-        mask = np.isin(states, good_states)
-        gated_returns = np.where(mask, returns, 0)
-        gated_metrics = self._compute_metrics(gated_returns, "state_gated")
-
-        state_sized_returns = np.zeros_like(returns)
-        for state_id in range(n_states):
-            state_mask = states == state_id
-            if state_id in good_states:
-                state_sized_returns[state_mask] = returns[state_mask]
-            else:
-                state_sized_returns[state_mask] = returns[state_mask] * 0.5
-        sized_metrics = self._compute_metrics(state_sized_returns, "state_sized")
-
-        return {
-            "baseline": baseline_metrics,
-            "state_gated": gated_metrics,
-            "state_sized": sized_metrics,
-            "improvement_vs_baseline": {
-                "gated_sharpe_diff": gated_metrics["sharpe"] - baseline_metrics["sharpe"],
-                "sized_sharpe_diff": sized_metrics["sharpe"] - baseline_metrics["sharpe"],
-            },
-        }
-
-    def _compute_metrics(
-        self,
-        returns: np.ndarray,
-        name: str,
-    ) -> dict[str, float]:
-        """Compute performance metrics."""
-        if len(returns) == 0:
-            return {
-                "name": name,
-                "total_return": 0.0,
-                "mean_return": 0.0,
-                "std_return": 0.0,
-                "sharpe": 0.0,
-                "max_drawdown": 0.0,
-                "turnover": 0.0,
-            }
-
-        total_return = float(np.sum(returns))
-        mean_return = float(np.mean(returns))
-        std_return = float(np.std(returns))
-
-        if std_return > 0:
-            sharpe = mean_return / std_return * np.sqrt(252)
-        else:
-            sharpe = 0.0
-
-        cumulative = np.cumsum(returns)
-        running_max = np.maximum.accumulate(cumulative)
-        drawdown = running_max - cumulative
-        max_dd = float(np.max(drawdown)) if len(drawdown) > 0 else 0.0
-
-        position_changes = np.diff(np.abs(returns) > 0).astype(int)
-        turnover = float(np.sum(np.abs(position_changes))) / len(returns)
-
-        return {
-            "name": name,
-            "total_return": total_return,
-            "mean_return": mean_return,
-            "std_return": std_return,
-            "sharpe": sharpe,
-            "max_drawdown": max_dd,
-            "turnover": turnover,
-        }
 
 
 def generate_validation_report(

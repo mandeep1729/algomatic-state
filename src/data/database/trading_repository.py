@@ -26,7 +26,6 @@ from src.data.database.broker_models import TradeFill as TradeFillModel
 from src.data.database.strategy_models import Strategy as StrategyModel
 from src.data.database.trade_lifecycle_models import (
     DecisionContext as DecisionContextModel,
-    CampaignCheck as CampaignCheckModel,
     CampaignFill as CampaignFillModel,
 )
 from src.trade.evaluation import Severity
@@ -98,19 +97,6 @@ class TradingBuddyRepository:
         )
         self.session.add(account)
         self.session.flush()
-        return account
-
-    def get_or_create_account(
-        self,
-        external_user_id: str,
-        name: str,
-        email: str,
-        **kwargs,
-    ) -> UserAccountModel:
-        """Get existing account or create a new one."""
-        account = self.get_account_by_external_id(external_user_id)
-        if account is None:
-            account = self.create_account(external_user_id, name, email=email, **kwargs)
         return account
 
     # -------------------------------------------------------------------------
@@ -300,26 +286,6 @@ class TradingBuddyRepository:
             query = query.filter(UserRuleModel.is_enabled == True)  # noqa: E712
         return query.all()
 
-    def create_rule(
-        self,
-        account_id: int,
-        rule_code: str,
-        evaluator: str,
-        parameters: dict,
-        description: Optional[str] = None,
-    ) -> UserRuleModel:
-        """Create a new user rule."""
-        rule = UserRuleModel(
-            account_id=account_id,
-            rule_code=rule_code,
-            evaluator=evaluator,
-            parameters=parameters,
-            description=description,
-        )
-        self.session.add(rule)
-        self.session.flush()
-        return rule
-
     def build_evaluator_configs(
         self,
         account_id: int,
@@ -475,10 +441,6 @@ class TradingBuddyRepository:
         logger.info("Updated strategy id=%s fields=%s", strategy_id, list(kwargs.keys()))
         return strategy
 
-    def deactivate_strategy(self, strategy_id: int) -> Optional[StrategyModel]:
-        """Soft-delete a strategy by setting is_active=False."""
-        return self.update_strategy(strategy_id, is_active=False)
-
     # -------------------------------------------------------------------------
     # Trade Fill Operations
     # -------------------------------------------------------------------------
@@ -490,28 +452,6 @@ class TradingBuddyRepository:
         self.session.flush()
         logger.info("Created trade fill id=%s symbol=%s side=%s", fill.id, fill.symbol, fill.side)
         return fill
-
-    def get_fills_for_account(
-        self,
-        account_id: int,
-        symbol: Optional[str] = None,
-        since: Optional[datetime] = None,
-    ) -> list[TradeFillModel]:
-        """Get trade fills for an account, optionally filtered."""
-        query = self.session.query(TradeFillModel).filter(
-            TradeFillModel.account_id == account_id
-        )
-        if symbol:
-            query = query.filter(TradeFillModel.symbol == symbol)
-        if since:
-            query = query.filter(TradeFillModel.executed_at >= since)
-        return query.order_by(TradeFillModel.executed_at.desc()).all()
-
-    def get_fill_by_external_id(self, external_trade_id: str) -> Optional[TradeFillModel]:
-        """Get a trade fill by its external (broker) trade ID."""
-        return self.session.query(TradeFillModel).filter(
-            TradeFillModel.external_trade_id == external_trade_id
-        ).first()
 
     # -------------------------------------------------------------------------
     # Decision Context Operations (1-to-1 with fills)
@@ -560,78 +500,11 @@ class TradingBuddyRepository:
             **kwargs,
         )
 
-    def get_context_for_fill(self, fill_id: int) -> Optional[DecisionContextModel]:
-        """Get decision context for a specific fill."""
-        return self.session.query(DecisionContextModel).filter(
-            DecisionContextModel.fill_id == fill_id
-        ).first()
-
     def get_context(self, context_id: int) -> Optional[DecisionContextModel]:
         """Get a decision context by ID."""
         return self.session.query(DecisionContextModel).filter(
             DecisionContextModel.id == context_id
         ).first()
-
-    # -------------------------------------------------------------------------
-    # Campaign Check Operations
-    # -------------------------------------------------------------------------
-
-    def create_campaign_check(
-        self,
-        decision_context_id: int,
-        account_id: int,
-        check_type: str,
-        severity: str,
-        passed: bool,
-        check_phase: str,
-        details: Optional[dict] = None,
-        nudge_text: Optional[str] = None,
-    ) -> CampaignCheckModel:
-        """Create a campaign check record."""
-        check = CampaignCheckModel(
-            decision_context_id=decision_context_id,
-            account_id=account_id,
-            check_type=check_type,
-            severity=severity,
-            passed=passed,
-            details=details,
-            nudge_text=nudge_text,
-            check_phase=check_phase,
-            checked_at=datetime.utcnow(),
-        )
-        self.session.add(check)
-        self.session.flush()
-        logger.info(
-            "Created campaign check id=%s dc_id=%s type=%s severity=%s passed=%s",
-            check.id, decision_context_id, check_type, severity, passed,
-        )
-        return check
-
-    def get_checks_for_context(self, decision_context_id: int) -> list[CampaignCheckModel]:
-        """Get all checks for a decision context."""
-        return self.session.query(CampaignCheckModel).filter(
-            CampaignCheckModel.decision_context_id == decision_context_id
-        ).order_by(CampaignCheckModel.checked_at.asc()).all()
-
-    def acknowledge_check(
-        self,
-        check_id: int,
-        trader_action: str,
-    ) -> Optional[CampaignCheckModel]:
-        """Acknowledge a check and record the trader's action."""
-        check = self.session.query(CampaignCheckModel).filter(
-            CampaignCheckModel.id == check_id
-        ).first()
-
-        if check is None:
-            logger.warning("Check id=%s not found for acknowledgement", check_id)
-            return None
-
-        check.acknowledged = True
-        check.trader_action = trader_action
-        self.session.flush()
-        logger.info("Acknowledged check id=%s action=%s", check_id, trader_action)
-        return check
 
     # -------------------------------------------------------------------------
     # Campaign Rebuild Service

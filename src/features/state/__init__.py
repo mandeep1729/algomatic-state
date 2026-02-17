@@ -10,8 +10,6 @@ that can inform trade evaluation.
 
 from src.features.state.hmm import (
     InferenceEngine,
-    MultiTimeframeInferenceEngine,
-    TemporalInferenceEngine,
     create_inference_engine,
 )
 from src.features.state.pca import (
@@ -22,8 +20,6 @@ from src.features.state.pca import (
 __all__ = [
     # HMM
     "InferenceEngine",
-    "MultiTimeframeInferenceEngine",
-    "TemporalInferenceEngine",
     "create_inference_engine",
     # PCA
     "PCAStateEngine",

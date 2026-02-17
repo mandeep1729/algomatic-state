@@ -5,7 +5,6 @@ import logging
 import pickle
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -162,29 +161,6 @@ class PCAStateEngine:
             reconstruction_error=reconstruction_error,
         )
 
-    def process_batch(
-        self,
-        features_df: pd.DataFrame,
-        symbol: str,
-    ) -> list[PCAStateOutput]:
-        """Process a batch of observations.
-
-        Args:
-            features_df: DataFrame with features (index is timestamp)
-            symbol: Ticker symbol
-
-        Returns:
-            List of PCAStateOutput for each row
-        """
-        outputs = []
-
-        for timestamp, row in features_df.iterrows():
-            features = row.to_dict()
-            output = self.process(features, symbol, timestamp)
-            outputs.append(output)
-
-        return outputs
-
     def transform(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Transform features to PCA space and get state assignments.
 
@@ -253,18 +229,3 @@ class PCAStateEngine:
         """
         return self.kmeans.cluster_centers_.copy()
 
-    def get_state_info(self) -> dict:
-        """Get information about each state.
-
-        Returns:
-            Dictionary with state_id -> info dict
-        """
-        info = {}
-        for i in range(self.metadata.n_states):
-            centroid = self.kmeans.cluster_centers_[i]
-            info[i] = {
-                "state_id": i,
-                "centroid": centroid.tolist(),
-                "label": self.metadata.state_mapping.get(str(i), {}).get("label", f"state_{i}"),
-            }
-        return info

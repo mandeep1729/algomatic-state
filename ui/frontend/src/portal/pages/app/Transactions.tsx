@@ -5,6 +5,7 @@ import { format } from 'date-fns';
 import api from '../../api';
 import { bulkUpdateStrategy } from '../../api';
 import { fetchStrategies } from '../../api/client';
+import { mergeStrategies } from '../../utils/defaultStrategies';
 import { DataTable, type Column } from '../../components/DataTable';
 import { FillContextModal } from '../../components/FillContextModal';
 import type { TradeSummary, StrategyDefinition } from '../../types';
@@ -65,6 +66,9 @@ export default function Transactions() {
   const [selectedTradeIds, setSelectedTradeIds] = useState<Set<string>>(new Set());
   const [bulkStrategyId, setBulkStrategyId] = useState<string>('');
   const [strategies, setStrategies] = useState<StrategyDefinition[]>([]);
+  const [mergedStrategies, setMergedStrategies] = useState<Array<{ id: string; name: string }>>(
+    [],
+  );
   const [strategiesLoading, setStrategiesLoading] = useState(false);
   const [bulkApplying, setBulkApplying] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
@@ -140,7 +144,14 @@ export default function Transactions() {
     async function load() {
       try {
         const data = await fetchStrategies();
-        if (!cancelled) setStrategies(data);
+        if (cancelled) return;
+        setStrategies(data);
+        // Merge user strategies with defaults
+        const merged = mergeStrategies(
+          data.filter((s) => s.is_active).map((s) => ({ id: s.id, name: s.name })),
+          true,
+        );
+        setMergedStrategies(merged);
       } catch (err) {
         console.error('[Transactions] Failed to load strategies:', err);
       } finally {
@@ -194,7 +205,8 @@ export default function Transactions() {
         strategy_id: strategyId,
       });
 
-      const strategyName = strategies.find((s) => s.id === bulkStrategyId)?.name ?? 'selected strategy';
+      const strategyName =
+        mergedStrategies.find((s) => s.id === bulkStrategyId)?.name ?? 'selected strategy';
       setBulkSuccess(
         `Updated ${result.updated_count} fill${result.updated_count !== 1 ? 's' : ''} to "${strategyName}"` +
         (result.skipped_count > 0 ? ` (${result.skipped_count} skipped - not linked to campaigns)` : ''),
@@ -410,7 +422,7 @@ export default function Transactions() {
               <option value="">
                 {strategiesLoading ? 'Loading...' : '-- Select strategy --'}
               </option>
-              {strategies.filter((s) => s.is_active).map((s) => (
+              {mergedStrategies.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>

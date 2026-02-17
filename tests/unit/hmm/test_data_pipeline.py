@@ -62,17 +62,18 @@ class TestGapHandler:
         """Create gap handler for 1-minute bars."""
         return GapHandler(timeframe="1Min", max_gap_bars=5)
 
-    def test_detect_no_gaps(self, gap_handler: GapHandler):
-        """Test detection when no gaps exist."""
+    def test_handle_gaps_no_gaps(self, gap_handler: GapHandler):
+        """Test handle_gaps when no gaps exist."""
         index = pd.date_range("2024-01-15 09:30", periods=10, freq="1min")
         df = pd.DataFrame({"a": range(10)}, index=index)
 
-        gaps = gap_handler.detect_gaps(df)
+        result = gap_handler.handle_gaps(df)
 
-        assert not gaps.any()
+        assert "has_gap" in result.columns
+        assert not result["has_gap"].any()
 
-    def test_detect_gap(self, gap_handler: GapHandler):
-        """Test detection of a gap."""
+    def test_handle_gaps_with_gap(self, gap_handler: GapHandler):
+        """Test handle_gaps detects a gap."""
         index = pd.DatetimeIndex([
             datetime(2024, 1, 15, 9, 30),
             datetime(2024, 1, 15, 9, 31),
@@ -81,22 +82,23 @@ class TestGapHandler:
         ])
         df = pd.DataFrame({"a": [1, 2, 3, 4]}, index=index)
 
-        gaps = gap_handler.detect_gaps(df)
+        result = gap_handler.handle_gaps(df)
 
-        assert not gaps.iloc[0]
-        assert not gaps.iloc[1]
-        assert gaps.iloc[2]
-        assert not gaps.iloc[3]
+        assert "has_gap" in result.columns
+        assert not result["has_gap"].iloc[0]
+        assert not result["has_gap"].iloc[1]
+        assert result["has_gap"].iloc[2]
+        assert not result["has_gap"].iloc[3]
 
-    def test_mark_gaps(self, gap_handler: GapHandler):
-        """Test gap marking adds column."""
+    def test_handle_gaps_adds_has_gap_column(self, gap_handler: GapHandler):
+        """Test handle_gaps adds has_gap column."""
         index = pd.date_range("2024-01-15 09:30", periods=5, freq="1min")
         df = pd.DataFrame({"a": range(5)}, index=index)
 
-        df_marked = gap_handler.mark_gaps(df)
+        result = gap_handler.handle_gaps(df)
 
-        assert "has_gap" in df_marked.columns
-        assert not df_marked["has_gap"].any()
+        assert "has_gap" in result.columns
+        assert not result["has_gap"].any()
 
 
 class TestTimeSplitter:
