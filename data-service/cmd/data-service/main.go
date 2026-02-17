@@ -19,7 +19,8 @@ import (
 	"github.com/algomatic/data-service/internal/db"
 	"github.com/algomatic/data-service/internal/repository"
 	"github.com/algomatic/data-service/internal/server"
-	pb "github.com/algomatic/data-service/proto/gen/go/market/v1"
+	marketpb "github.com/algomatic/data-service/proto/gen/go/market/v1"
+	probepb "github.com/algomatic/data-service/proto/gen/go/probe/v1"
 )
 
 func main() {
@@ -66,16 +67,23 @@ func main() {
 	barRepo := repository.NewBarRepo(pool, logger)
 	featureRepo := repository.NewFeatureRepo(pool, logger)
 	syncLogRepo := repository.NewSyncLogRepo(pool, logger)
+	probeStrategyRepo := repository.NewProbeStrategyRepo(pool, logger)
+	probeResultRepo := repository.NewProbeResultRepo(pool, logger)
+	probeTradeRepo := repository.NewProbeTradeRepo(pool, logger)
 
 	// Create gRPC server.
 	grpcServer := grpc.NewServer()
 	marketServer := server.NewMarketServer(tickerRepo, barRepo, featureRepo, syncLogRepo, logger)
-	pb.RegisterMarketDataServiceServer(grpcServer, marketServer)
+	marketpb.RegisterMarketDataServiceServer(grpcServer, marketServer)
+
+	probeServer := server.NewProbeServer(probeStrategyRepo, probeResultRepo, probeTradeRepo, logger)
+	probepb.RegisterProbeDataServiceServer(grpcServer, probeServer)
 
 	// Register health check.
 	healthServer := health.NewServer()
 	healthpb.RegisterHealthServer(grpcServer, healthServer)
 	healthServer.SetServingStatus("market.v1.MarketDataService", healthpb.HealthCheckResponse_SERVING)
+	healthServer.SetServingStatus("probe.v1.ProbeDataService", healthpb.HealthCheckResponse_SERVING)
 
 	// Register reflection for debugging.
 	reflection.Register(grpcServer)
@@ -95,6 +103,7 @@ func main() {
 		sig := <-sigCh
 		logger.Info("Received signal, shutting down", "signal", sig)
 		healthServer.SetServingStatus("market.v1.MarketDataService", healthpb.HealthCheckResponse_NOT_SERVING)
+		healthServer.SetServingStatus("probe.v1.ProbeDataService", healthpb.HealthCheckResponse_NOT_SERVING)
 		grpcServer.GracefulStop()
 		cancel()
 	}()

@@ -49,10 +49,14 @@ func NewClient(ctx context.Context, connStr string, logger *slog.Logger) (*Clien
 }
 
 // Close shuts down the connection pool.
-func (c *Client) Close() {
+func (c *Client) Close() error {
 	c.pool.Close()
 	c.logger.Info("Database connection pool closed")
+	return nil
 }
+
+// Compile-time check that Client implements Persister.
+var _ Persister = (*Client)(nil)
 
 // LookupStrategyID looks up the probe_strategies.id for a given strategy name.
 // Returns 0 if the strategy is not found.

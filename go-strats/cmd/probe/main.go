@@ -81,7 +81,8 @@ func main() {
 	// Database persistence flags
 	persistResults := flag.Bool("persist-results", false, "Persist aggregated results to PostgreSQL")
 	persistTrades := flag.Bool("persist-trades", false, "Persist individual trades to PostgreSQL (requires --persist-results)")
-	dbURL := flag.String("db-url", envOrDefault("STRATEGY_DB_URL", ""), "PostgreSQL connection URL")
+	dbURL := flag.String("db-url", envOrDefault("STRATEGY_DB_URL", ""), "PostgreSQL connection URL (direct pgx)")
+	dataServiceAddr := flag.String("data-service-addr", envOrDefault("DATA_SERVICE_ADDR", ""), "gRPC data-service address (e.g. localhost:50051)")
 
 	flag.Parse()
 
@@ -134,26 +135,46 @@ func main() {
 
 	rp := types.RiskProfileByName(*riskProfile)
 
-	// Initialise database client if persistence is enabled
-	var dbClient *persistence.Client
+	// Initialise persistence client (gRPC data-service or direct pgx)
+	var persister persistence.Persister
 	if *persistResults {
-		if *dbURL == "" {
-			fmt.Fprintln(os.Stderr, "Error: --db-url (or STRATEGY_DB_URL env) is required when --persist-results is set")
+		switch {
+		case *dataServiceAddr != "" && *dbURL != "":
+			fmt.Fprintln(os.Stderr, "Error: specify either --data-service-addr or --db-url, not both")
+			os.Exit(1)
+
+		case *dataServiceAddr != "":
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			grpcClient, grpcErr := persistence.NewGRPCClient(ctx, *dataServiceAddr, logger)
+			cancel()
+			if grpcErr != nil {
+				fmt.Fprintf(os.Stderr, "Error connecting to data-service: %v\n", grpcErr)
+				os.Exit(1)
+			}
+			persister = grpcClient
+			logger.Info("Persistence via gRPC data-service",
+				"addr", *dataServiceAddr,
+				"persist_trades", *persistTrades,
+			)
+
+		case *dbURL != "":
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			dbClient, dbErr := persistence.NewClient(ctx, *dbURL, logger)
+			cancel()
+			if dbErr != nil {
+				fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", dbErr)
+				os.Exit(1)
+			}
+			persister = dbClient
+			logger.Info("Persistence via direct database",
+				"persist_trades", *persistTrades,
+			)
+
+		default:
+			fmt.Fprintln(os.Stderr, "Error: --data-service-addr (or DATA_SERVICE_ADDR env) or --db-url (or STRATEGY_DB_URL env) is required when --persist-results is set")
 			os.Exit(1)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		var dbErr error
-		dbClient, dbErr = persistence.NewClient(ctx, *dbURL, logger)
-		cancel()
-		if dbErr != nil {
-			fmt.Fprintf(os.Stderr, "Error connecting to database: %v\n", dbErr)
-			os.Exit(1)
-		}
-		defer dbClient.Close()
-		logger.Info("Database persistence enabled",
-			"persist_results", true,
-			"persist_trades", *persistTrades,
-		)
+		defer persister.Close()
 	}
 
 	// Determine which strategies to run
@@ -206,14 +227,14 @@ func main() {
 	// Pre-compute period bounds and strategy DB IDs before launching goroutines
 	var periodStart, periodEnd time.Time
 	var stratIDMap map[string]int
-	if dbClient != nil && len(bars) > 0 {
+	if persister != nil && len(bars) > 0 {
 		periodStart = bars[0].Bar.Timestamp
 		periodEnd = bars[len(bars)-1].Bar.Timestamp
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		stratIDMap = make(map[string]int, len(strategies))
 		for _, s := range strategies {
-			dbID, err := dbClient.LookupStrategyID(ctx, s.Name)
+			dbID, err := persister.LookupStrategyID(ctx, s.Name)
 			if err != nil {
 				logger.Error("Failed to look up strategy ID", "strategy", s.Name, "error", err)
 				continue
@@ -252,11 +273,11 @@ func main() {
 			tracker.MarkStrategyCompleted(runID, s.ID, len(trades))
 
 			// Persist this strategy's results immediately
-			if dbClient != nil && len(trades) > 0 {
+			if persister != nil && len(trades) > 0 {
 				dbID, ok := stratIDMap[s.Name]
 				if ok {
 					rCount, tCount := persistStrategyResult(
-						logger, dbClient, trades, s.Name, dbID,
+						logger, persister, trades, s.Name, dbID,
 						symbolName, timeframeName, rp, runID,
 						periodStart, periodEnd, *persistTrades,
 					)
@@ -280,7 +301,7 @@ func main() {
 		"elapsed", elapsed,
 	)
 
-	if dbClient != nil {
+	if persister != nil {
 		logger.Info("Database persistence complete",
 			"run_id", runID,
 			"result_rows", atomic.LoadInt64(&totalResultRows),
@@ -488,7 +509,7 @@ func loadCSV(path string) ([]types.BarData, error) {
 // Returns the number of result rows and trade rows inserted.
 func persistStrategyResult(
 	logger *slog.Logger,
-	dbClient *persistence.Client,
+	persister persistence.Persister,
 	trades []types.Trade,
 	strategyName string,
 	strategyDBID int,
@@ -511,7 +532,7 @@ func persistStrategyResult(
 
 	tradeRecords := persistence.BuildTradeRecords(trades, symbol)
 
-	resultCount, tradeCount, err := dbClient.Persist(
+	resultCount, tradeCount, err := persister.Persist(
 		ctx, tradeRecords, trades, aggResults, persistTrades,
 	)
 	if err != nil {

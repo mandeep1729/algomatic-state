@@ -1,5 +1,5 @@
 PROTO_DIR := .
-PROTO_FILES := $(wildcard market/v1/*.proto)
+PROTO_FILES := $(wildcard market/v1/*.proto) $(wildcard probe/v1/*.proto)
 GEN_GO := gen/go
 GEN_PYTHON := gen/python
 GEN_CPP := gen/cpp

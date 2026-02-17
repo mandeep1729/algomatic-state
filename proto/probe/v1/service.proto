@@ -1,0 +1,110 @@
+syntax = "proto3";
+
+package probe.v1;
+
+option go_package = "github.com/algomatic/data-service/proto/gen/go/probe/v1;probev1";
+
+import "google/protobuf/timestamp.proto";
+
+// ProbeDataService provides write access to strategy probe tables.
+// Used by go-strats to persist backtest results without direct DB access.
+service ProbeDataService {
+  // LookupStrategyID returns the database ID for a strategy by name.
+  rpc LookupStrategyID(LookupStrategyIDRequest) returns (LookupStrategyIDResponse);
+
+  // SaveResults inserts aggregated probe results (ON CONFLICT DO NOTHING).
+  // Returns a mapping from group keys to result IDs for FK linking.
+  rpc SaveResults(SaveResultsRequest) returns (SaveResultsResponse);
+
+  // SaveTrades bulk-inserts individual trade records.
+  // Each trade must have its result_id set (from SaveResults mapping).
+  rpc SaveTrades(SaveTradesRequest) returns (SaveTradesResponse);
+}
+
+// ---------------------------------------------------------------------------
+// LookupStrategyID
+// ---------------------------------------------------------------------------
+
+message LookupStrategyIDRequest {
+  string name = 1;
+}
+
+message LookupStrategyIDResponse {
+  int32 strategy_id = 1;  // 0 if not found
+  bool found = 2;
+}
+
+// ---------------------------------------------------------------------------
+// SaveResults
+// ---------------------------------------------------------------------------
+
+// AggregatedResult maps to a row in strategy_probe_results.
+message AggregatedResult {
+  // Identification
+  string run_id = 1;
+  string symbol = 2;
+  int32 strategy_id = 3;
+  google.protobuf.Timestamp period_start = 4;
+  google.protobuf.Timestamp period_end = 5;
+
+  // Dimensions
+  string timeframe = 6;
+  string risk_profile = 7;
+  string open_day = 8;   // YYYY-MM-DD date string
+  int32 open_hour = 9;   // 0-23
+  string long_short = 10; // "long" or "short"
+
+  // Aggregations
+  int32 num_trades = 11;
+  double pnl_mean = 12;
+  double pnl_std = 13;
+  double max_drawdown = 14;
+  double max_profit = 15;
+}
+
+message SaveResultsRequest {
+  repeated AggregatedResult results = 1;
+}
+
+// ResultIdMapping links a group key to the database-assigned result ID.
+message ResultIdMapping {
+  string open_day = 1;   // YYYY-MM-DD
+  int32 open_hour = 2;
+  string long_short = 3;
+  int64 result_id = 4;
+}
+
+message SaveResultsResponse {
+  int32 inserted = 1;
+  int32 total = 2;
+  repeated ResultIdMapping mappings = 3;
+}
+
+// ---------------------------------------------------------------------------
+// SaveTrades
+// ---------------------------------------------------------------------------
+
+// TradeRecord maps to a row in strategy_probe_trades.
+message TradeRecord {
+  int64 result_id = 1;  // FK to strategy_probe_results.id
+  string ticker = 2;
+  google.protobuf.Timestamp open_timestamp = 3;
+  google.protobuf.Timestamp close_timestamp = 4;
+  string direction = 5;
+  string open_justification = 6;
+  string close_justification = 7;
+  double pnl = 8;
+  double pnl_pct = 9;
+  int32 bars_held = 10;
+  double max_drawdown = 11;
+  double max_profit = 12;
+  double pnl_std = 13;
+}
+
+message SaveTradesRequest {
+  repeated TradeRecord trades = 1;
+}
+
+message SaveTradesResponse {
+  int32 inserted = 1;
+}
