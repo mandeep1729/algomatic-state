@@ -76,6 +76,7 @@ class RiskSanityChecker(BaseChecker):
         intent: Optional[TradeIntent],
         atr: Optional[float],
         account_balance: Optional[float],
+        **kwargs,
     ) -> list[CheckResult]:
         """Run all risk sanity sub-checks.
 
@@ -84,6 +85,7 @@ class RiskSanityChecker(BaseChecker):
             intent: TradeIntent built from fill data (None if unavailable)
             atr: ATR value for the symbol/timeframe
             account_balance: Trader's account balance
+            **kwargs: Additional data (ignored by this checker)
 
         Returns:
             List of CheckResult (one per sub-check)

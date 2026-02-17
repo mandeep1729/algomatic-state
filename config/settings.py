@@ -278,6 +278,14 @@ class ChecksConfig(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CHECKS_")
 
     atr_period: int = Field(default=14, description="ATR lookback period (standard = 14)")
+    baseline_lookback_days: int = Field(
+        default=90,
+        description="Number of days to look back when computing trader baseline stats",
+    )
+    baseline_min_fills: int = Field(
+        default=5,
+        description="Minimum number of fills required to compute baseline stats",
+    )
     min_rr_ratio: float = Field(default=1.5, description="Minimum acceptable risk:reward ratio")
     max_risk_per_trade_pct: float = Field(
         default=2.0,
@@ -305,6 +313,10 @@ class ReviewerConfig(BaseSettings):
     recheck_lookback_days: int = Field(
         default=30,
         description="Days to look back when re-running checks after risk pref changes",
+    )
+    backend_url: str = Field(
+        default="http://localhost:8000",
+        description="Base URL of the backend API for reviewer service HTTP calls",
     )
 
 

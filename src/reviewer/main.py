@@ -53,9 +53,14 @@ def main() -> None:
         sys.exit(1)
     logger.info("Database connection established")
 
-    # Start the orchestrator
+    # Create API client for HTTP-based data access
+    from src.reviewer.api_client import ReviewerApiClient
+    api_client = ReviewerApiClient(base_url=settings.reviewer.backend_url)
+    logger.info("ReviewerApiClient configured: %s", settings.reviewer.backend_url)
+
+    # Start the orchestrator with API client
     from src.reviewer.orchestrator import ReviewerOrchestrator
-    orchestrator = ReviewerOrchestrator()
+    orchestrator = ReviewerOrchestrator(api_client=api_client)
     orchestrator.start()
 
     # Block until signal

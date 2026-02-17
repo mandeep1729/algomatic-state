@@ -53,6 +53,7 @@ class BaseChecker(ABC):
         intent: Optional[TradeIntent],
         atr: Optional[float],
         account_balance: Optional[float],
+        **kwargs,
     ) -> list[CheckResult]:
         """Run checks for a trade fill.
 
@@ -61,6 +62,7 @@ class BaseChecker(ABC):
             intent: TradeIntent domain object built from fill data (None if unavailable)
             atr: Current ATR value for the symbol/timeframe
             account_balance: Trader's account balance
+            **kwargs: Additional data (e.g. indicator_snapshot, baseline_stats)
 
         Returns:
             List of CheckResult for each sub-check evaluated

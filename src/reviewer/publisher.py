@@ -57,6 +57,26 @@ def publish_risk_prefs_updated(account_id: int) -> None:
     )
 
 
+def publish_baseline_requested(account_id: int | str) -> None:
+    """Publish a REVIEW_BASELINE_REQUESTED event to trigger baseline computation.
+
+    Args:
+        account_id: The user whose baseline should be computed,
+                    or "all" for batch computation of all active accounts
+    """
+    bus = get_message_bus()
+    bus.publish(Event(
+        event_type=EventType.REVIEW_BASELINE_REQUESTED,
+        payload={
+            "account_id": account_id,
+        },
+        source="reviewer.publisher",
+    ))
+    logger.debug(
+        "Published REVIEW_BASELINE_REQUESTED: account_id=%s", account_id,
+    )
+
+
 def publish_campaigns_rebuilt(
     account_id: int,
     campaigns_created: int,
