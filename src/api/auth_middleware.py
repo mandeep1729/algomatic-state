@@ -38,8 +38,31 @@ def get_current_user(
 
     # Dev mode: bypass OAuth and return default user
     if settings.auth.dev_mode:
-        logger.debug("Auth dev_mode enabled, using default user_id=1")
-        return 1
+        # Use token's user_id if provided, otherwise find first active user
+        if credentials is not None:
+            try:
+                payload = jwt.decode(
+                    credentials.credentials,
+                    settings.auth.jwt_secret_key,
+                    algorithms=[settings.auth.jwt_algorithm],
+                )
+                uid = payload.get("sub")
+                if uid is not None:
+                    logger.debug("Auth dev_mode: using user_id=%s from JWT", uid)
+                    return int(uid)
+            except JWTError:
+                pass  # Fall through to default lookup
+
+        with session_scope() as session:
+            import sqlalchemy
+            row = session.execute(
+                sqlalchemy.text(
+                    "SELECT id FROM user_accounts WHERE is_active = true ORDER BY id LIMIT 1"
+                )
+            ).fetchone()
+            dev_user_id = row[0] if row else 1
+        logger.debug("Auth dev_mode enabled, using default user_id=%d", dev_user_id)
+        return dev_user_id
 
     if credentials is None:
         raise HTTPException(
