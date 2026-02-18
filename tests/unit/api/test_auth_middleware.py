@@ -35,10 +35,11 @@ def _make_token(user_id: int, secret: str = "test-secret", hours: int = 24) -> s
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
-def _mock_settings(dev_mode: bool = False, secret: str = "test-secret"):
+def _mock_settings(dev_mode: bool = False, secret: str = "test-secret", dev_user_id: int = 1):
     """Return a mock settings object."""
     settings = MagicMock()
     settings.auth.dev_mode = dev_mode
+    settings.auth.dev_user_id = dev_user_id
     settings.auth.jwt_secret_key = secret
     settings.auth.jwt_algorithm = "HS256"
     settings.auth.jwt_expiry_hours = 24
@@ -54,46 +55,24 @@ def _mock_settings(dev_mode: bool = False, secret: str = "test-secret"):
 class TestDevMode:
     """Tests for AUTH_DEV_MODE behavior."""
 
-    def test_dev_mode_returns_existing_user_id(self):
-        """Dev mode without token should return the first active user from DB."""
-        settings = _mock_settings(dev_mode=True)
-
-        mock_session = MagicMock()
-        # Simulate a user_accounts table with id=7 as first active user
-        mock_row = (7,)
-        mock_session.execute.return_value.fetchone.return_value = mock_row
-
-        mock_ctx = MagicMock()
-        mock_ctx.__enter__ = MagicMock(return_value=mock_session)
-        mock_ctx.__exit__ = MagicMock(return_value=False)
+    def test_dev_mode_returns_configured_user_id(self):
+        """Dev mode without token should return AUTH_DEV_USER_ID."""
+        settings = _mock_settings(dev_mode=True, dev_user_id=8)
 
         app = _make_app()
-        with (
-            patch("src.api.auth_middleware.get_settings", return_value=settings),
-            patch("src.api.auth_middleware.session_scope", return_value=mock_ctx),
-        ):
+        with patch("src.api.auth_middleware.get_settings", return_value=settings):
             client = TestClient(app)
             resp = client.get("/test-user")
 
         assert resp.status_code == 200
-        assert resp.json()["user_id"] == 7
+        assert resp.json()["user_id"] == 8
 
-    def test_dev_mode_never_returns_hardcoded_id_1_when_no_users(self):
-        """When no users exist, dev mode falls back to 1 (last resort)."""
+    def test_dev_mode_defaults_to_user_id_1(self):
+        """Dev mode without AUTH_DEV_USER_ID should default to 1."""
         settings = _mock_settings(dev_mode=True)
 
-        mock_session = MagicMock()
-        mock_session.execute.return_value.fetchone.return_value = None
-
-        mock_ctx = MagicMock()
-        mock_ctx.__enter__ = MagicMock(return_value=mock_session)
-        mock_ctx.__exit__ = MagicMock(return_value=False)
-
         app = _make_app()
-        with (
-            patch("src.api.auth_middleware.get_settings", return_value=settings),
-            patch("src.api.auth_middleware.session_scope", return_value=mock_ctx),
-        ):
+        with patch("src.api.auth_middleware.get_settings", return_value=settings):
             client = TestClient(app)
             resp = client.get("/test-user")
 
@@ -117,22 +96,12 @@ class TestDevMode:
         assert resp.status_code == 200
         assert resp.json()["user_id"] == 42
 
-    def test_dev_mode_with_invalid_jwt_falls_back_to_db(self):
-        """Dev mode with a bad JWT should fall back to DB lookup, not crash."""
-        settings = _mock_settings(dev_mode=True, secret="test-secret")
-
-        mock_session = MagicMock()
-        mock_session.execute.return_value.fetchone.return_value = (10,)
-
-        mock_ctx = MagicMock()
-        mock_ctx.__enter__ = MagicMock(return_value=mock_session)
-        mock_ctx.__exit__ = MagicMock(return_value=False)
+    def test_dev_mode_with_invalid_jwt_falls_back_to_configured_id(self):
+        """Dev mode with a bad JWT should fall back to configured dev_user_id."""
+        settings = _mock_settings(dev_mode=True, secret="test-secret", dev_user_id=8)
 
         app = _make_app()
-        with (
-            patch("src.api.auth_middleware.get_settings", return_value=settings),
-            patch("src.api.auth_middleware.session_scope", return_value=mock_ctx),
-        ):
+        with patch("src.api.auth_middleware.get_settings", return_value=settings):
             client = TestClient(app)
             resp = client.get(
                 "/test-user",
@@ -140,7 +109,7 @@ class TestDevMode:
             )
 
         assert resp.status_code == 200
-        assert resp.json()["user_id"] == 10
+        assert resp.json()["user_id"] == 8
 
 
 # ---------------------------------------------------------------------------

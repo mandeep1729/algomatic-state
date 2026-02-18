@@ -53,14 +53,7 @@ def get_current_user(
             except JWTError:
                 pass  # Fall through to default lookup
 
-        with session_scope() as session:
-            import sqlalchemy
-            row = session.execute(
-                sqlalchemy.text(
-                    "SELECT id FROM user_accounts WHERE is_active = true ORDER BY id LIMIT 1"
-                )
-            ).fetchone()
-            dev_user_id = row[0] if row else 1
+        dev_user_id = settings.auth.dev_user_id
         logger.debug("Auth dev_mode enabled, using default user_id=%d", dev_user_id)
         return dev_user_id
 
