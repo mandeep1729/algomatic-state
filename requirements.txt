@@ -38,3 +38,8 @@ httpx>=0.25.0
 
 # Messaging dependencies
 redis>=5.0.0
+
+# gRPC dependencies (data-service client)
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.25.0

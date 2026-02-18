@@ -24,6 +24,8 @@ RUN ldconfig
 
 WORKDIR /app
 
+ENV PYTHONPATH=/app/proto/gen/python:${PYTHONPATH}
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
