@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { CampaignCheck, CheckSeverity } from '../../types';
 
 interface ChecksSummaryProps {
@@ -7,6 +7,14 @@ interface ChecksSummaryProps {
   legLabel?: string;
   /** Optional flag to show/hide summary counts (default: true) */
   showSummary?: boolean;
+}
+
+interface CheckTypeGroupData {
+  checkType: string;
+  checks: CampaignCheck[];
+  highestSeverity: CheckSeverity;
+  failedCount: number;
+  passedCount: number;
 }
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = {
@@ -29,6 +37,58 @@ const SEVERITY_STYLES: Record<CheckSeverity, { badge: string; dot: string }> = {
     dot: 'bg-[var(--accent-red)]',
   },
 };
+
+/** Format a check_type slug (e.g. "risk_sanity") into a readable label ("Risk Sanity") */
+function formatCheckType(checkType: string): string {
+  return checkType
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+/** Find the highest (most severe) severity in a list of checks */
+function highestSeverity(checks: CampaignCheck[]): CheckSeverity {
+  let best: CheckSeverity = 'info';
+  for (const check of checks) {
+    if (SEVERITY_ORDER[check.severity] < SEVERITY_ORDER[best]) {
+      best = check.severity;
+    }
+  }
+  return best;
+}
+
+/** Group checks by checkType and compute per-group metadata */
+function groupChecksByType(checks: CampaignCheck[]): CheckTypeGroupData[] {
+  const grouped = new Map<string, CampaignCheck[]>();
+  for (const check of checks) {
+    const existing = grouped.get(check.checkType);
+    if (existing) {
+      existing.push(check);
+    } else {
+      grouped.set(check.checkType, [check]);
+    }
+  }
+
+  const groups: CheckTypeGroupData[] = [];
+  for (const [checkType, groupChecks] of grouped) {
+    groups.push({
+      checkType,
+      checks: sortChecks(groupChecks),
+      highestSeverity: highestSeverity(groupChecks),
+      failedCount: groupChecks.filter((c) => !c.passed).length,
+      passedCount: groupChecks.filter((c) => c.passed).length,
+    });
+  }
+
+  // Sort by highest severity (critical first), then alphabetically by type name
+  groups.sort((a, b) => {
+    const severityDiff = SEVERITY_ORDER[a.highestSeverity] - SEVERITY_ORDER[b.highestSeverity];
+    if (severityDiff !== 0) return severityDiff;
+    return a.checkType.localeCompare(b.checkType);
+  });
+
+  return groups;
+}
 
 function sortChecks(checks: CampaignCheck[]): CampaignCheck[] {
   return [...checks].sort((a, b) => {
@@ -85,7 +145,6 @@ function CheckCard({ check }: { check: CampaignCheck }) {
       {isOpen && (
         <div className="border-t border-[var(--border-color)] px-4 pb-4 pt-3">
           <div className="grid grid-cols-2 gap-2 text-xs text-[var(--text-secondary)]">
-            <span>Type: {check.checkType}</span>
             <span>Phase: {check.checkPhase}</span>
             <span>Checked: {new Date(check.checkedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })}</span>
             {check.acknowledged != null && (
@@ -112,13 +171,75 @@ function CheckCard({ check }: { check: CampaignCheck }) {
   );
 }
 
+function CheckTypeGroup({ group }: { group: CheckTypeGroupData }) {
+  const [isOpen, setIsOpen] = useState(group.failedCount > 0);
+  const style = SEVERITY_STYLES[group.highestSeverity] ?? SEVERITY_STYLES.info;
+  const totalCount = group.checks.length;
+
+  return (
+    <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-primary)]">
+      {/* Group header -- always visible, clickable to toggle */}
+      <button
+        type="button"
+        onClick={() => setIsOpen((prev) => !prev)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <span className={`inline-block rounded px-2 py-0.5 text-xs font-medium ${style.badge}`}>
+            {group.highestSeverity}
+          </span>
+          <span className="text-sm font-medium text-[var(--text-primary)]">
+            {formatCheckType(group.checkType)}
+          </span>
+          <span className="text-xs text-[var(--text-secondary)]">
+            {totalCount} check{totalCount !== 1 ? 's' : ''}
+          </span>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {group.failedCount > 0 && (
+            <span className="text-xs font-medium text-[var(--accent-red)]">
+              {group.failedCount} failed
+            </span>
+          )}
+          {group.passedCount > 0 && (
+            <span className="text-xs text-[var(--accent-green)]">
+              {group.passedCount} passed
+            </span>
+          )}
+          <svg
+            className={`h-4 w-4 text-[var(--text-secondary)] transition-transform ${isOpen ? 'rotate-180' : ''}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+
+      {/* Collapsible check cards */}
+      {isOpen && (
+        <div className="border-t border-[var(--border-color)] p-3">
+          <div className="grid gap-2">
+            {group.checks.map((check) => (
+              <CheckCard key={check.checkId} check={check} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChecksSummary({ checks, legLabel, showSummary = true }: ChecksSummaryProps) {
   const passed = checks.filter((c) => c.passed).length;
   const failed = checks.filter((c) => !c.passed).length;
   const warnings = checks.filter((c) => c.severity === 'warn' && !c.passed).length;
   const blockers = checks.filter((c) => c.severity === 'critical' && !c.passed).length;
 
-  const sorted = sortChecks(checks);
+  const groups = useMemo(() => groupChecksByType(checks), [checks]);
 
   return (
     <div>
@@ -151,10 +272,10 @@ export function ChecksSummary({ checks, legLabel, showSummary = true }: ChecksSu
         </div>
       )}
 
-      {/* Check cards */}
+      {/* Check type groups */}
       <div className="grid gap-3">
-        {sorted.map((check) => (
-          <CheckCard key={check.checkId} check={check} />
+        {groups.map((group) => (
+          <CheckTypeGroup key={group.checkType} group={group} />
         ))}
       </div>
     </div>
