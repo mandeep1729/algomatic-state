@@ -65,6 +65,8 @@ class EntryQualityChecker(BaseChecker):
     passed via **kwargs from CheckRunner.
     """
 
+    CHECK_NAME = "entry_quality"
+
     def run(
         self,
         fill: Any,

@@ -59,6 +59,25 @@ class CheckRunner:
             RiskSanityChecker(settings),
             EntryQualityChecker(),
         ]
+        self._validate_unique_check_names()
+
+    def _validate_unique_check_names(self) -> None:
+        """Ensure all registered checkers have unique CHECK_NAME values."""
+        seen: dict[str, str] = {}
+        for checker in self.checkers:
+            name = checker.CHECK_NAME
+            cls_name = checker.__class__.__name__
+            if name in seen:
+                raise ValueError(
+                    f"Duplicate CHECK_NAME '{name}': "
+                    f"used by both {seen[name]} and {cls_name}"
+                )
+            seen[name] = cls_name
+        logger.debug(
+            "Registered %d checkers: %s",
+            len(self.checkers),
+            ", ".join(seen.keys()),
+        )
 
     def run_checks(
         self,
@@ -114,8 +133,8 @@ class CheckRunner:
                 all_results.extend(results)
             except Exception:
                 logger.exception(
-                    "Checker %s failed for fill_id=%s",
-                    checker.__class__.__name__, fill.id,
+                    "Checker '%s' failed for fill_id=%s",
+                    checker.CHECK_NAME, fill.id,
                 )
 
         # Persist as CampaignCheck records linked to decision_context

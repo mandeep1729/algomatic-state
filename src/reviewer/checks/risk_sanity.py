@@ -42,6 +42,8 @@ _DEFAULT_SEVERITIES: dict[str, str] = {
 class RiskSanityChecker(BaseChecker):
     """Evaluates basic risk discipline at trade entry."""
 
+    CHECK_NAME = "risk_sanity"
+
     def __init__(self, config: ChecksConfig):
         self.config = config
 
