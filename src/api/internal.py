@@ -102,8 +102,10 @@ async def get_fills_with_context(
         fills = []
         for fill, dc, strategy_name in rows:
             timeframe = None
-            if dc and dc.exit_intent and isinstance(dc.exit_intent, dict):
-                timeframe = dc.exit_intent.get("timeframe")
+            exit_intent = None
+            if dc and isinstance(dc.exit_intent, dict):
+                exit_intent = dc.exit_intent
+                timeframe = exit_intent.get("timeframe")
 
             fills.append(FillWithContext(
                 fill_id=fill.id,
@@ -118,7 +120,7 @@ async def get_fills_with_context(
                 strategy_id=dc.strategy_id if dc else None,
                 strategy_name=strategy_name,
                 hypothesis=dc.hypothesis if dc else None,
-                exit_intent=dc.exit_intent if dc else None,
+                exit_intent=exit_intent,
                 timeframe=timeframe,
             ))
 

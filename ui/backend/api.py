@@ -29,6 +29,8 @@ load_dotenv(PROJECT_ROOT / ".env")
 
 # Add parent directory to path for imports (needed before importing src modules)
 sys.path.insert(0, str(PROJECT_ROOT))
+# Add proto gen path for gRPC generated imports (from market.v1 import ...)
+sys.path.insert(0, str(PROJECT_ROOT / "proto" / "gen" / "python"))
 
 import numpy as np
 import pandas as pd
@@ -73,6 +75,7 @@ from src.api.features_api import router as features_router
 from src.api.regimes import router as regimes_router
 from src.api.data_sync import router as data_sync_router
 from src.api.analysis import router as analysis_router
+from src.api.market_data_api import router as market_data_v1_router
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +176,7 @@ app.include_router(regimes_router)
 app.include_router(data_sync_router)
 app.include_router(analysis_router)
 app.include_router(internal_router)
+app.include_router(market_data_v1_router)
 
 # Enable CORS for React frontend
 app.add_middleware(

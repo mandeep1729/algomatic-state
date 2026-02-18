@@ -37,6 +37,8 @@ services:
       context: .
       dockerfile: data-service/Dockerfile
     container_name: algomatic-data-service
+    ports:
+      - "50051:50051"
     environment:
       - DS_DB_HOST=postgres
       - DS_DB_PORT=5432
