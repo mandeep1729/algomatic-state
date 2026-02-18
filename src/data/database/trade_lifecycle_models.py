@@ -135,6 +135,7 @@ class CampaignCheck(Base):
     )
 
     check_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    check_name: Mapped[str] = mapped_column(String(50), nullable=False)
     severity: Mapped[str] = mapped_column(String(10), nullable=False)
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     details: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
@@ -166,6 +167,7 @@ class CampaignCheck(Base):
             name="ck_check_trader_action",
         ),
         Index("ix_campaign_checks_decision_context", "decision_context_id"),
+        Index("ix_campaign_checks_check_name", "check_name"),
         Index("ix_campaign_checks_account_check_type", "account_id", "check_type"),
         Index("ix_campaign_checks_account_checked_at", "account_id", "checked_at"),
     )
@@ -173,7 +175,8 @@ class CampaignCheck(Base):
     def __repr__(self) -> str:
         return (
             f"<CampaignCheck(id={self.id}, dc_id={self.decision_context_id}, "
-            f"type='{self.check_type}', severity='{self.severity}', passed={self.passed})>"
+            f"name='{self.check_name}', type='{self.check_type}', "
+            f"severity='{self.severity}', passed={self.passed})>"
         )
 
 

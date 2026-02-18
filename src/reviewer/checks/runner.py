@@ -125,6 +125,7 @@ class CheckRunner:
                 decision_context_id=dc.id,
                 account_id=dc.account_id,
                 check_type=result.check_type,
+                check_name=result.code,
                 severity=result.severity,
                 passed=result.passed,
                 details=result.details,
