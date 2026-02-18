@@ -19,6 +19,7 @@ import {
   ChevronRight,
   ChevronDown,
   Receipt,
+  Microscope,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { appNavSections } from '../lib/nav';
@@ -36,6 +37,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   '/app/transactions': 'Transactions',
   '/app/insights': 'Insights',
   '/app/journal': 'Journal',
+  '/app/investigate': 'Investigate',
   '/app/strategy-probe': 'Strategy Probe',
   '/app/settings/profile': 'Profile',
   '/app/settings/risk': 'Risk',
@@ -106,6 +108,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Lock,
   Search,
   Receipt,
+  Microscope,
 };
 
 export default function AppLayout() {

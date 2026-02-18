@@ -23,6 +23,7 @@ import Insights from '../pages/app/Insights';
 import Journal from '../pages/app/Journal';
 import StrategyProbe from '../pages/app/StrategyProbe';
 import Dashboard from '../pages/app/Dashboard';
+import Investigate from '../pages/app/Investigate';
 
 // Settings pages
 import SettingsProfile from '../pages/app/settings/Profile';
@@ -123,6 +124,7 @@ export const router = createBrowserRouter([
           { path: 'transactions', element: <Transactions /> },
           { path: 'insights', element: <Insights /> },
           { path: 'journal', element: <Journal /> },
+          { path: 'investigate', element: <Investigate /> },
           { path: 'strategy-probe', element: <StrategyProbe /> },
           { path: 'settings/profile', element: <SettingsProfile /> },
           { path: 'settings/risk', element: <SettingsRisk /> },

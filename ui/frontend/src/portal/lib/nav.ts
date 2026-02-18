@@ -41,6 +41,11 @@ export const appNavSections: NavItem[] = [
     icon: 'Target',
   },
   {
+    path: '/app/investigate',
+    label: 'Investigate',
+    icon: 'Microscope',
+  },
+  {
     path: '/app/evaluate',
     label: 'Evaluate',
     icon: 'Search',
