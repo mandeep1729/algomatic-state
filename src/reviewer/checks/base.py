@@ -44,7 +44,23 @@ class BaseChecker(ABC):
 
     Subclasses implement run() to evaluate a trade fill against
     risk/behavioral criteria and return a list of CheckResults.
+
+    Every subclass must define a unique CHECK_NAME class attribute
+    (lowercase_with_underscores) that identifies the checker for
+    logging, DB persistence, and registry deduplication.
     """
+
+    CHECK_NAME: str  # e.g. "risk_sanity", "entry_quality"
+
+    def __init_subclass__(cls, **kwargs):
+        """Validate that concrete subclasses define CHECK_NAME."""
+        super().__init_subclass__(**kwargs)
+        # Only enforce on concrete (non-abstract) subclasses
+        if not getattr(cls, "__abstractmethods__", None):
+            if not getattr(cls, "CHECK_NAME", None):
+                raise TypeError(
+                    f"{cls.__name__} must define a CHECK_NAME class attribute"
+                )
 
     @abstractmethod
     def run(

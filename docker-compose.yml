@@ -128,7 +128,10 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MESSAGING_BACKEND=redis
+      - REVIEWER_BACKEND_URL=http://host.docker.internal:${SERVER_PORT:-8729}
       - LOG_FILE=/var/log/reviewer-service/reviewer-service.log
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ${LOGS_DIR:-./logs}/reviewer-service:/var/log/reviewer-service
     depends_on:
@@ -141,6 +144,35 @@ services:
     command: python -m src.reviewer.main
     healthcheck:
       test: ["CMD", "pgrep", "-f", "src.reviewer.main"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  agent-service:
+    build:
+      context: .
+      dockerfile: agent-service/Dockerfile
+    container_name: algomatic-agent-service
+    environment:
+      - AS_DB_HOST=postgres
+      - AS_DB_PORT=5432
+      - AS_DB_NAME=${DB_NAME}
+      - AS_DB_USER=${DB_USER}
+      - AS_DB_PASSWORD=${DB_PASSWORD}
+      - ALPACA_API_KEY=${ALPACA_API_KEY}
+      - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
+      - ALPACA_BASE_URL=https://paper-api.alpaca.markets
+      - BACKEND_URL=http://host.docker.internal:${SERVER_PORT:-8729}
+      - AS_POLL_INTERVAL_SEC=30
+      - AS_LOG_LEVEL=${AS_LOG_LEVEL:-info}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "agent-service"]
       interval: 30s
       timeout: 10s
       retries: 3

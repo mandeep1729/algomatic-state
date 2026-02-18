@@ -470,7 +470,7 @@ def _build_checks_by_leg(
                     checkId=str(check.id),
                     legId=str(fill.id),
                     checkType=check.check_type,
-                    code=(check.details or {}).get("code", check.check_type),
+                    code=check.check_name,
                     severity=check.severity,
                     passed=check.passed,
                     nudgeText=check.nudge_text,

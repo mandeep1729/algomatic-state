@@ -19,7 +19,7 @@ from src.data.database.broker_models import (
     TradeFill,
 )
 from src.data.database.strategy_models import Strategy
-from src.data.database.trade_lifecycle_models import DecisionContext
+from src.data.database.trade_lifecycle_models import CampaignCheck, DecisionContext
 
 logger = logging.getLogger(__name__)
 
@@ -329,6 +329,39 @@ class BrokerRepository:
         if account_id is not None:
             query = query.filter(Strategy.account_id == account_id)
         return query.first()
+
+    def get_existing_check_names(
+        self,
+        account_id: int,
+        decision_context_id: int,
+    ) -> set[str]:
+        """Get check_name values already recorded for a decision context.
+
+        Used for deduplication: if a check_name already exists for this
+        (account_id, decision_context_id) pair, the checker can be skipped.
+
+        Args:
+            account_id: Trader's account ID
+            decision_context_id: The decision context being evaluated
+
+        Returns:
+            Set of check_name strings already persisted.
+        """
+        rows = (
+            self.session.query(distinct(CampaignCheck.check_name))
+            .filter(
+                CampaignCheck.account_id == account_id,
+                CampaignCheck.decision_context_id == decision_context_id,
+            )
+            .all()
+        )
+        names = {row[0] for row in rows}
+        if names:
+            logger.debug(
+                "Found %d existing check names for account_id=%s dc_id=%s: %s",
+                len(names), account_id, decision_context_id, names,
+            )
+        return names
 
     # -------------------------------------------------------------------------
     # Fills with Context (joins)

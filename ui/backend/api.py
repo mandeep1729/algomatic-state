@@ -76,6 +76,7 @@ from src.api.regimes import router as regimes_router
 from src.api.data_sync import router as data_sync_router
 from src.api.analysis import router as analysis_router
 from src.api.market_data_api import router as market_data_v1_router
+from src.api.trading_agents import router as trading_agents_router
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +117,23 @@ def _startup_market_data_orchestrator():
         logger.info("MarketDataOrchestrator started on app startup")
     except Exception as e:
         logger.warning("Failed to start MarketDataOrchestrator: %s", e)
+
+
+@app.on_event("startup")
+def _seed_predefined_agent_strategies():
+    """Seed predefined trading agent strategies from go-strats definitions."""
+    try:
+        from src.data.database.dependencies import session_scope
+        from src.trading_agents.predefined import get_predefined_strategies
+        from src.trading_agents.repository import TradingAgentRepository
+
+        with session_scope() as session:
+            repo = TradingAgentRepository(session)
+            count = repo.seed_predefined_strategies(get_predefined_strategies())
+            if count:
+                logger.info("Seeded %d predefined agent strategies", count)
+    except Exception as e:
+        logger.warning("Failed to seed predefined agent strategies: %s", e)
 
 
 @app.on_event("startup")
@@ -177,6 +195,7 @@ app.include_router(data_sync_router)
 app.include_router(analysis_router)
 app.include_router(internal_router)
 app.include_router(market_data_v1_router)
+app.include_router(trading_agents_router)
 
 # Enable CORS for React frontend
 app.add_middleware(

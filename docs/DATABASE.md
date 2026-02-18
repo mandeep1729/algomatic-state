@@ -305,7 +305,8 @@ Behavioral nudge checks attached to decision contexts.
 | id | BIGSERIAL | Primary key |
 | decision_context_id | BIGINT | Foreign key to decision_contexts (NOT NULL) |
 | account_id | INTEGER | Foreign key to user_accounts |
-| check_type | VARCHAR(50) | Check identifier |
+| check_type | VARCHAR(50) | Check category (e.g. 'risk_sanity', 'entry_quality') |
+| check_name | VARCHAR(50) | Unique check code (e.g. 'RS001', 'EQ001') |
 | severity | VARCHAR(10) | 'info', 'warn', 'critical' |
 | passed | BOOLEAN | Whether check passed |
 | details | JSONB | Check details |
@@ -430,6 +431,7 @@ alembic history
 | 031 | Seed app user and benchmark strategies |
 | 032 | Add user account stats columns |
 | 033 | Add user profiles stats |
+| 034 | Add check_name column to campaign_checks |
 
 ## Docker Services
 
@@ -540,6 +542,7 @@ The following indexes are created for query performance:
 - `ix_ohlcv_timestamp` - Time-based queries
 - `ix_decision_contexts_account_fill` - Decision context lookup by account and fill
 - `ix_campaign_checks_decision_context` - Check lookup by decision context
+- `ix_campaign_checks_check_name` - Check lookup by check name code
 - `ix_campaign_fills_group_id` - Campaign group lookup
 - `ix_campaign_fills_fill_id` - Fill-to-campaign lookup
 - `ix_strategies_account_id` - Strategy lookup by account

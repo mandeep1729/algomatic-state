@@ -1,6 +1,7 @@
 """Pydantic settings for configuration management."""
 
 import logging
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -305,7 +306,13 @@ class ChecksConfig(BaseSettings):
 
 
 class ReviewerConfig(BaseSettings):
-    """Reviewer service configuration."""
+    """Reviewer service configuration.
+
+    backend_url is derived at Settings level from SERVER_PORT when
+    REVIEWER_BACKEND_URL is not explicitly set.  The field is Optional
+    here so Pydantic won't reject a missing env var; the Settings
+    model_validator fills it in or exits if SERVER_PORT is also missing.
+    """
 
     model_config = SettingsConfigDict(env_prefix="REVIEWER_")
 
@@ -314,9 +321,9 @@ class ReviewerConfig(BaseSettings):
         default=30,
         description="Days to look back when re-running checks after risk pref changes",
     )
-    backend_url: str = Field(
-        default="http://localhost:8000",
-        description="Base URL of the backend API for reviewer service HTTP calls",
+    backend_url: str | None = Field(
+        default=None,
+        description="Base URL of the backend API (falls back to SERVER_PORT)",
     )
 
 
@@ -329,7 +336,8 @@ class AuthConfig(BaseSettings):
     jwt_secret_key: str = Field(default="change-me-in-production", description="JWT signing secret")
     jwt_algorithm: str = Field(default="HS256", description="JWT algorithm")
     jwt_expiry_hours: int = Field(default=24, description="JWT token expiry in hours")
-    dev_mode: bool = Field(default=False, description="Bypass OAuth and use dev user (user_id=1)")
+    dev_mode: bool = Field(default=False, description="Bypass OAuth and use dev user")
+    dev_user_id: int = Field(default=1, description="User ID to use in dev mode")
 
     @field_validator("jwt_secret_key")
     @classmethod
@@ -359,11 +367,15 @@ class DataServiceConfig(BaseSettings):
 
 
 class ServerConfig(BaseSettings):
-    """Backend server configuration."""
+    """Backend server configuration.
 
-    model_config = SettingsConfigDict(env_prefix="SERVER_")
+    Reads SERVER_PORT from .env.  No default — the port must be
+    explicitly configured so every component agrees on the same value.
+    """
 
-    port: int = Field(default=8729, description="Backend server port")
+    model_config = SettingsConfigDict(env_prefix="SERVER_", env_file=".env", extra="ignore")
+
+    port: int = Field(description="Backend server port (SERVER_PORT in .env)")
     host: str = Field(default="0.0.0.0", description="Backend server host")
 
 
@@ -410,6 +422,26 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "AUTH_DEV_MODE must not be True in production"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def resolve_reviewer_backend_url(self) -> "Settings":
+        """Derive reviewer.backend_url from SERVER_PORT when not explicitly set."""
+        if self.reviewer.backend_url is not None:
+            return self
+
+        if self.server.port is None:
+            logger.critical(
+                "REVIEWER_BACKEND_URL is not set and SERVER_PORT is not set. "
+                "Cannot determine backend URL for reviewer service."
+            )
+            sys.exit(1)
+
+        self.reviewer.backend_url = f"http://localhost:{self.server.port}"
+        logger.info(
+            "Reviewer backend_url derived from SERVER_PORT: %s",
+            self.reviewer.backend_url,
+        )
         return self
 
     @classmethod

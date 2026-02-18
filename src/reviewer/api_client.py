@@ -27,7 +27,7 @@ class ReviewerApiClient:
         """Initialize the API client.
 
         Args:
-            base_url: Backend base URL (e.g. "http://localhost:8000")
+            base_url: Backend base URL (e.g. "http://localhost:8729")
             timeout: HTTP request timeout in seconds
         """
         self.base_url = base_url.rstrip("/")
