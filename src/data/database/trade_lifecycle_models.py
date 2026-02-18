@@ -170,6 +170,10 @@ class CampaignCheck(Base):
         Index("ix_campaign_checks_check_name", "check_name"),
         Index("ix_campaign_checks_account_check_type", "account_id", "check_type"),
         Index("ix_campaign_checks_account_checked_at", "account_id", "checked_at"),
+        Index(
+            "ix_campaign_checks_dedup",
+            "account_id", "decision_context_id", "check_name",
+        ),
     )
 
     def __repr__(self) -> str:

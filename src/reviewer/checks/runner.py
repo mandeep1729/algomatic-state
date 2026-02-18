@@ -19,6 +19,7 @@ from config.settings import ChecksConfig
 from src.reviewer.checks.base import BaseChecker, CheckResult
 from src.reviewer.checks.risk_sanity import RiskSanityChecker
 from src.reviewer.checks.entry_quality import EntryQualityChecker
+from src.data.database.broker_repository import BrokerRepository
 from src.data.database.trade_lifecycle_models import (
     CampaignCheck as CampaignCheckModel,
     DecisionContext as DecisionContextModel,
@@ -86,6 +87,9 @@ class CheckRunner:
     ) -> list[CampaignCheckModel]:
         """Run all checkers for a decision context and persist CampaignCheck records.
 
+        Checkers whose CHECK_NAME already has records for this decision context
+        are skipped to avoid redundant evaluations.
+
         Args:
             dc: The DecisionContext to evaluate
             fill: The linked TradeFill
@@ -94,6 +98,29 @@ class CheckRunner:
             List of created CampaignCheck records
         """
         intent = self._build_intent_from_fill(dc, fill)
+
+        # --- Deduplication: find which checkers have already run ---
+        existing_check_names = self._get_existing_check_names(dc)
+        checkers_to_run = []
+        for checker in self.checkers:
+            if checker.CHECK_NAME in existing_check_names:
+                logger.info(
+                    "Skipping checker '%s' for dc_id=%s: already evaluated",
+                    checker.CHECK_NAME, dc.id,
+                )
+            else:
+                checkers_to_run.append(checker)
+                logger.debug(
+                    "Checker '%s' will run for dc_id=%s",
+                    checker.CHECK_NAME, dc.id,
+                )
+
+        if not checkers_to_run:
+            logger.info(
+                "All checks already evaluated for fill_id=%s dc_id=%s, nothing to do",
+                fill.id, dc.id,
+            )
+            return []
 
         # Build kwargs for checkers (indicator snapshot, baseline stats)
         checker_kwargs = {}
@@ -120,12 +147,13 @@ class CheckRunner:
             account_balance = self._get_account_balance(dc.account_id)
 
         logger.info(
-            "Running checks for fill_id=%s dc_id=%s: atr=%s balance=%s has_snapshot=%s",
+            "Running %d/%d checks for fill_id=%s dc_id=%s: atr=%s balance=%s has_snapshot=%s",
+            len(checkers_to_run), len(self.checkers),
             fill.id, dc.id, atr, account_balance, indicator_snapshot is not None,
         )
 
         all_results: list[CheckResult] = []
-        for checker in self.checkers:
+        for checker in checkers_to_run:
             try:
                 results = checker.run(
                     fill, intent, atr, account_balance, **checker_kwargs,
@@ -166,6 +194,26 @@ class CheckRunner:
             self._save_entry_quality_to_inferred_context(fill.id, all_results)
 
         return checks
+
+    def _get_existing_check_names(
+        self, dc: DecisionContextModel,
+    ) -> set[str]:
+        """Query previously-recorded check names for a decision context.
+
+        Uses BrokerRepository to look up which checker CHECK_NAMEs already
+        have CampaignCheck records for this (account_id, decision_context_id).
+
+        Returns an empty set if the query fails (fail-open: run all checks).
+        """
+        try:
+            repo = BrokerRepository(self.session)
+            return repo.get_existing_check_names(dc.account_id, dc.id)
+        except Exception:
+            logger.debug(
+                "Could not query existing checks for dc_id=%s, will run all",
+                dc.id, exc_info=True,
+            )
+            return set()
 
     # ------------------------------------------------------------------
     # Intent building
