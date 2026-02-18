@@ -132,6 +132,21 @@ def get_market_grpc_client():
         channel.close()
 
 
+def get_agent_repo():
+    """FastAPI dependency returning a TradingAgentRepository.
+
+    Usage::
+
+        @router.get("/agents")
+        async def list_agents(repo: TradingAgentRepository = Depends(get_agent_repo)):
+            ...
+    """
+    from src.trading_agents.repository import TradingAgentRepository
+
+    with get_db_manager().get_session() as session:
+        yield TradingAgentRepository(session)
+
+
 @contextmanager
 def session_scope() -> Generator[Session, None, None]:
     """Context manager for non-DI database access.
