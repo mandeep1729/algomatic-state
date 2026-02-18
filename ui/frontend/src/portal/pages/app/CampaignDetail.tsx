@@ -402,8 +402,8 @@ export default function CampaignDetail() {
 
       {/* Content: 2-column layout */}
       <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-        {/* Left column: Checks */}
-        <div className="rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5">
+        {/* Left column: Checks (scrollable so chart header stays visible) */}
+        <div className="max-h-[calc(100vh-420px)] overflow-y-auto rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-5 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[var(--border-color)]">
           <h2 className="mb-4 text-sm font-medium text-[var(--text-primary)]">
             {isCampaignTab
               ? 'Checks (Campaign)'
@@ -448,7 +448,7 @@ export default function CampaignDetail() {
           )}
         </div>
 
-        {/* Right column: Context Panel */}
+        {/* Right column: Context Panel (sticky alongside scrollable checks) */}
         <ContextPanel
           title={
             isCampaignTab
