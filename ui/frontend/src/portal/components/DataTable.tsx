@@ -32,7 +32,7 @@ export interface Column<T> {
 }
 
 /** Available page size options for the rows-per-page selector */
-const ROWS_PER_PAGE_OPTIONS = [5, 10, 20, 50, 100] as const;
+const ROWS_PER_PAGE_OPTIONS = [5, 10, 25, 50, 100] as const;
 
 export interface DataTableProps<T> {
   /** Unique identifier for this table (used for preference persistence) */
@@ -82,7 +82,7 @@ export function DataTable<T>({
   const expansionEnabled = expandedKeys !== undefined && onExpandChange !== undefined && renderExpandedRow !== undefined;
 
   // Pagination state
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(0);
   // Track visible columns by key
   const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
