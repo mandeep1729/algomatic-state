@@ -128,7 +128,10 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - MESSAGING_BACKEND=redis
+      - REVIEWER_BACKEND_URL=http://host.docker.internal:${SERVER_PORT:-8729}
       - LOG_FILE=/var/log/reviewer-service/reviewer-service.log
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ${LOGS_DIR:-./logs}/reviewer-service:/var/log/reviewer-service
     depends_on:
