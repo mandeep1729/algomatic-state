@@ -27,6 +27,7 @@ import Investigate from '../pages/app/Investigate';
 
 // Settings pages
 import SettingsProfile from '../pages/app/settings/Profile';
+import SettingsFavoriteTickers from '../pages/app/settings/FavoriteTickers';
 import SettingsRisk from '../pages/app/settings/Risk';
 import SettingsStrategies from '../pages/app/settings/Strategies';
 import SettingsBrokers from '../pages/app/settings/Brokers';
@@ -127,6 +128,7 @@ export const router = createBrowserRouter([
           { path: 'investigate', element: <Investigate /> },
           { path: 'strategy-probe', element: <StrategyProbe /> },
           { path: 'settings/profile', element: <SettingsProfile /> },
+          { path: 'settings/tickers', element: <SettingsFavoriteTickers /> },
           { path: 'settings/risk', element: <SettingsRisk /> },
           { path: 'settings/strategies', element: <SettingsStrategies /> },
           { path: 'settings/brokers', element: <SettingsBrokers /> },

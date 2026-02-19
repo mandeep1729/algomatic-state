@@ -103,6 +103,7 @@ class UserProfile(Base):
         "primary_markets": ["US_EQUITIES"],
         "account_size_range": None,
         "evaluation_controls": None,
+        "favorite_tickers": [],
     }
 
     # Default values for risk_profile fields

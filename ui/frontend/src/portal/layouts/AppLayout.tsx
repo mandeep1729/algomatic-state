@@ -40,6 +40,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   '/app/investigate': 'Dashboard',
   '/app/strategy-probe': 'Strategy Probe',
   '/app/settings/profile': 'Profile',
+  '/app/settings/tickers': 'Favorite Tickers',
   '/app/settings/risk': 'Risk',
   '/app/settings/strategies': 'Strategies',
   '/app/settings/brokers': 'Brokers',

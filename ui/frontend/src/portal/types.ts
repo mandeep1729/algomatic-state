@@ -21,6 +21,7 @@ export interface TradingProfile {
   primary_markets: string[];
   typical_timeframes: string[];
   account_size_range: string;
+  favorite_tickers?: string[];
 }
 
 export interface RiskPreferences {

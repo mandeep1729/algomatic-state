@@ -56,6 +56,11 @@ export const appNavSections: NavItem[] = [
         icon: 'User',
       },
       {
+        path: '/app/settings/tickers',
+        label: 'Favorite Tickers',
+        icon: 'Target',
+      },
+      {
         path: '/app/settings/risk',
         label: 'Risk',
         icon: 'Shield',
