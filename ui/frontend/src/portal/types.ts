@@ -474,3 +474,106 @@ export interface SaveFillContextRequest {
   feelings_now?: { chips: string[]; intensity?: number; note?: string } | null;
   notes?: string | null;
 }
+
+// --- Trading Agents ---
+
+export type AgentStatus = 'created' | 'active' | 'paused' | 'stopped' | 'error';
+export type AgentTimeframe = '1Min' | '5Min' | '15Min' | '1Hour' | '1Day';
+export type StrategyCategory = 'trend' | 'mean_reversion' | 'breakout' | 'volume_flow' | 'pattern' | 'regime' | 'custom';
+export type StrategyDirection = 'long_short' | 'long_only' | 'short_only';
+
+export interface AgentStrategy {
+  id: number;
+  name: string;
+  display_name: string;
+  description: string | null;
+  category: string;
+  direction: string;
+  atr_stop_mult: number | null;
+  atr_target_mult: number | null;
+  trailing_atr_mult: number | null;
+  time_stop_bars: number | null;
+  required_features: string[] | null;
+  is_predefined: boolean;
+  source_strategy_id: number | null;
+  is_active: boolean;
+}
+
+export interface AgentSummary {
+  id: number;
+  name: string;
+  symbol: string;
+  strategy_id: number;
+  strategy_name: string | null;
+  status: AgentStatus;
+  timeframe: string;
+  interval_minutes: number;
+  lookback_days: number;
+  position_size_dollars: number;
+  risk_config: Record<string, unknown> | null;
+  exit_config: Record<string, unknown> | null;
+  paper: boolean;
+  last_run_at: string | null;
+  last_signal: string | null;
+  error_message: string | null;
+  consecutive_errors: number;
+  current_position: {
+    direction: string;
+    quantity: number;
+    entry_price: number;
+    entry_time: string;
+  } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentCreateRequest {
+  name: string;
+  symbol: string;
+  strategy_id: number;
+  timeframe?: string;
+  interval_minutes?: number;
+  lookback_days?: number;
+  position_size_dollars: number;
+  paper?: boolean;
+}
+
+export interface AgentUpdateRequest {
+  name?: string;
+  symbol?: string;
+  strategy_id?: number;
+  timeframe?: string;
+  interval_minutes?: number;
+  lookback_days?: number;
+  position_size_dollars?: number;
+  paper?: boolean;
+}
+
+export interface AgentOrder {
+  id: number;
+  symbol: string;
+  side: string;
+  quantity: number;
+  order_type: string;
+  limit_price: number | null;
+  stop_price: number | null;
+  client_order_id: string;
+  broker_order_id: string | null;
+  status: string;
+  filled_quantity: number | null;
+  filled_avg_price: number | null;
+  signal_direction: string | null;
+  signal_metadata: Record<string, unknown> | null;
+  submitted_at: string | null;
+  filled_at: string | null;
+  created_at: string;
+}
+
+export interface AgentActivity {
+  id: number;
+  activity_type: string;
+  message: string;
+  details: Record<string, unknown> | null;
+  severity: string;
+  created_at: string;
+}

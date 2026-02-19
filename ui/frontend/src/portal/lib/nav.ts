@@ -46,6 +46,11 @@ export const appNavSections: NavItem[] = [
     icon: 'Search',
   },
   {
+    path: '/app/agents',
+    label: 'Trading Agents',
+    icon: 'Bot',
+  },
+  {
     path: '/app/settings',
     label: 'Settings',
     icon: 'Settings',

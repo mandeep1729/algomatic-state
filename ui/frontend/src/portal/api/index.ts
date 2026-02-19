@@ -82,6 +82,23 @@ const api = USE_MOCKS
       fetchSitePrefs: realApi.fetchSitePrefs,
       updateSitePrefs: realApi.updateSitePrefs,
 
+      // Trading Agents -- real backend
+      fetchAgentStrategies: realApi.fetchAgentStrategies,
+      fetchAgentStrategy: realApi.fetchAgentStrategy,
+      createAgentStrategy: realApi.createAgentStrategy,
+      cloneAgentStrategy: realApi.cloneAgentStrategy,
+      updateAgentStrategy: realApi.updateAgentStrategy,
+      fetchAgents: realApi.fetchAgents,
+      fetchAgent: realApi.fetchAgent,
+      createAgent: realApi.createAgent,
+      updateAgent: realApi.updateAgent,
+      deleteAgent: realApi.deleteAgent,
+      startAgent: realApi.startAgent,
+      pauseAgent: realApi.pauseAgent,
+      stopAgent: realApi.stopAgent,
+      fetchAgentOrders: realApi.fetchAgentOrders,
+      fetchAgentActivity: realApi.fetchAgentActivity,
+
       // Mock fallbacks -- no backend endpoints yet
       fetchCurrentUser: mockApi.fetchCurrentUser,
       fetchTradeDetail: mockApi.fetchTradeDetail,
@@ -150,3 +167,22 @@ export type { DailyPnlPoint } from './client';
 // Re-export strategy probe function from client
 export { fetchStrategyProbe, fetchThemeStrategies, fetchTopStrategies } from './client';
 export type { StrategyProbeResponse, WeekPerformance, ThemeRanking, OHLCVData, ThemeStrategiesResponse, ThemeStrategyDetail, TopStrategiesResponse, TopStrategyDetail } from './client';
+
+// Re-export trading agent functions from client
+export {
+  fetchAgentStrategies,
+  fetchAgentStrategy,
+  createAgentStrategy,
+  cloneAgentStrategy,
+  updateAgentStrategy,
+  fetchAgents,
+  fetchAgent,
+  createAgent,
+  updateAgent,
+  deleteAgent,
+  startAgent,
+  pauseAgent,
+  stopAgent,
+  fetchAgentOrders,
+  fetchAgentActivity,
+} from './client';
