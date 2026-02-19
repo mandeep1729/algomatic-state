@@ -24,6 +24,8 @@ import Journal from '../pages/app/Journal';
 import StrategyProbe from '../pages/app/StrategyProbe';
 import Dashboard from '../pages/app/Dashboard';
 import Investigate from '../pages/app/Investigate';
+import Agents from '../pages/app/Agents';
+import AgentDetail from '../pages/app/AgentDetail';
 
 // Settings pages
 import SettingsProfile from '../pages/app/settings/Profile';
@@ -125,6 +127,8 @@ export const router = createBrowserRouter([
           { path: 'insights', element: <Insights /> },
           { path: 'journal', element: <Journal /> },
           { path: 'investigate', element: <Investigate /> },
+          { path: 'agents', element: <Agents /> },
+          { path: 'agents/:agentId', element: <AgentDetail /> },
           { path: 'strategy-probe', element: <StrategyProbe /> },
           { path: 'settings/profile', element: <SettingsProfile /> },
           { path: 'settings/risk', element: <SettingsRisk /> },

@@ -20,6 +20,7 @@ import {
   ChevronDown,
   Receipt,
   Microscope,
+  Bot,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { appNavSections } from '../lib/nav';
@@ -39,6 +40,7 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   '/app/journal': 'Journal',
   '/app/investigate': 'Investigate',
   '/app/strategy-probe': 'Strategy Probe',
+  '/app/agents': 'Trading Agents',
   '/app/settings/profile': 'Profile',
   '/app/settings/risk': 'Risk',
   '/app/settings/strategies': 'Strategies',
@@ -65,6 +67,9 @@ function Breadcrumbs() {
   } else if (path.startsWith('/app/trades/')) {
     segments.push({ label: 'Trades', path: '/app/trades' });
     segments.push({ label: 'Trade Detail', path });
+  } else if (path.startsWith('/app/agents/')) {
+    segments.push({ label: 'Trading Agents', path: '/app/agents' });
+    segments.push({ label: 'Agent Detail', path });
   } else {
     const label = BREADCRUMB_LABELS[path];
     if (label) {
@@ -109,6 +114,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Search,
   Receipt,
   Microscope,
+  Bot,
 };
 
 export default function AppLayout() {

@@ -723,7 +723,16 @@ export async function bulkUpdateLegStrategy(
 // Fill Context — GET/PUT /api/broker/fills/{fillId}/context
 // =============================================================================
 
-import type { FillContextDetail, SaveFillContextRequest } from '../types';
+import type {
+  FillContextDetail,
+  SaveFillContextRequest,
+  AgentStrategy,
+  AgentSummary,
+  AgentCreateRequest,
+  AgentUpdateRequest,
+  AgentOrder,
+  AgentActivity,
+} from '../types';
 
 export async function fetchFillContext(fillId: string): Promise<FillContextDetail> {
   return get<FillContextDetail>(`/api/broker/fills/${encodeURIComponent(fillId)}/context`);
@@ -849,4 +858,80 @@ export async function fetchTopStrategies(
   return get<TopStrategiesResponse>(
     `/api/strategy-probe/top-strategies/${encodeURIComponent(symbol)}/${encodeURIComponent(strategyType)}?${params.toString()}`,
   );
+}
+
+// =============================================================================
+// Trading Agents — Strategies
+// =============================================================================
+
+export async function fetchAgentStrategies(): Promise<AgentStrategy[]> {
+  return get<AgentStrategy[]>('/api/agents/strategies');
+}
+
+export async function fetchAgentStrategy(strategyId: number): Promise<AgentStrategy> {
+  return get<AgentStrategy>(`/api/agents/strategies/${strategyId}`);
+}
+
+export async function createAgentStrategy(data: Partial<AgentStrategy>): Promise<AgentStrategy> {
+  return post<AgentStrategy>('/api/agents/strategies', data);
+}
+
+export async function cloneAgentStrategy(strategyId: number, newName: string): Promise<AgentStrategy> {
+  return post<AgentStrategy>(`/api/agents/strategies/${strategyId}/clone`, { new_name: newName });
+}
+
+export async function updateAgentStrategy(strategyId: number, data: Partial<AgentStrategy>): Promise<AgentStrategy> {
+  return put<AgentStrategy>(`/api/agents/strategies/${strategyId}`, data);
+}
+
+// =============================================================================
+// Trading Agents — Agent CRUD
+// =============================================================================
+
+export async function fetchAgents(): Promise<AgentSummary[]> {
+  return get<AgentSummary[]>('/api/agents');
+}
+
+export async function fetchAgent(agentId: number): Promise<AgentSummary> {
+  return get<AgentSummary>(`/api/agents/${agentId}`);
+}
+
+export async function createAgent(data: AgentCreateRequest): Promise<AgentSummary> {
+  return post<AgentSummary>('/api/agents', data);
+}
+
+export async function updateAgent(agentId: number, data: AgentUpdateRequest): Promise<AgentSummary> {
+  return put<AgentSummary>(`/api/agents/${agentId}`, data);
+}
+
+export async function deleteAgent(agentId: number): Promise<void> {
+  return del<void>(`/api/agents/${agentId}`);
+}
+
+// =============================================================================
+// Trading Agents — Lifecycle
+// =============================================================================
+
+export async function startAgent(agentId: number): Promise<AgentSummary> {
+  return post<AgentSummary>(`/api/agents/${agentId}/start`);
+}
+
+export async function pauseAgent(agentId: number): Promise<AgentSummary> {
+  return post<AgentSummary>(`/api/agents/${agentId}/pause`);
+}
+
+export async function stopAgent(agentId: number): Promise<AgentSummary> {
+  return post<AgentSummary>(`/api/agents/${agentId}/stop`);
+}
+
+// =============================================================================
+// Trading Agents — Orders & Activity
+// =============================================================================
+
+export async function fetchAgentOrders(agentId: number): Promise<AgentOrder[]> {
+  return get<AgentOrder[]>(`/api/agents/${agentId}/orders`);
+}
+
+export async function fetchAgentActivity(agentId: number): Promise<AgentActivity[]> {
+  return get<AgentActivity[]>(`/api/agents/${agentId}/activity`);
 }
