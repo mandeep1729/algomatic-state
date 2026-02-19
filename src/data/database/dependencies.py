@@ -125,7 +125,10 @@ def get_market_grpc_client():
     from src.data.grpc_client import MarketDataGrpcClient
 
     settings = get_settings()
-    channel = grpc.insecure_channel(settings.data_service.target)
+    channel = grpc.insecure_channel(
+        settings.data_service.target,
+        options=[("grpc.max_receive_message_length", 20 * 1024 * 1024)],
+    )
     try:
         yield MarketDataGrpcClient(channel)
     finally:
@@ -181,7 +184,10 @@ def grpc_market_client():
     from src.data.grpc_client import MarketDataGrpcClient
 
     settings = get_settings()
-    channel = grpc.insecure_channel(settings.data_service.target)
+    channel = grpc.insecure_channel(
+        settings.data_service.target,
+        options=[("grpc.max_receive_message_length", 20 * 1024 * 1024)],
+    )
     try:
         yield MarketDataGrpcClient(channel)
     finally:

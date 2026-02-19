@@ -119,7 +119,10 @@ class RepositoryMarketDataReader:
         from src.data.grpc_client import MarketDataGrpcClient
 
         settings = get_settings()
-        self._channel = grpc.insecure_channel(settings.data_service.target)
+        self._channel = grpc.insecure_channel(
+            settings.data_service.target,
+            options=[("grpc.max_receive_message_length", 20 * 1024 * 1024)],
+        )
         self._client = MarketDataGrpcClient(self._channel)
         return self._client
 
