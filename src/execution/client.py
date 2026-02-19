@@ -322,12 +322,13 @@ class AlpacaClient:
                 return None
             raise
 
-    def close_position(self, symbol: str, quantity: float | None = None) -> Order | None:
+    def close_position(self, symbol: str, quantity: float | None = None, strategy_id: int | None = None) -> Order | None:
         """Close a position for a symbol.
 
         Args:
             symbol: Asset symbol
             quantity: Quantity to close (None = close all)
+            strategy_id: Optional strategy ID for tracking
 
         Returns:
             Order for the closing trade, or None if no position
@@ -347,7 +348,7 @@ class AlpacaClient:
             else:
                 # Partial close - submit opposite order
                 side = OrderSide.SELL if position.quantity > 0 else OrderSide.BUY
-                return self.submit_market_order(symbol, side, abs(quantity))
+                return self.submit_market_order(symbol, side, abs(quantity), strategy_id=strategy_id)
 
             return self._convert_alpaca_order(response)
 
@@ -390,6 +391,7 @@ class AlpacaClient:
         quantity: float,
         time_in_force: OrderTimeInForce = OrderTimeInForce.DAY,
         client_order_id: str | None = None,
+        strategy_id: int | None = None,
     ) -> Order:
         """Submit a market order.
 
@@ -399,6 +401,7 @@ class AlpacaClient:
             quantity: Number of shares
             time_in_force: Time in force
             client_order_id: Optional client order ID
+            strategy_id: Optional strategy ID for tracking
 
         Returns:
             Order with broker order ID
@@ -406,12 +409,18 @@ class AlpacaClient:
         alpaca_side = AlpacaOrderSide.BUY if side == OrderSide.BUY else AlpacaOrderSide.SELL
         alpaca_tif = self._convert_time_in_force(time_in_force)
 
+        # If strategy_id is provided and client_order_id is not, embed strategy_id in client_order_id
+        order_client_id = client_order_id
+        if strategy_id is not None and not order_client_id:
+            import uuid
+            order_client_id = f"strat_{strategy_id}_{uuid.uuid4().hex[:8]}"
+
         request = MarketOrderRequest(
             symbol=symbol,
             qty=quantity,
             side=alpaca_side,
             time_in_force=alpaca_tif,
-            client_order_id=client_order_id,
+            client_order_id=order_client_id,
         )
 
         response = self._retry_with_backoff(
@@ -422,14 +431,18 @@ class AlpacaClient:
 
         order = self._convert_alpaca_order(response)
 
+        log_extra = {
+            "symbol": symbol,
+            "side": str(side),
+            "quantity": quantity,
+            "broker_order_id": order.broker_order_id,
+        }
+        if strategy_id is not None:
+            log_extra["strategy_id"] = strategy_id
+
         logger.info(
             f"Submitted market order",
-            extra={
-                "symbol": symbol,
-                "side": str(side),
-                "quantity": quantity,
-                "broker_order_id": order.broker_order_id,
-            },
+            extra=log_extra,
         )
 
         return order
@@ -442,6 +455,7 @@ class AlpacaClient:
         limit_price: float,
         time_in_force: OrderTimeInForce = OrderTimeInForce.DAY,
         client_order_id: str | None = None,
+        strategy_id: int | None = None,
     ) -> Order:
         """Submit a limit order.
 
@@ -452,6 +466,7 @@ class AlpacaClient:
             limit_price: Limit price
             time_in_force: Time in force
             client_order_id: Optional client order ID
+            strategy_id: Optional strategy ID for tracking
 
         Returns:
             Order with broker order ID
@@ -459,13 +474,19 @@ class AlpacaClient:
         alpaca_side = AlpacaOrderSide.BUY if side == OrderSide.BUY else AlpacaOrderSide.SELL
         alpaca_tif = self._convert_time_in_force(time_in_force)
 
+        # If strategy_id is provided and client_order_id is not, embed strategy_id in client_order_id
+        order_client_id = client_order_id
+        if strategy_id is not None and not order_client_id:
+            import uuid
+            order_client_id = f"strat_{strategy_id}_{uuid.uuid4().hex[:8]}"
+
         request = LimitOrderRequest(
             symbol=symbol,
             qty=quantity,
             side=alpaca_side,
             time_in_force=alpaca_tif,
             limit_price=limit_price,
-            client_order_id=client_order_id,
+            client_order_id=order_client_id,
         )
 
         response = self._retry_with_backoff(
@@ -476,15 +497,19 @@ class AlpacaClient:
 
         order = self._convert_alpaca_order(response)
 
+        log_extra = {
+            "symbol": symbol,
+            "side": str(side),
+            "quantity": quantity,
+            "limit_price": limit_price,
+            "broker_order_id": order.broker_order_id,
+        }
+        if strategy_id is not None:
+            log_extra["strategy_id"] = strategy_id
+
         logger.info(
             f"Submitted limit order",
-            extra={
-                "symbol": symbol,
-                "side": str(side),
-                "quantity": quantity,
-                "limit_price": limit_price,
-                "broker_order_id": order.broker_order_id,
-            },
+            extra=log_extra,
         )
 
         return order

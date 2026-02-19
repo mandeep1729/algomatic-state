@@ -216,6 +216,15 @@ async def sync_data(
                 logger.warning("No trade date for activity %s, using current time", activity.get("id", "unknown"))
                 executed_at = datetime.now(timezone.utc)
 
+            # Extract tags from activity if available
+            tags = None
+            if "tags" in activity:
+                tags = activity.get("tags")
+            if "strategy_id" in activity:
+                if tags is None:
+                    tags = {}
+                tags["strategy_id"] = activity.get("strategy_id")
+
             broker_repo.create_fill(
                 broker_connection_id=conn.id,
                 account_id=user_id,
@@ -227,6 +236,7 @@ async def sync_data(
                 executed_at=executed_at,
                 external_trade_id=trade_id,
                 raw_data=activity,
+                tags=tags,
             )
             synced_count += 1
 
