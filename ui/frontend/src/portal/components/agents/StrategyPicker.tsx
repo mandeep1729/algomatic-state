@@ -1,120 +1,220 @@
-import { useMemo, useState } from 'react';
-import { Search, Copy } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Loader2 } from 'lucide-react';
+import { createAgentStrategy } from '../../api';
 import type { AgentStrategy } from '../../types';
 
-const CATEGORY_LABELS: Record<string, string> = {
-  trend: 'Trend Following',
-  mean_reversion: 'Mean Reversion',
-  breakout: 'Breakout',
-  volume_flow: 'Volume Flow',
-  pattern: 'Pattern',
-  regime: 'Regime',
-  custom: 'Custom',
-};
+const CATEGORY_OPTIONS = [
+  { value: 'trend', label: 'Trend Following' },
+  { value: 'mean_reversion', label: 'Mean Reversion' },
+  { value: 'breakout', label: 'Breakout' },
+  { value: 'volume_flow', label: 'Volume Flow' },
+  { value: 'pattern', label: 'Pattern' },
+  { value: 'regime', label: 'Regime' },
+  { value: 'custom', label: 'Custom' },
+];
+
+const DIRECTION_OPTIONS = [
+  { value: 'long_short', label: 'Long & Short' },
+  { value: 'long_only', label: 'Long Only' },
+  { value: 'short_only', label: 'Short Only' },
+];
 
 interface StrategyPickerProps {
   strategies: AgentStrategy[];
   selectedId: number | null;
   onSelect: (id: number) => void;
-  onClone?: (strategyId: number) => void;
+  onStrategyCreated: (strategy: AgentStrategy) => void;
 }
 
-export function StrategyPicker({ strategies, selectedId, onSelect, onClone }: StrategyPickerProps) {
-  const [search, setSearch] = useState('');
+export function StrategyPicker({ strategies, selectedId, onSelect, onStrategyCreated }: StrategyPickerProps) {
+  const [creatingNew, setCreatingNew] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
-    if (!q) return strategies;
-    return strategies.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.display_name.toLowerCase().includes(q) ||
-        (s.description ?? '').toLowerCase().includes(q),
-    );
-  }, [strategies, search]);
+  // Inline create form state
+  const [formName, setFormName] = useState('');
+  const [formDisplayName, setFormDisplayName] = useState('');
+  const [formDescription, setFormDescription] = useState('');
+  const [formCategory, setFormCategory] = useState('custom');
+  const [formDirection, setFormDirection] = useState('long_short');
 
-  const grouped = useMemo(() => {
-    const groups: Record<string, AgentStrategy[]> = {};
-    for (const s of filtered) {
-      const cat = s.category || 'custom';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(s);
+  function resetForm() {
+    setFormName('');
+    setFormDisplayName('');
+    setFormDescription('');
+    setFormCategory('custom');
+    setFormDirection('long_short');
+    setError(null);
+  }
+
+  function handleCancelCreate() {
+    setCreatingNew(false);
+    resetForm();
+  }
+
+  async function handleCreateStrategy() {
+    const name = formName.trim();
+    const displayName = formDisplayName.trim();
+
+    if (!name) {
+      setError('Name is required');
+      return;
     }
-    return groups;
-  }, [filtered]);
+    if (!displayName) {
+      setError('Display name is required');
+      return;
+    }
 
-  const categoryOrder = ['trend', 'mean_reversion', 'breakout', 'volume_flow', 'pattern', 'regime', 'custom'];
-  const sortedCategories = Object.keys(grouped).sort(
-    (a, b) => (categoryOrder.indexOf(a) === -1 ? 99 : categoryOrder.indexOf(a)) -
-              (categoryOrder.indexOf(b) === -1 ? 99 : categoryOrder.indexOf(b)),
-  );
+    setError(null);
+    setSaving(true);
+    try {
+      const created = await createAgentStrategy({
+        name,
+        display_name: displayName,
+        description: formDescription.trim() || null,
+        category: formCategory,
+        direction: formDirection,
+      });
+      onStrategyCreated(created);
+      onSelect(created.id);
+      setCreatingNew(false);
+      resetForm();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create strategy');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-3">
-      {/* Search */}
-      <div className="relative">
-        <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]" />
-        <input
-          type="text"
-          placeholder="Search strategies..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="form-input h-8 w-full pl-8 pr-3 text-xs"
-        />
+      {/* Strategy dropdown */}
+      <div>
+        <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Strategy</label>
+        <select
+          value={selectedId ?? ''}
+          onChange={(e) => {
+            const val = e.target.value;
+            if (val) onSelect(Number(val));
+          }}
+          className="form-input h-9 w-full text-sm"
+        >
+          <option value="" disabled>-- Select a strategy --</option>
+          {strategies.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.display_name || s.name}
+            </option>
+          ))}
+        </select>
       </div>
 
-      {/* Strategy list */}
-      <div className="max-h-[320px] space-y-4 overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-[var(--border-color)]">
-        {sortedCategories.length === 0 && (
-          <p className="py-4 text-center text-xs text-[var(--text-secondary)]">No strategies found.</p>
-        )}
-        {sortedCategories.map((cat) => (
-          <div key={cat}>
-            <h4 className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-[var(--text-secondary)]">
-              {CATEGORY_LABELS[cat] ?? cat}
-            </h4>
-            <div className="space-y-1.5">
-              {grouped[cat].map((s) => {
-                const isSelected = s.id === selectedId;
-                return (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onSelect(s.id)}
-                    className={`flex w-full items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
-                      isSelected
-                        ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/5'
-                        : 'border-[var(--border-color)] hover:border-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]/30'
-                    }`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-[var(--text-primary)]">{s.display_name}</span>
-                        <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-medium bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
-                          {s.direction.replace('_', ' ')}
-                        </span>
-                      </div>
-                      {s.description && (
-                        <p className="mt-0.5 text-xs text-[var(--text-secondary)] line-clamp-2">{s.description}</p>
-                      )}
-                    </div>
-                    {s.is_predefined && onClone && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onClone(s.id); }}
-                        className="flex-shrink-0 rounded p-1 text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                        title="Clone strategy"
-                      >
-                        <Copy size={14} />
-                      </button>
-                    )}
-                  </button>
-                );
-              })}
+      {/* Create new strategy button / form */}
+      {!creatingNew ? (
+        <button
+          type="button"
+          onClick={() => setCreatingNew(true)}
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-[var(--accent-blue)] hover:underline"
+        >
+          <Plus size={14} />
+          Create New Strategy
+        </button>
+      ) : (
+        <div className="rounded-lg border border-[var(--accent-blue)]/30 bg-[var(--bg-secondary)] p-4 space-y-3">
+          <h4 className="text-sm font-medium text-[var(--text-primary)]">New Strategy</h4>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Name</label>
+              <input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="e.g. momentum_pullback"
+                className="form-input h-8 w-full text-xs"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Display Name</label>
+              <input
+                type="text"
+                value={formDisplayName}
+                onChange={(e) => setFormDisplayName(e.target.value)}
+                placeholder="e.g. Momentum Pullback"
+                className="form-input h-8 w-full text-xs"
+              />
             </div>
           </div>
-        ))}
-      </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Description</label>
+            <textarea
+              value={formDescription}
+              onChange={(e) => setFormDescription(e.target.value)}
+              rows={2}
+              placeholder="Brief description of this strategy..."
+              className="form-input w-full resize-none text-xs"
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Category</label>
+              <select
+                value={formCategory}
+                onChange={(e) => setFormCategory(e.target.value)}
+                className="form-input h-8 w-full text-xs"
+              >
+                {CATEGORY_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Direction</label>
+              <div className="flex gap-1.5">
+                {DIRECTION_OPTIONS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => setFormDirection(d.value)}
+                    className={`flex-1 rounded-md border px-1.5 py-1.5 text-[11px] font-medium transition-colors ${
+                      formDirection === d.value
+                        ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
+                        : 'border-[var(--border-color)] text-[var(--text-secondary)]'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-xs text-[var(--accent-red)]">{error}</p>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleCreateStrategy}
+              disabled={saving}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-blue)] px-4 text-xs font-medium text-white transition-colors hover:bg-[var(--accent-blue)]/90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving && <Loader2 size={12} className="animate-spin" />}
+              Create
+            </button>
+            <button
+              type="button"
+              onClick={handleCancelCreate}
+              disabled={saving}
+              className="inline-flex h-8 items-center rounded-md border border-[var(--border-color)] px-4 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

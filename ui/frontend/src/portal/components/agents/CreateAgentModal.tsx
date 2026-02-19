@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Modal } from '../Modal';
 import { StrategyPicker } from './StrategyPicker';
-import { fetchAgentStrategies, cloneAgentStrategy, createAgent, updateAgent } from '../../api';
+import { fetchAgentStrategies, createAgent, updateAgent } from '../../api';
 import type { AgentStrategy, AgentSummary, AgentCreateRequest, AgentUpdateRequest } from '../../types';
 import { createLogger } from '../../utils/logger';
 
@@ -96,18 +96,10 @@ export function CreateAgentModal({ isOpen, onClose, onCreated, editAgent }: Crea
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  const handleClone = useCallback(async (srcId: number) => {
-    const src = strategies.find((s) => s.id === srcId);
-    if (!src) return;
-    try {
-      const cloned = await cloneAgentStrategy(srcId, `${src.display_name} (Custom)`);
-      setStrategies((prev) => [...prev, cloned]);
-      setStrategyId(cloned.id);
-    } catch (err) {
-      log.error('Failed to clone strategy', err);
-      setError(err instanceof Error ? err.message : 'Failed to clone strategy');
-    }
-  }, [strategies]);
+  const handleStrategyCreated = useCallback((strategy: AgentStrategy) => {
+    setStrategies((prev) => [...prev, strategy]);
+    setStrategyId(strategy.id);
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     setError(null);
@@ -238,7 +230,7 @@ export function CreateAgentModal({ isOpen, onClose, onCreated, editAgent }: Crea
                 strategies={strategies}
                 selectedId={strategyId}
                 onSelect={setStrategyId}
-                onClone={handleClone}
+                onStrategyCreated={handleStrategyCreated}
               />
             )}
             <div className="flex justify-between">
