@@ -158,6 +158,9 @@ class TradeFill(Base):
     # Raw data from provider
     raw_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
 
+    # Broker-provided tags/metadata (e.g., strategy_id)
+    tags: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=datetime.utcnow,
