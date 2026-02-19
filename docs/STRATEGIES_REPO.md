@@ -11,7 +11,7 @@
 - `EMA(20)`, `EMA(50)`, `EMA(200)`
 - `SMA(20)`, `SMA(50)`, `SMA(200)`
 - `RSI(14)` with levels 30/50/70
-- `MACD(12,26,9)` → macd, signal, hist
+- `MACD(12,26,9)` → macd, signal, hist[STRATEGIES_REPO.md](STRATEGIES_REPO.md)
 - `BBANDS(20, 2, 2)` → upper, middle, lower
 - `ADX(14)` with trend threshold 20–25
 - `ATR(14)`
