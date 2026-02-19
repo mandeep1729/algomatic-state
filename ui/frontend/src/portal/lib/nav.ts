@@ -16,11 +16,6 @@ export const appNavSections: NavItem[] = [
     icon: 'LayoutDashboard',
   },
   {
-    path: '/app/dashboard',
-    label: 'Dashboard',
-    icon: 'BarChart3',
-  },
-  {
     path: '/app/insights',
     label: 'Insights',
     icon: 'TrendingUp',
@@ -42,7 +37,7 @@ export const appNavSections: NavItem[] = [
   },
   {
     path: '/app/investigate',
-    label: 'Investigate',
+    label: 'Dashboard',
     icon: 'Microscope',
   },
   {
