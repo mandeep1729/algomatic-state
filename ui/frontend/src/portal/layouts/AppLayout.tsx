@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Outlet, NavLink, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   BarChart3,
@@ -136,13 +136,25 @@ export default function AppLayout() {
       >
         {/* Logo / brand */}
         <div className={`flex h-16 items-center border-b border-[var(--border-color)] ${sidebarCollapsed ? 'justify-center' : 'justify-between px-6'}`}>
-          {!sidebarCollapsed && (
-            <div className="flex items-center gap-2 font-semibold tracking-tight text-base">
+          {sidebarCollapsed ? (
+            <Link
+              to="/"
+              className="flex h-6 w-6 items-center justify-center rounded bg-[var(--accent-blue)]/10 text-[var(--accent-blue)] transition-opacity hover:opacity-80"
+              title="Trading Buddy Home"
+            >
+              <Shield size={14} />
+            </Link>
+          ) : (
+            <Link
+              to="/"
+              className="flex items-center gap-2 font-semibold tracking-tight text-base transition-opacity hover:opacity-80"
+              title="Trading Buddy Home"
+            >
               <div className="flex h-6 w-6 items-center justify-center rounded bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]">
                 <Shield size={14} />
               </div>
               Trading Buddy
-            </div>
+            </Link>
           )}
           <button
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
