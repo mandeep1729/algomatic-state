@@ -63,6 +63,7 @@ class ThemeStrategyDetail(BaseModel):
     name: str
     philosophy: str
     direction: str
+    strategy_type: Optional[str] = None
     details: dict[str, Any]
 
 
@@ -118,6 +119,7 @@ async def get_all_probe_strategies(
             name=s.name,
             philosophy=s.philosophy,
             direction=s.direction,
+            strategy_type=s.strategy_type,
             details=s.details or {},
         )
         for s in all_strategies
@@ -161,6 +163,7 @@ async def get_theme_strategies(
             name=s.name,
             philosophy=s.philosophy,
             direction=s.direction,
+            strategy_type=s.strategy_type,
             details=s.details or {},
         )
         for s in strategies

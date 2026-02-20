@@ -857,6 +857,7 @@ export interface ThemeStrategyDetail {
   name: string;
   philosophy: string;
   direction: string;
+  strategy_type?: string;
   details: Record<string, unknown>;
 }
 
