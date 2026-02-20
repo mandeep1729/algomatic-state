@@ -81,6 +81,9 @@ class AgentStrategy(Base):
         nullable=True,
     )
 
+    # Version for cache invalidation — incremented when conditions change
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
