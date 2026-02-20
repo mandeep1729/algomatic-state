@@ -198,3 +198,77 @@ class SnapTradeClient:
         except Exception as e:
             logger.error(f"Failed to list accounts: {e}")
             return None
+
+    def list_brokerages(self) -> Optional[List[Dict[str, Any]]]:
+        """List all SnapTrade-supported brokerages.
+
+        Returns:
+            List of brokerage dicts with fields like id, name, display_name,
+            slug, aws_s3_logo_url, enabled, allows_trading, etc., or None on failure.
+        """
+        if not self.client:
+            logger.debug("SnapTrade client not initialized, skipping %s", "list_brokerages")
+            return None
+
+        try:
+            response = self.client.reference_data.list_all_brokerages()
+            return response.body
+        except Exception as e:
+            logger.error("Failed to list brokerages: %s", e)
+            return None
+
+    def list_connections(
+        self, user_id: str, user_secret: str
+    ) -> Optional[List[Dict[str, Any]]]:
+        """List user's brokerage authorization connections.
+
+        Args:
+            user_id: SnapTrade user ID
+            user_secret: SnapTrade user secret
+
+        Returns:
+            List of authorization dicts with connection details and nested
+            brokerage info, or None on failure.
+        """
+        if not self.client:
+            logger.debug("SnapTrade client not initialized, skipping %s", "list_connections")
+            return None
+
+        try:
+            response = self.client.connections.list_brokerage_authorizations(
+                user_id=user_id,
+                user_secret=user_secret,
+            )
+            return response.body
+        except Exception as e:
+            logger.error("Failed to list connections: %s", e)
+            return None
+
+    def remove_connection(
+        self, authorization_id: str, user_id: str, user_secret: str
+    ) -> bool:
+        """Remove a brokerage authorization (disconnect a broker).
+
+        Args:
+            authorization_id: The SnapTrade authorization ID to remove
+            user_id: SnapTrade user ID
+            user_secret: SnapTrade user secret
+
+        Returns:
+            True if removed successfully, False otherwise.
+        """
+        if not self.client:
+            logger.debug("SnapTrade client not initialized, skipping %s", "remove_connection")
+            return False
+
+        try:
+            self.client.connections.remove_brokerage_authorization(
+                authorization_id=authorization_id,
+                user_id=user_id,
+                user_secret=user_secret,
+            )
+            logger.info("Removed brokerage authorization: %s", authorization_id)
+            return True
+        except Exception as e:
+            logger.error("Failed to remove connection %s: %s", authorization_id, e)
+            return False

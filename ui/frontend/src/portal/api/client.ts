@@ -32,6 +32,10 @@ import type {
   EvaluateRequest,
   EvaluateResponse,
   BrokerStatus,
+  BrokerageListResponse,
+  BrokerConnectResponse,
+  BrokerSyncResponse,
+  ConnectionStatusDetail,
   TradeListResponse,
   TradeSummary,
   CampaignSummary,
@@ -138,6 +142,56 @@ export async function fetchEvaluators(): Promise<string[]> {
 
 export async function fetchBrokerStatus(): Promise<BrokerStatus> {
   return get<BrokerStatus>('/api/broker/status');
+}
+
+// =============================================================================
+// Brokerages Catalog — GET /api/broker/brokerages
+// =============================================================================
+
+export async function fetchBrokerages(): Promise<BrokerageListResponse> {
+  return get<BrokerageListResponse>('/api/broker/brokerages');
+}
+
+// =============================================================================
+// Broker Connections — GET /api/broker/connections
+// =============================================================================
+
+export async function fetchBrokerConnections(): Promise<ConnectionStatusDetail> {
+  return get<ConnectionStatusDetail>('/api/broker/connections');
+}
+
+// =============================================================================
+// Connect Broker — POST /api/broker/connect
+// =============================================================================
+
+export async function connectBroker(
+  slug?: string,
+  redirectUrl?: string,
+): Promise<BrokerConnectResponse> {
+  return post<BrokerConnectResponse>('/api/broker/connect', {
+    broker: slug,
+    redirect_url: redirectUrl,
+  });
+}
+
+// =============================================================================
+// Disconnect Broker — DELETE /api/broker/connections/{authorizationId}
+// =============================================================================
+
+export async function disconnectBroker(
+  authorizationId: string,
+): Promise<{ status: string; authorization_id: string }> {
+  return del<{ status: string; authorization_id: string }>(
+    `/api/broker/connections/${encodeURIComponent(authorizationId)}`,
+  );
+}
+
+// =============================================================================
+// Sync Broker Data — POST /api/broker/sync
+// =============================================================================
+
+export async function syncBrokerData(): Promise<BrokerSyncResponse> {
+  return post<BrokerSyncResponse>('/api/broker/sync');
 }
 
 // =============================================================================

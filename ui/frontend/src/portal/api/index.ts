@@ -49,6 +49,11 @@ const api = USE_MOCKS
       evaluateTrade: realApi.evaluateTrade,
       fetchEvaluators: realApi.fetchEvaluators,
       fetchBrokerStatus: realApi.fetchBrokerStatus,
+      fetchBrokerages: realApi.fetchBrokerages,
+      fetchBrokerConnections: realApi.fetchBrokerConnections,
+      connectBroker: realApi.connectBroker,
+      disconnectBroker: realApi.disconnectBroker,
+      syncBrokerData: realApi.syncBrokerData,
       fetchTrades: realApi.fetchTrades,
       fetchTickerPnl: realApi.fetchTickerPnl,
       fetchTickerPnlTimeseries: realApi.fetchTickerPnlTimeseries,
@@ -134,6 +139,15 @@ export { fetchTickerPnlTimeseries as fetchMockTickerPnlTimeseries } from '../moc
 
 // Re-export fill context functions from client
 export { fetchFillContext, saveFillContext } from './client';
+
+// Re-export broker catalog/connection functions from client
+export {
+  fetchBrokerages,
+  fetchBrokerConnections,
+  connectBroker,
+  disconnectBroker,
+  syncBrokerData,
+} from './client';
 
 // Re-export bulk strategy update - uses mock or real based on USE_MOCKS flag
 import type { BulkUpdateStrategyRequest, BulkUpdateStrategyResponse } from './client';
