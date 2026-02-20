@@ -8,7 +8,7 @@ Provides:
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -57,10 +57,10 @@ class StrategyCreate(BaseModel):
     description: Optional[str] = None
     category: str = "custom"
     direction: str = "long_short"
-    entry_long: Optional[dict] = None
-    entry_short: Optional[dict] = None
-    exit_long: Optional[dict] = None
-    exit_short: Optional[dict] = None
+    entry_long: Optional[Union[str, dict]] = None
+    entry_short: Optional[Union[str, dict]] = None
+    exit_long: Optional[Union[str, dict]] = None
+    exit_short: Optional[Union[str, dict]] = None
     required_features: Optional[list] = None
     tags: Optional[list] = None
     timeframes: Optional[list] = None
@@ -76,10 +76,10 @@ class StrategyUpdate(BaseModel):
     display_name: Optional[str] = None
     description: Optional[str] = None
     direction: Optional[str] = None
-    entry_long: Optional[dict] = None
-    entry_short: Optional[dict] = None
-    exit_long: Optional[dict] = None
-    exit_short: Optional[dict] = None
+    entry_long: Optional[Union[str, dict]] = None
+    entry_short: Optional[Union[str, dict]] = None
+    exit_long: Optional[Union[str, dict]] = None
+    exit_short: Optional[Union[str, dict]] = None
     required_features: Optional[list] = None
     tags: Optional[list] = None
     timeframes: Optional[list] = None
