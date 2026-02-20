@@ -100,8 +100,16 @@ func (c *Client) FetchBars(ctx context.Context, symbol, timeframe string, start,
 	return allBars, nil
 }
 
-// fetchChunk fetches bars for a single date chunk, handling pagination.
+// fetchChunk dispatches to stock or crypto fetch based on the symbol.
 func (c *Client) fetchChunk(ctx context.Context, symbol, timeframe string, start, end time.Time) ([]db.OHLCVBar, error) {
+	if IsCrypto(symbol) {
+		return c.fetchChunkCrypto(ctx, symbol, timeframe, start, end)
+	}
+	return c.fetchChunkStock(ctx, symbol, timeframe, start, end)
+}
+
+// fetchChunkStock fetches bars for a single date chunk from the stocks endpoint.
+func (c *Client) fetchChunkStock(ctx context.Context, symbol, timeframe string, start, end time.Time) ([]db.OHLCVBar, error) {
 	var allBars []db.OHLCVBar
 	pageToken := ""
 
@@ -123,9 +131,14 @@ func (c *Client) fetchChunk(ctx context.Context, symbol, timeframe string, start
 
 		reqURL := fmt.Sprintf("%s/v2/stocks/%s/bars?%s", c.baseURL, symbol, params.Encode())
 
-		resp, err := c.doWithRetry(ctx, reqURL)
+		body, err := c.doRawRequest(ctx, reqURL)
 		if err != nil {
 			return allBars, err
+		}
+
+		var resp barsResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return allBars, fmt.Errorf("decoding stock bars response: %w", err)
 		}
 
 		bars := convertBars(resp.Bars)
@@ -140,8 +153,63 @@ func (c *Client) fetchChunk(ctx context.Context, symbol, timeframe string, start
 	return allBars, nil
 }
 
-// doWithRetry executes an HTTP GET with exponential backoff retries.
-func (c *Client) doWithRetry(ctx context.Context, reqURL string) (*barsResponse, error) {
+// fetchChunkCrypto fetches bars for a single date chunk from the crypto endpoint.
+func (c *Client) fetchChunkCrypto(ctx context.Context, symbol, timeframe string, start, end time.Time) ([]db.OHLCVBar, error) {
+	var allBars []db.OHLCVBar
+	pageToken := ""
+
+	alpacaTF := mapTimeframe(timeframe)
+	alpacaSymbol := CryptoAlpacaSymbol(symbol)
+
+	for {
+		c.rateLimit()
+
+		params := url.Values{
+			"symbols":   {alpacaSymbol},
+			"timeframe": {alpacaTF},
+			"start":     {start.Format(time.RFC3339)},
+			"end":       {end.Format(time.RFC3339)},
+			"limit":     {fmt.Sprintf("%d", maxBarsPerPage)},
+		}
+		if pageToken != "" {
+			params.Set("page_token", pageToken)
+		}
+
+		reqURL := fmt.Sprintf("%s/v1beta3/crypto/us/bars?%s", c.baseURL, params.Encode())
+
+		body, err := c.doRawRequest(ctx, reqURL)
+		if err != nil {
+			return allBars, err
+		}
+
+		var resp cryptoBarsResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return allBars, fmt.Errorf("decoding crypto bars response: %w", err)
+		}
+
+		// Extract bars for our symbol from the map.
+		if symbolBars, ok := resp.Bars[alpacaSymbol]; ok {
+			allBars = append(allBars, convertBars(symbolBars)...)
+		}
+
+		if resp.NextPageToken == "" {
+			break
+		}
+		pageToken = resp.NextPageToken
+	}
+
+	c.logger.Debug("Crypto fetch complete",
+		"symbol", symbol,
+		"alpaca_symbol", alpacaSymbol,
+		"bars", len(allBars),
+	)
+
+	return allBars, nil
+}
+
+// doRawRequest executes an HTTP GET with exponential backoff retries.
+// Returns the raw response body on success.
+func (c *Client) doRawRequest(ctx context.Context, reqURL string) ([]byte, error) {
 	var lastErr error
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -183,11 +251,7 @@ func (c *Client) doWithRetry(ctx context.Context, reqURL string) (*barsResponse,
 
 		switch {
 		case resp.StatusCode >= 200 && resp.StatusCode < 300:
-			var barsResp barsResponse
-			if err := json.Unmarshal(body, &barsResp); err != nil {
-				return nil, fmt.Errorf("decoding response: %w", err)
-			}
-			return &barsResp, nil
+			return body, nil
 
 		case resp.StatusCode == 429:
 			lastErr = fmt.Errorf("rate limited (429)")

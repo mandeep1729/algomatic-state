@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from src.data.database.dependencies import get_market_grpc_client
 from src.data.database.models import VALID_TIMEFRAMES
+from src.messaging import Event, EventType, get_message_bus
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,41 @@ def _parse_timestamp(value: str, param_name: str) -> datetime:
 
 
 # ---------------------------------------------------------------------------
+# Data Fetch Request Helper
+# ---------------------------------------------------------------------------
+
+def _request_data_fetch(symbol: str, timeframe: str, start: datetime, end: datetime) -> None:
+    """Publish a MARKET_DATA_REQUEST event so the Go marketdata-service fetches missing data.
+
+    Fire-and-forget: the current request still returns 404, but the next poll
+    will have data once the marketdata-service processes the request.
+    """
+    try:
+        bus = get_message_bus()
+        event = Event(
+            event_type=EventType.MARKET_DATA_REQUEST,
+            payload={
+                "symbol": symbol.upper(),
+                "timeframe": timeframe,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+            },
+            source="api.market_data",
+        )
+        bus.publish(event)
+        logger.info(
+            "Published MARKET_DATA_REQUEST for %s/%s (%s to %s)",
+            symbol.upper(), timeframe, start, end,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to publish MARKET_DATA_REQUEST for %s/%s",
+            symbol.upper(), timeframe,
+            exc_info=True,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -162,6 +198,7 @@ async def get_bars(
     # Verify symbol exists
     ticker = repo.get_ticker(symbol)
     if ticker is None:
+        _request_data_fetch(symbol, timeframe, start, end)
         raise HTTPException(
             status_code=404,
             detail=f"Symbol '{symbol.upper()}' not found",
@@ -170,6 +207,7 @@ async def get_bars(
     df = repo.get_bars(symbol, timeframe, start=start, end=end)
 
     if df.empty:
+        _request_data_fetch(symbol, timeframe, start, end)
         raise HTTPException(
             status_code=404,
             detail=f"No bars found for {symbol.upper()}/{timeframe} in the given date range",

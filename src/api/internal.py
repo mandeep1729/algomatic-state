@@ -12,6 +12,7 @@ Endpoints:
 - PUT  /api/internal/fills/{fill_id}/inferred-context     -- merge inferred context
 - GET  /api/internal/accounts                             -- list active accounts
 - GET  /api/internal/position-symbols                     -- symbols with open positions
+- GET  /api/internal/agent-symbols                        -- symbols from active trading agents
 """
 
 import logging
@@ -28,6 +29,7 @@ from src.data.database.broker_models import TradeFill
 from src.data.database.dependencies import get_broker_repo, get_db
 from src.data.database.broker_repository import BrokerRepository
 from src.data.database.trading_buddy_models import UserProfile
+from src.trading_agents.models import TradingAgent
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,10 @@ class ActiveAccountsResponse(BaseModel):
 
 
 class PositionSymbolsResponse(BaseModel):
+    symbols: list[str]
+
+
+class AgentSymbolsResponse(BaseModel):
     symbols: list[str]
 
 
@@ -298,4 +304,30 @@ async def get_position_symbols(
 
     except Exception:
         logger.exception("Failed to compute position symbols")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/agent-symbols", response_model=AgentSymbolsResponse)
+async def get_agent_symbols(
+    db: Session = Depends(get_db),
+):
+    """Return distinct symbols from active trading agents.
+
+    Includes agents with status 'created' or 'active'.
+    Used by marketdata-service to include agent tickers in periodic scans.
+    """
+    try:
+        rows = (
+            db.query(TradingAgent.symbol)
+            .filter(TradingAgent.status.in_(["created", "active"]))
+            .distinct()
+            .all()
+        )
+
+        symbols = sorted(row[0] for row in rows)
+        logger.info("Agent symbols: %d symbols from active agents", len(symbols))
+        return AgentSymbolsResponse(symbols=symbols)
+
+    except Exception:
+        logger.exception("Failed to fetch agent symbols")
         raise HTTPException(status_code=500, detail="Internal server error")

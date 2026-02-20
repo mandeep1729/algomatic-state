@@ -34,9 +34,16 @@ type Bar struct {
 	VWAP       float64   `json:"vw"`
 }
 
-// barsResponse is the raw Alpaca v2 bars API response.
+// barsResponse is the raw Alpaca v2 bars API response (stocks).
 type barsResponse struct {
 	Bars          []Bar  `json:"bars"`
 	Symbol        string `json:"symbol"`
 	NextPageToken string `json:"next_page_token"`
+}
+
+// cryptoBarsResponse is the Alpaca v1beta3 crypto bars response.
+// Bars are keyed by the Alpaca symbol (e.g. "BTC/USD").
+type cryptoBarsResponse struct {
+	Bars          map[string][]Bar `json:"bars"`
+	NextPageToken string           `json:"next_page_token"`
 }
