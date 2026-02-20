@@ -94,21 +94,29 @@ async def connect_broker(
         raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
 
     snap_user = broker_repo.get_snaptrade_user(user_id)
+    needs_registration = not snap_user or snap_user.snaptrade_user_id.startswith("alpaca_direct_")
 
-    if not snap_user:
+    if needs_registration:
         snap_user_id = f"algomatic_user_{user_id}"
-        logger.debug("Registering new SnapTrade user: %s", snap_user_id)
+        logger.debug("Registering SnapTrade user: %s (had_dummy_creds=%s)", snap_user_id, snap_user is not None)
 
         registration = client.register_user(snap_user_id)
         if not registration:
             logger.error("Failed to register SnapTrade user for user_id=%s", user_id)
             raise HTTPException(status_code=500, detail="Failed to register user with SnapTrade")
 
-        snap_user = broker_repo.get_or_create_snaptrade_user(
-            user_id=user_id,
-            snaptrade_id=registration["user_id"],
-            snaptrade_secret=registration["user_secret"],
-        )
+        if snap_user:
+            snap_user = broker_repo.update_snaptrade_credentials(
+                snap_user,
+                snaptrade_id=registration["user_id"],
+                snaptrade_secret=registration["user_secret"],
+            )
+        else:
+            snap_user = broker_repo.get_or_create_snaptrade_user(
+                user_id=user_id,
+                snaptrade_id=registration["user_id"],
+                snaptrade_secret=registration["user_secret"],
+            )
 
     redirect_url = client.generate_connection_link(
         snap_user.snaptrade_user_id,

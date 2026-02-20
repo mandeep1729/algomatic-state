@@ -61,6 +61,19 @@ class BrokerRepository:
         logger.info("Created SnapTradeUser for user_account_id=%d", user_id)
         return user
 
+    def update_snaptrade_credentials(
+        self,
+        user: SnapTradeUser,
+        snaptrade_id: str,
+        snaptrade_secret: str,
+    ) -> SnapTradeUser:
+        """Update SnapTrade credentials on an existing user."""
+        user.snaptrade_user_id = snaptrade_id
+        user.snaptrade_user_secret = snaptrade_secret
+        self.session.flush()
+        logger.info("Updated SnapTrade credentials for user_account_id=%d", user.user_account_id)
+        return user
+
     # -------------------------------------------------------------------------
     # Broker Connection Operations
     # -------------------------------------------------------------------------
