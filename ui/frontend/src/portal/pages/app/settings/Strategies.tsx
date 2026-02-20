@@ -192,17 +192,6 @@ function renderConditionText(value: string, joiner: 'AND' | 'OR'): string {
 }
 
 // =============================================================================
-// Helpers
-// =============================================================================
-
-/** Render condition text — structured DSL gets human-readable summary, plain text passes through. */
-function renderConditionText(value: string, joiner: 'AND' | 'OR'): string {
-  const nodes = parseConditions(value);
-  if (nodes) return conditionsToText(nodes, joiner);
-  return value;
-}
-
-// =============================================================================
 // Strategy Card (read view)
 // =============================================================================
 
