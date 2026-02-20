@@ -244,15 +244,67 @@ export default function CampaignDetail() {
 
   // Autosave handler for context panel
   const handleAutosave = useCallback(async (ctx: DecisionContext) => {
+    // Campaign-level context: apply to every leg in the campaign
+    if (ctx.scope === 'campaign' && detail) {
+      setContextsByLeg((prev) => {
+        const next: Record<string, DecisionContext | undefined> = { ...prev, campaign: ctx };
+        // Also update each leg's local context with the campaign-level values
+        for (const leg of detail.legs) {
+          const existing = prev[leg.legId];
+          next[leg.legId] = {
+            ...(existing ?? ctx),
+            strategyTags: ctx.strategyTags,
+            hypothesis: ctx.hypothesis,
+            exitIntent: ctx.exitIntent,
+            feelingsThen: ctx.feelingsThen,
+            notes: ctx.notes,
+          };
+        }
+        return next;
+      });
+
+      try {
+        // Save context to each leg individually, in parallel
+        const results = await Promise.allSettled(
+          detail.legs.map((leg) =>
+            api.saveDecisionContext({
+              ...ctx,
+              legId: leg.legId,
+              scope: 'leg',
+            }),
+          ),
+        );
+
+        // Check if any saves failed
+        const failures = results.filter((r) => r.status === 'rejected');
+        if (failures.length > 0) {
+          const firstErr = (failures[0] as PromiseRejectedResult).reason;
+          console.error(
+            '[CampaignDetail] %d/%d campaign context saves failed',
+            failures.length,
+            detail.legs.length,
+            firstErr,
+          );
+          throw firstErr instanceof Error
+            ? firstErr
+            : new Error(`${failures.length}/${detail.legs.length} leg saves failed`);
+        }
+      } catch (err) {
+        console.error('[CampaignDetail] Failed to save campaign context:', err);
+        throw err;
+      }
+      return;
+    }
+
+    // Leg-level context: save to a single leg
     setContextsByLeg((prev) => ({ ...prev, [ctx.legId ?? 'campaign']: ctx }));
     try {
       await api.saveDecisionContext(ctx);
     } catch (err) {
-      // Log the error but don't rethrow -- the ContextPanel will show feedback
       console.error('[CampaignDetail] Failed to save context:', err);
       throw err; // Re-throw so ContextPanel can handle it
     }
-  }, []);
+  }, [detail]);
 
   if (loading) {
     return (

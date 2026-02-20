@@ -147,9 +147,10 @@ export function ContextPanel({
           updatedAt: new Date().toISOString(),
         };
 
-        log.debug('[autosave] saving context for legId=%s', legId, next);
+        log.debug('[autosave] saving context scope=%s legId=%s', scope, legId, next);
         await onAutosave(next);
-        setAutosaveFeedback({ type: 'success', message: 'Saved' });
+        const savedMsg = scope === 'campaign' ? 'Saved to all legs' : 'Saved';
+        setAutosaveFeedback({ type: 'success', message: savedMsg });
         // Clear feedback after 3 seconds
         setTimeout(() => setAutosaveFeedback(null), 3000);
       } catch (err) {
@@ -189,6 +190,15 @@ export function ContextPanel({
           )}
         </div>
       </div>
+
+      {/* Campaign-level scope hint */}
+      {scope === 'campaign' && (
+        <div className="border-b border-[var(--border-color)] bg-[var(--accent-blue)]/5 px-4 py-2">
+          <span className="text-xs text-[var(--accent-blue)]">
+            Changes here apply to all legs in this campaign.
+          </span>
+        </div>
+      )}
 
       {/* Body */}
       <div className="space-y-5 p-4">
