@@ -1,25 +1,23 @@
 import { useEffect, useState } from 'react';
-import api from '../../../api';
-import type { StrategyDefinition, TradeDirection } from '../../../types';
+import api, { fetchAgentStrategies, fetchAllProbeStrategies } from '../../../api';
+import type { StrategyDefinition, StrategyCategory, StrategyDirection, AgentStrategy } from '../../../types';
+import type { ThemeStrategyDetail } from '../../../api';
+import { StrategyForm, type CloneTemplate, type StrategyFormData } from '../../../components/strategies/StrategyForm';
 
-const DIRECTION_OPTIONS: { value: TradeDirection | 'both'; label: string }[] = [
-  { value: 'long', label: 'Long' },
-  { value: 'short', label: 'Short' },
-  { value: 'both', label: 'Both' },
-];
+const CATEGORY_LABELS: Record<string, string> = {
+  trend: 'Trend',
+  mean_reversion: 'Mean Rev',
+  breakout: 'Breakout',
+  volume_flow: 'Vol Flow',
+  pattern: 'Pattern',
+  regime: 'Regime',
+  custom: 'Custom',
+};
 
-const TIMEFRAME_OPTIONS = ['1Min', '15Min', '1Hour', '1Day'];
-
-const EMPTY_STRATEGY: Omit<StrategyDefinition, 'id'> = {
-  name: '',
-  description: '',
-  direction: 'both',
-  timeframes: [],
-  entry_criteria: '',
-  exit_criteria: '',
-  max_risk_pct: 2.0,
-  min_risk_reward: 1.5,
-  is_active: true,
+const DIRECTION_LABELS: Record<string, string> = {
+  long_short: 'Long & Short',
+  long_only: 'Long Only',
+  short_only: 'Short Only',
 };
 
 export default function SettingsStrategies() {
@@ -27,10 +25,72 @@ export default function SettingsStrategies() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<StrategyDefinition | null>(null);
   const [creating, setCreating] = useState(false);
+  const [cloneTemplates, setCloneTemplates] = useState<CloneTemplate[]>([]);
 
   useEffect(() => {
     api.fetchStrategies().then(setStrategies).finally(() => setLoading(false));
   }, []);
+
+  // Load clone templates when creating
+  useEffect(() => {
+    if (!creating) return;
+    let cancelled = false;
+
+    async function loadTemplates() {
+      const templates: CloneTemplate[] = [];
+
+      try {
+        const agentStrategies: AgentStrategy[] = await fetchAgentStrategies();
+        for (const s of agentStrategies) {
+          templates.push({
+            source: s.is_predefined ? 'predefined' : 'user',
+            label: s.display_name || s.name,
+            sourceLabel: s.is_predefined ? 'Predefined Strategies' : 'My Strategies',
+            data: {
+              name: s.name,
+              display_name: s.display_name,
+              description: s.description || '',
+              category: s.category as StrategyCategory,
+              direction: s.direction as StrategyDirection,
+              entry_long: s.entry_long,
+              entry_short: s.entry_short,
+              exit_long: s.exit_long,
+              required_features: s.required_features,
+              tags: s.tags,
+              timeframes: s.timeframes || [],
+              max_risk_pct: s.max_risk_pct ?? 2.0,
+              min_risk_reward: s.min_risk_reward ?? 1.5,
+              atr_stop_mult: s.atr_stop_mult,
+              atr_target_mult: s.atr_target_mult,
+              trailing_atr_mult: s.trailing_atr_mult,
+              time_stop_bars: s.time_stop_bars,
+            },
+          });
+        }
+      } catch {
+        // Agent strategies may not be available in mock mode
+      }
+
+      try {
+        const probeResp = await fetchAllProbeStrategies();
+        for (const s of probeResp.strategies) {
+          templates.push({
+            source: 'probe',
+            label: s.display_name || s.name,
+            sourceLabel: 'Strategy Probe',
+            data: mapProbeToFormData(s),
+          });
+        }
+      } catch {
+        // Probe endpoint may not be available
+      }
+
+      if (!cancelled) setCloneTemplates(templates);
+    }
+
+    loadTemplates();
+    return () => { cancelled = true; };
+  }, [creating]);
 
   function handleEdit(strategy: StrategyDefinition) {
     setCreating(false);
@@ -47,16 +107,17 @@ export default function SettingsStrategies() {
     setCreating(false);
   }
 
-  async function handleSave(strategy: StrategyDefinition | Omit<StrategyDefinition, 'id'>) {
-    if ('id' in strategy) {
-      const updated = await api.updateStrategy(strategy.id, strategy);
-      setStrategies((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-      setEditing(null);
-    } else {
-      const created = await api.createStrategy(strategy);
-      setStrategies((prev) => [...prev, created]);
-      setCreating(false);
-    }
+  async function handleSaveNew(data: StrategyFormData) {
+    const created = await api.createStrategy(data as Omit<StrategyDefinition, 'id'>);
+    setStrategies((prev) => [...prev, created]);
+    setCreating(false);
+  }
+
+  async function handleSaveEdit(data: StrategyFormData) {
+    if (!editing) return;
+    const updated = await api.updateStrategy(editing.id, data);
+    setStrategies((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    setEditing(null);
   }
 
   async function handleToggleActive(strategy: StrategyDefinition) {
@@ -85,8 +146,9 @@ export default function SettingsStrategies() {
             {editing?.id === strategy.id ? (
               <StrategyForm
                 initial={editing}
-                onSave={handleSave}
+                onSave={handleSaveEdit}
                 onCancel={handleCancel}
+                isEditing
               />
             ) : (
               <StrategyCard
@@ -100,9 +162,9 @@ export default function SettingsStrategies() {
 
         {creating && (
           <StrategyForm
-            initial={EMPTY_STRATEGY}
-            onSave={handleSave}
+            onSave={handleSaveNew}
             onCancel={handleCancel}
+            cloneTemplates={cloneTemplates}
           />
         )}
 
@@ -114,6 +176,29 @@ export default function SettingsStrategies() {
       </div>
     </div>
   );
+}
+
+// =============================================================================
+// Helper: Map probe strategy to form data
+// =============================================================================
+
+function mapProbeToFormData(s: ThemeStrategyDetail): Partial<StrategyDefinition> {
+  const details = s.details || {};
+  return {
+    name: s.name,
+    display_name: s.display_name,
+    description: s.philosophy,
+    category: (s.direction === 'long' || s.direction === 'short' ? 'custom' : 'custom') as StrategyCategory,
+    direction: s.direction === 'long_short' ? 'long_short'
+      : s.direction === 'long_only' ? 'long_only'
+      : s.direction === 'short_only' ? 'short_only'
+      : 'long_short',
+    entry_long: typeof details.entry_long === 'string' ? details.entry_long : null,
+    entry_short: typeof details.entry_short === 'string' ? details.entry_short : null,
+    exit_long: typeof details.exit === 'string' ? details.exit : null,
+    required_features: Array.isArray(details.indicators) ? details.indicators : null,
+    tags: Array.isArray(details.tags) ? details.tags : null,
+  };
 }
 
 // =============================================================================
@@ -136,7 +221,7 @@ function StrategyCard({
       <div className="flex items-start justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium">{strategy.name}</h3>
+            <h3 className="text-sm font-medium">{strategy.display_name || strategy.name}</h3>
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
               strategy.is_active
                 ? 'bg-[var(--accent-green)]/10 text-[var(--accent-green)]'
@@ -144,8 +229,11 @@ function StrategyCard({
             }`}>
               {strategy.is_active ? 'Active' : 'Inactive'}
             </span>
+            <span className="rounded bg-[var(--accent-blue)]/10 px-1.5 py-0.5 text-[10px] font-medium text-[var(--accent-blue)]">
+              {CATEGORY_LABELS[strategy.category] || strategy.category}
+            </span>
             <span className="rounded bg-[var(--bg-primary)] px-1.5 py-0.5 text-[10px] text-[var(--text-secondary)]">
-              {strategy.direction === 'both' ? 'Long & Short' : strategy.direction.toUpperCase()}
+              {DIRECTION_LABELS[strategy.direction] || strategy.direction}
             </span>
           </div>
           <p className="mt-1 text-xs text-[var(--text-secondary)]">{strategy.description}</p>
@@ -163,7 +251,7 @@ function StrategyCard({
       <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
         <div>
           <span className="text-[var(--text-secondary)]">Timeframes: </span>
-          <span>{strategy.timeframes.join(', ')}</span>
+          <span>{strategy.timeframes.length > 0 ? strategy.timeframes.join(', ') : 'None'}</span>
         </div>
         <div>
           <span className="text-[var(--text-secondary)]">Max Risk: </span>
@@ -173,204 +261,32 @@ function StrategyCard({
         </div>
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <span className="text-[var(--text-secondary)]">Entry: </span>
-          <span>{strategy.entry_criteria}</span>
-        </div>
-        <div>
-          <span className="text-[var(--text-secondary)]">Exit: </span>
-          <span>{strategy.exit_criteria}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// =============================================================================
-// Strategy Form (create/edit)
-// =============================================================================
-
-function StrategyForm({
-  initial,
-  onSave,
-  onCancel,
-}: {
-  initial: StrategyDefinition | Omit<StrategyDefinition, 'id'>;
-  onSave: (strategy: StrategyDefinition | Omit<StrategyDefinition, 'id'>) => Promise<void>;
-  onCancel: () => void;
-}) {
-  const [form, setForm] = useState(initial);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const isEditing = 'id' in initial;
-
-  function updateField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function toggleTimeframe(tf: string) {
-    setForm((prev) => ({
-      ...prev,
-      timeframes: prev.timeframes.includes(tf)
-        ? prev.timeframes.filter((t) => t !== tf)
-        : [...prev.timeframes, tf],
-    }));
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    if (!form.name.trim()) { setError('Name is required'); return; }
-    if (form.timeframes.length === 0) { setError('Select at least one timeframe'); return; }
-
-    setSaving(true);
-    try {
-      await onSave(form);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form onSubmit={handleSubmit} className="rounded-lg border border-[var(--accent-blue)]/30 bg-[var(--bg-secondary)] p-4 space-y-4">
-      <h3 className="text-sm font-medium">{isEditing ? 'Edit Strategy' : 'New Strategy'}</h3>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Name</label>
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => updateField('name', e.target.value)}
-            className="form-input"
-            placeholder="e.g. Momentum Pullback Long"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Direction</label>
-          <div className="flex gap-2">
-            {DIRECTION_OPTIONS.map((d) => (
-              <button
-                key={d.value}
-                type="button"
-                onClick={() => updateField('direction', d.value)}
-                className={`flex-1 rounded-md border px-2 py-1.5 text-xs font-medium transition-colors ${
-                  form.direction === d.value
-                    ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
-                    : 'border-[var(--border-color)] text-[var(--text-secondary)]'
-                }`}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Description</label>
-        <textarea
-          value={form.description}
-          onChange={(e) => updateField('description', e.target.value)}
-          rows={2}
-          className="form-input resize-none"
-          placeholder="Brief description of this strategy..."
-        />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Timeframes</label>
-        <div className="flex flex-wrap gap-1.5">
-          {TIMEFRAME_OPTIONS.map((tf) => (
-            <button
-              key={tf}
-              type="button"
-              onClick={() => toggleTimeframe(tf)}
-              className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                form.timeframes.includes(tf)
-                  ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
-                  : 'border-[var(--border-color)] text-[var(--text-secondary)]'
-              }`}
-            >
-              {tf}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Entry Criteria</label>
-        <textarea
-          value={form.entry_criteria}
-          onChange={(e) => updateField('entry_criteria', e.target.value)}
-          rows={2}
-          className="form-input resize-none"
-          placeholder="Describe the conditions for entering a trade..."
-        />
-      </div>
-
-      <div>
-        <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Exit Criteria</label>
-        <textarea
-          value={form.exit_criteria}
-          onChange={(e) => updateField('exit_criteria', e.target.value)}
-          rows={2}
-          className="form-input resize-none"
-          placeholder="Describe the conditions for exiting..."
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Max Risk (%)</label>
-          <input
-            type="number"
-            value={form.max_risk_pct}
-            onChange={(e) => updateField('max_risk_pct', parseFloat(e.target.value) || 0)}
-            step={0.1}
-            min={0.1}
-            className="form-input w-24"
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Min R:R</label>
-          <input
-            type="number"
-            value={form.min_risk_reward}
-            onChange={(e) => updateField('min_risk_reward', parseFloat(e.target.value) || 0)}
-            step={0.1}
-            min={0.5}
-            className="form-input w-24"
-          />
-        </div>
-      </div>
-
-      {error && (
-        <div className="rounded-md border border-[var(--accent-red)] bg-[var(--accent-red)]/5 px-3 py-2 text-xs text-[var(--accent-red)]">
-          {error}
+      {(strategy.entry_long || strategy.exit_long) && (
+        <div className="mt-2 grid grid-cols-2 gap-3 text-xs">
+          {strategy.entry_long && (
+            <div>
+              <span className="text-[var(--text-secondary)]">Entry: </span>
+              <span>{strategy.entry_long}</span>
+            </div>
+          )}
+          {strategy.exit_long && (
+            <div>
+              <span className="text-[var(--text-secondary)]">Exit: </span>
+              <span>{strategy.exit_long}</span>
+            </div>
+          )}
         </div>
       )}
 
-      <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-md bg-[var(--accent-blue)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Strategy'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
+      {strategy.tags && strategy.tags.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {strategy.tags.map((tag) => (
+            <span key={tag} className="rounded-full bg-[var(--bg-primary)] px-2 py-0.5 text-[10px] text-[var(--text-secondary)]">
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -11,11 +11,11 @@ const log = createLogger('CreateAgentModal');
 type Step = 'basic' | 'strategy' | 'config';
 
 const TIMEFRAME_OPTIONS = [
-  { value: '1Min', label: '1 Minute' },
-  { value: '5Min', label: '5 Minutes' },
-  { value: '15Min', label: '15 Minutes' },
-  { value: '1Hour', label: '1 Hour' },
-  { value: '1Day', label: '1 Day' },
+  { value: '1Min', label: '1 Minute', minutes: 1 },
+  { value: '5Min', label: '5 Minutes', minutes: 5 },
+  { value: '15Min', label: '15 Minutes', minutes: 15 },
+  { value: '1Hour', label: '1 Hour', minutes: 60 },
+  { value: '1Day', label: '1 Day', minutes: 1440 },
 ];
 
 interface CreateAgentModalProps {
@@ -261,7 +261,12 @@ export function CreateAgentModal({ isOpen, onClose, onCreated, editAgent }: Crea
                 <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Timeframe</label>
                 <select
                   value={timeframe}
-                  onChange={(e) => setTimeframe(e.target.value)}
+                  onChange={(e) => {
+                    const selected = e.target.value;
+                    setTimeframe(selected);
+                    const match = TIMEFRAME_OPTIONS.find((o) => o.value === selected);
+                    if (match) setIntervalMinutes(match.minutes);
+                  }}
                   className="form-input h-9 w-full text-sm"
                 >
                   {TIMEFRAME_OPTIONS.map((opt) => (

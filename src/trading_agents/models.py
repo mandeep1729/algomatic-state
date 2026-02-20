@@ -65,6 +65,13 @@ class AgentStrategy(Base):
     # Required indicator column names
     required_features: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # Fields from unified strategy model (migrated from strategies table)
+    timeframes: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    max_risk_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    min_risk_reward: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    risk_profile: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    tags: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     # Predefined strategy metadata
     is_predefined: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     source_strategy_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)

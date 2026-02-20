@@ -21,6 +21,13 @@ class ProbeRepository:
     def __init__(self, session: Session):
         self.session = session
 
+    def list_all_strategies(self, active_only: bool = True) -> list[ProbeStrategy]:
+        """Get all probe strategies (all themes)."""
+        query = self.session.query(ProbeStrategy)
+        if active_only:
+            query = query.filter(ProbeStrategy.is_active == True)  # noqa: E712
+        return query.order_by(ProbeStrategy.strategy_type.asc(), ProbeStrategy.display_name.asc()).all()
+
     def list_strategies_by_type(
         self,
         strategy_type: str,

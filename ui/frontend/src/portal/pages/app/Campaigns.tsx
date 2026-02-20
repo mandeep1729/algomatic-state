@@ -336,7 +336,7 @@ export default function Campaigns() {
         strategy_id: strategyId,
       });
 
-      const strategyName = strategies.find((s) => s.id === bulkStrategyId)?.name ?? 'selected strategy';
+      const strategyName = strategies.find((s) => String(s.id) === bulkStrategyId)?.name ?? 'selected strategy';
       setBulkSuccess(
         `Updated ${result.updated_count} leg${result.updated_count !== 1 ? 's' : ''} to "${strategyName}"` +
         (result.skipped_count > 0 ? ` (${result.skipped_count} skipped)` : ''),

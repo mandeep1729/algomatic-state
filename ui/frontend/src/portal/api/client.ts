@@ -631,8 +631,8 @@ export async function createStrategy(strategy: Omit<StrategyDefinition, 'id'>): 
   return post<StrategyDefinition>('/api/user/strategies', strategy);
 }
 
-export async function updateStrategy(id: string, updates: Partial<StrategyDefinition>): Promise<StrategyDefinition> {
-  return put<StrategyDefinition>(`/api/user/strategies/${encodeURIComponent(id)}`, updates);
+export async function updateStrategy(id: number, updates: Partial<StrategyDefinition>): Promise<StrategyDefinition> {
+  return put<StrategyDefinition>(`/api/user/strategies/${id}`, updates);
 }
 
 // =============================================================================
@@ -817,6 +817,10 @@ export async function fetchThemeStrategies(
   return get<ThemeStrategiesResponse>(
     `/api/strategy-probe/strategies/${encodeURIComponent(strategyType)}`,
   );
+}
+
+export async function fetchAllProbeStrategies(): Promise<ThemeStrategiesResponse> {
+  return get<ThemeStrategiesResponse>('/api/strategy-probe/strategies');
 }
 
 // =============================================================================

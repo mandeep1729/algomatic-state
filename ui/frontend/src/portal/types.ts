@@ -237,18 +237,32 @@ export interface BehavioralTag {
   description: string;
 }
 
-// --- Settings / Strategies ---
+// --- Settings / Strategies (unified with AgentStrategy) ---
+
+export type StrategyCategory = 'trend' | 'mean_reversion' | 'breakout' | 'volume_flow' | 'pattern' | 'regime' | 'custom';
+export type StrategyDirection = 'long_short' | 'long_only' | 'short_only';
 
 export interface StrategyDefinition {
-  id: string;
+  id: number;
   name: string;
+  display_name: string;
   description: string;
-  direction: TradeDirection | 'both';
+  category: StrategyCategory;
+  direction: StrategyDirection;
+  entry_long: string | null;
+  entry_short: string | null;
+  exit_long: string | null;
+  required_features: string[] | null;
+  tags: string[] | null;
   timeframes: string[];
-  entry_criteria: string;
-  exit_criteria: string;
   max_risk_pct: number;
   min_risk_reward: number;
+  atr_stop_mult: number | null;
+  atr_target_mult: number | null;
+  trailing_atr_mult: number | null;
+  time_stop_bars: number | null;
+  is_predefined: boolean;
+  source_strategy_id: number | null;
   is_active: boolean;
 }
 
@@ -479,8 +493,6 @@ export interface SaveFillContextRequest {
 
 export type AgentStatus = 'created' | 'active' | 'paused' | 'stopped' | 'error';
 export type AgentTimeframe = '1Min' | '5Min' | '15Min' | '1Hour' | '1Day';
-export type StrategyCategory = 'trend' | 'mean_reversion' | 'breakout' | 'volume_flow' | 'pattern' | 'regime' | 'custom';
-export type StrategyDirection = 'long_short' | 'long_only' | 'short_only';
 
 export interface AgentStrategy {
   id: number;
@@ -489,11 +501,18 @@ export interface AgentStrategy {
   description: string | null;
   category: string;
   direction: string;
+  entry_long: string | null;
+  entry_short: string | null;
+  exit_long: string | null;
+  required_features: string[] | null;
+  tags: string[] | null;
+  timeframes: string[] | null;
+  max_risk_pct: number | null;
+  min_risk_reward: number | null;
   atr_stop_mult: number | null;
   atr_target_mult: number | null;
   trailing_atr_mult: number | null;
   time_stop_bars: number | null;
-  required_features: string[] | null;
   is_predefined: boolean;
   source_strategy_id: number | null;
   is_active: boolean;

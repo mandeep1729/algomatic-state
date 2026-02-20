@@ -72,6 +72,11 @@ class TradingAgentRepository:
         trailing_atr_mult: Optional[float] = None,
         time_stop_bars: Optional[int] = None,
         required_features: Optional[list] = None,
+        timeframes: Optional[list] = None,
+        max_risk_pct: Optional[float] = None,
+        min_risk_reward: Optional[float] = None,
+        risk_profile: Optional[dict] = None,
+        tags: Optional[list] = None,
     ) -> AgentStrategy:
         """Create a custom strategy for an account."""
         strategy = AgentStrategy(
@@ -90,6 +95,11 @@ class TradingAgentRepository:
             trailing_atr_mult=trailing_atr_mult,
             time_stop_bars=time_stop_bars,
             required_features=required_features,
+            timeframes=timeframes,
+            max_risk_pct=max_risk_pct,
+            min_risk_reward=min_risk_reward,
+            risk_profile=risk_profile,
+            tags=tags,
             is_predefined=False,
         )
         self.session.add(strategy)
@@ -143,6 +153,11 @@ class TradingAgentRepository:
             trailing_atr_mult=source.trailing_atr_mult,
             time_stop_bars=source.time_stop_bars,
             required_features=source.required_features,
+            timeframes=source.timeframes,
+            max_risk_pct=source.max_risk_pct,
+            min_risk_reward=source.min_risk_reward,
+            risk_profile=source.risk_profile,
+            tags=source.tags,
             is_predefined=False,
             source_strategy_id=source.source_strategy_id,
             cloned_from_id=source.id,

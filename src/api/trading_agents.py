@@ -34,11 +34,18 @@ class StrategyResponse(BaseModel):
     description: Optional[str] = None
     category: str
     direction: str
+    entry_long: Optional[str] = None
+    entry_short: Optional[str] = None
+    exit_long: Optional[str] = None
+    required_features: Optional[list] = None
+    tags: Optional[list] = None
+    timeframes: Optional[list] = None
+    max_risk_pct: Optional[float] = None
+    min_risk_reward: Optional[float] = None
     atr_stop_mult: Optional[float] = None
     atr_target_mult: Optional[float] = None
     trailing_atr_mult: Optional[float] = None
     time_stop_bars: Optional[int] = None
-    required_features: Optional[list] = None
     is_predefined: bool
     source_strategy_id: Optional[int] = None
     is_active: bool
@@ -54,11 +61,15 @@ class StrategyCreate(BaseModel):
     entry_short: Optional[dict] = None
     exit_long: Optional[dict] = None
     exit_short: Optional[dict] = None
+    required_features: Optional[list] = None
+    tags: Optional[list] = None
+    timeframes: Optional[list] = None
+    max_risk_pct: Optional[float] = None
+    min_risk_reward: Optional[float] = None
     atr_stop_mult: Optional[float] = None
     atr_target_mult: Optional[float] = None
     trailing_atr_mult: Optional[float] = None
     time_stop_bars: Optional[int] = None
-    required_features: Optional[list] = None
 
 
 class StrategyUpdate(BaseModel):
@@ -69,11 +80,15 @@ class StrategyUpdate(BaseModel):
     entry_short: Optional[dict] = None
     exit_long: Optional[dict] = None
     exit_short: Optional[dict] = None
+    required_features: Optional[list] = None
+    tags: Optional[list] = None
+    timeframes: Optional[list] = None
+    max_risk_pct: Optional[float] = None
+    min_risk_reward: Optional[float] = None
     atr_stop_mult: Optional[float] = None
     atr_target_mult: Optional[float] = None
     trailing_atr_mult: Optional[float] = None
     time_stop_bars: Optional[int] = None
-    required_features: Optional[list] = None
 
 
 class CloneRequest(BaseModel):
@@ -163,6 +178,17 @@ class ActivityResponse(BaseModel):
 # -----------------------------------------------------------------------------
 
 
+def _parse_jsonb_text(value) -> str | None:
+    """Extract plain text from JSONB-stored entry/exit fields."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "\n".join(str(item) for item in value)
+    return str(value)
+
+
 def _strategy_to_response(s) -> StrategyResponse:
     return StrategyResponse(
         id=s.id,
@@ -171,11 +197,18 @@ def _strategy_to_response(s) -> StrategyResponse:
         description=s.description,
         category=s.category,
         direction=s.direction,
+        entry_long=_parse_jsonb_text(s.entry_long),
+        entry_short=_parse_jsonb_text(s.entry_short),
+        exit_long=_parse_jsonb_text(s.exit_long),
+        required_features=s.required_features,
+        tags=s.tags,
+        timeframes=s.timeframes,
+        max_risk_pct=s.max_risk_pct,
+        min_risk_reward=s.min_risk_reward,
         atr_stop_mult=s.atr_stop_mult,
         atr_target_mult=s.atr_target_mult,
         trailing_atr_mult=s.trailing_atr_mult,
         time_stop_bars=s.time_stop_bars,
-        required_features=s.required_features,
         is_predefined=s.is_predefined,
         source_strategy_id=s.source_strategy_id,
         is_active=s.is_active,

@@ -165,7 +165,7 @@ export { fetchAggregatePnlTimeseries } from './client';
 export type { DailyPnlPoint } from './client';
 
 // Re-export strategy probe function from client
-export { fetchStrategyProbe, fetchThemeStrategies, fetchTopStrategies } from './client';
+export { fetchStrategyProbe, fetchThemeStrategies, fetchAllProbeStrategies, fetchTopStrategies } from './client';
 export type { StrategyProbeResponse, WeekPerformance, ThemeRanking, OHLCVData, ThemeStrategiesResponse, ThemeStrategyDetail, TopStrategiesResponse, TopStrategyDetail } from './client';
 
 // Re-export trading agent functions from client

@@ -1,23 +1,9 @@
-import { useState } from 'react';
-import { Plus, Loader2 } from 'lucide-react';
-import { createAgentStrategy } from '../../api';
-import type { AgentStrategy } from '../../types';
-
-const CATEGORY_OPTIONS = [
-  { value: 'trend', label: 'Trend Following' },
-  { value: 'mean_reversion', label: 'Mean Reversion' },
-  { value: 'breakout', label: 'Breakout' },
-  { value: 'volume_flow', label: 'Volume Flow' },
-  { value: 'pattern', label: 'Pattern' },
-  { value: 'regime', label: 'Regime' },
-  { value: 'custom', label: 'Custom' },
-];
-
-const DIRECTION_OPTIONS = [
-  { value: 'long_short', label: 'Long & Short' },
-  { value: 'long_only', label: 'Long Only' },
-  { value: 'short_only', label: 'Short Only' },
-];
+import { useEffect, useState } from 'react';
+import { Plus } from 'lucide-react';
+import { createAgentStrategy, fetchAllProbeStrategies } from '../../api';
+import type { AgentStrategy, StrategyCategory, StrategyDirection } from '../../types';
+import type { ThemeStrategyDetail } from '../../api';
+import { StrategyForm, type CloneTemplate, type StrategyFormData } from '../strategies/StrategyForm';
 
 interface StrategyPickerProps {
   strategies: AgentStrategy[];
@@ -28,62 +14,88 @@ interface StrategyPickerProps {
 
 export function StrategyPicker({ strategies, selectedId, onSelect, onStrategyCreated }: StrategyPickerProps) {
   const [creatingNew, setCreatingNew] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [cloneTemplates, setCloneTemplates] = useState<CloneTemplate[]>([]);
 
-  // Inline create form state
-  const [formName, setFormName] = useState('');
-  const [formDisplayName, setFormDisplayName] = useState('');
-  const [formDescription, setFormDescription] = useState('');
-  const [formCategory, setFormCategory] = useState('custom');
-  const [formDirection, setFormDirection] = useState('long_short');
+  // Load clone templates when creating
+  useEffect(() => {
+    if (!creatingNew) return;
+    let cancelled = false;
 
-  function resetForm() {
-    setFormName('');
-    setFormDisplayName('');
-    setFormDescription('');
-    setFormCategory('custom');
-    setFormDirection('long_short');
-    setError(null);
-  }
+    async function loadTemplates() {
+      const templates: CloneTemplate[] = [];
 
-  function handleCancelCreate() {
+      // Agent strategies already passed in as props — use those
+      for (const s of strategies) {
+        templates.push({
+          source: s.is_predefined ? 'predefined' : 'user',
+          label: s.display_name || s.name,
+          sourceLabel: s.is_predefined ? 'Predefined Strategies' : 'My Strategies',
+          data: {
+            name: s.name,
+            display_name: s.display_name,
+            description: s.description || '',
+            category: s.category as StrategyCategory,
+            direction: s.direction as StrategyDirection,
+            entry_long: s.entry_long,
+            entry_short: s.entry_short,
+            exit_long: s.exit_long,
+            required_features: s.required_features,
+            tags: s.tags,
+            timeframes: s.timeframes || [],
+            max_risk_pct: s.max_risk_pct ?? 2.0,
+            min_risk_reward: s.min_risk_reward ?? 1.5,
+            atr_stop_mult: s.atr_stop_mult,
+            atr_target_mult: s.atr_target_mult,
+            trailing_atr_mult: s.trailing_atr_mult,
+            time_stop_bars: s.time_stop_bars,
+          },
+        });
+      }
+
+      try {
+        const probeResp = await fetchAllProbeStrategies();
+        for (const s of probeResp.strategies) {
+          templates.push({
+            source: 'probe',
+            label: s.display_name || s.name,
+            sourceLabel: 'Strategy Probe',
+            data: mapProbeToFormData(s),
+          });
+        }
+      } catch {
+        // Probe endpoint may not be available
+      }
+
+      if (!cancelled) setCloneTemplates(templates);
+    }
+
+    loadTemplates();
+    return () => { cancelled = true; };
+  }, [creatingNew, strategies]);
+
+  async function handleCreateStrategy(data: StrategyFormData) {
+    const created = await createAgentStrategy({
+      name: data.name,
+      display_name: data.display_name,
+      description: data.description || null,
+      category: data.category,
+      direction: data.direction,
+      entry_long: data.entry_long,
+      entry_short: data.entry_short,
+      exit_long: data.exit_long,
+      required_features: data.required_features,
+      tags: data.tags,
+      timeframes: data.timeframes,
+      max_risk_pct: data.max_risk_pct,
+      min_risk_reward: data.min_risk_reward,
+      atr_stop_mult: data.atr_stop_mult,
+      atr_target_mult: data.atr_target_mult,
+      trailing_atr_mult: data.trailing_atr_mult,
+      time_stop_bars: data.time_stop_bars,
+    } as Partial<AgentStrategy>);
+    onStrategyCreated(created);
+    onSelect(created.id);
     setCreatingNew(false);
-    resetForm();
-  }
-
-  async function handleCreateStrategy() {
-    const name = formName.trim();
-    const displayName = formDisplayName.trim();
-
-    if (!name) {
-      setError('Name is required');
-      return;
-    }
-    if (!displayName) {
-      setError('Display name is required');
-      return;
-    }
-
-    setError(null);
-    setSaving(true);
-    try {
-      const created = await createAgentStrategy({
-        name,
-        display_name: displayName,
-        description: formDescription.trim() || null,
-        category: formCategory,
-        direction: formDirection,
-      });
-      onStrategyCreated(created);
-      onSelect(created.id);
-      setCreatingNew(false);
-      resetForm();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create strategy');
-    } finally {
-      setSaving(false);
-    }
   }
 
   return (
@@ -119,102 +131,34 @@ export function StrategyPicker({ strategies, selectedId, onSelect, onStrategyCre
           Create New Strategy
         </button>
       ) : (
-        <div className="rounded-lg border border-[var(--accent-blue)]/30 bg-[var(--bg-secondary)] p-4 space-y-3">
-          <h4 className="text-sm font-medium text-[var(--text-primary)]">New Strategy</h4>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Name</label>
-              <input
-                type="text"
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                placeholder="e.g. momentum_pullback"
-                className="form-input h-8 w-full text-xs"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Display Name</label>
-              <input
-                type="text"
-                value={formDisplayName}
-                onChange={(e) => setFormDisplayName(e.target.value)}
-                placeholder="e.g. Momentum Pullback"
-                className="form-input h-8 w-full text-xs"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Description</label>
-            <textarea
-              value={formDescription}
-              onChange={(e) => setFormDescription(e.target.value)}
-              rows={2}
-              placeholder="Brief description of this strategy..."
-              className="form-input w-full resize-none text-xs"
-            />
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Category</label>
-              <select
-                value={formCategory}
-                onChange={(e) => setFormCategory(e.target.value)}
-                className="form-input h-8 w-full text-xs"
-              >
-                {CATEGORY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Direction</label>
-              <div className="flex gap-1.5">
-                {DIRECTION_OPTIONS.map((d) => (
-                  <button
-                    key={d.value}
-                    type="button"
-                    onClick={() => setFormDirection(d.value)}
-                    className={`flex-1 rounded-md border px-1.5 py-1.5 text-[11px] font-medium transition-colors ${
-                      formDirection === d.value
-                        ? 'border-[var(--accent-blue)] bg-[var(--accent-blue)]/10 text-[var(--accent-blue)]'
-                        : 'border-[var(--border-color)] text-[var(--text-secondary)]'
-                    }`}
-                  >
-                    {d.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {error && (
-            <p className="text-xs text-[var(--accent-red)]">{error}</p>
-          )}
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleCreateStrategy}
-              disabled={saving}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[var(--accent-blue)] px-4 text-xs font-medium text-white transition-colors hover:bg-[var(--accent-blue)]/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving && <Loader2 size={12} className="animate-spin" />}
-              Create
-            </button>
-            <button
-              type="button"
-              onClick={handleCancelCreate}
-              disabled={saving}
-              className="inline-flex h-8 items-center rounded-md border border-[var(--border-color)] px-4 text-xs text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        <StrategyForm
+          onSave={handleCreateStrategy}
+          onCancel={() => setCreatingNew(false)}
+          cloneTemplates={cloneTemplates}
+        />
       )}
     </div>
   );
+}
+
+// =============================================================================
+// Helper: Map probe strategy to form data
+// =============================================================================
+
+function mapProbeToFormData(s: ThemeStrategyDetail): Partial<import('../../types').StrategyDefinition> {
+  const details = s.details || {};
+  return {
+    name: s.name,
+    display_name: s.display_name,
+    description: s.philosophy,
+    direction: s.direction === 'long_short' ? 'long_short'
+      : s.direction === 'long_only' ? 'long_only'
+      : s.direction === 'short_only' ? 'short_only'
+      : 'long_short',
+    entry_long: typeof details.entry_long === 'string' ? details.entry_long : null,
+    entry_short: typeof details.entry_short === 'string' ? details.entry_short : null,
+    exit_long: typeof details.exit === 'string' ? details.exit : null,
+    required_features: Array.isArray(details.indicators) ? details.indicators as string[] : null,
+    tags: Array.isArray(details.tags) ? details.tags as string[] : null,
+  };
 }

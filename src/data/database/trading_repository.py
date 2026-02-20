@@ -23,7 +23,7 @@ from src.data.database.trading_buddy_models import (
     Waitlist as WaitlistModel,
 )
 from src.data.database.broker_models import TradeFill as TradeFillModel
-from src.data.database.strategy_models import Strategy as StrategyModel
+from src.trading_agents.models import AgentStrategy as StrategyModel
 from src.data.database.trade_lifecycle_models import (
     CampaignCheck as CampaignCheckModel,
     DecisionContext as DecisionContextModel,
@@ -375,15 +375,27 @@ class TradingBuddyRepository:
         self,
         account_id: int,
         name: str,
+        display_name: Optional[str] = None,
         description: Optional[str] = None,
+        category: str = "custom",
+        direction: str = "long_short",
         risk_profile: Optional[dict] = None,
+        **kwargs,
     ) -> StrategyModel:
-        """Create a new strategy for an account."""
+        """Create a new strategy for an account.
+
+        Uses the unified AgentStrategy model (agent_strategies table).
+        """
         strategy = StrategyModel(
             account_id=account_id,
             name=name,
+            display_name=display_name or name,
             description=description,
+            category=category,
+            direction=direction,
             risk_profile=risk_profile,
+            is_predefined=False,
+            **kwargs,
         )
         self.session.add(strategy)
         self.session.flush()
@@ -415,9 +427,10 @@ class TradingBuddyRepository:
         account_id: int,
         active_only: bool = True,
     ) -> list[StrategyModel]:
-        """Get all strategies for an account."""
+        """Get user's custom strategies (non-predefined) for an account."""
         query = self.session.query(StrategyModel).filter(
-            StrategyModel.account_id == account_id
+            StrategyModel.account_id == account_id,
+            StrategyModel.is_predefined == False,  # noqa: E712
         )
         if active_only:
             query = query.filter(StrategyModel.is_active == True)  # noqa: E712

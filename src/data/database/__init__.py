@@ -9,7 +9,7 @@ from src.data.database.trading_buddy_models import (
     UserRule,
 )
 from src.data.database.broker_models import TradeFill
-from src.data.database.strategy_models import Strategy
+from src.trading_agents.models import AgentStrategy as Strategy
 from src.data.database.trade_lifecycle_models import (
     DecisionContext,
     CampaignCheck,

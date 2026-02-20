@@ -53,10 +53,10 @@ class DecisionContext(Base):
 
     context_type: Mapped[str] = mapped_column(String(30), nullable=False)
 
-    # Strategy reference
+    # Strategy reference (points to unified agent_strategies table)
     strategy_id: Mapped[Optional[int]] = mapped_column(
         Integer,
-        ForeignKey("strategies.id", ondelete="SET NULL"),
+        ForeignKey("agent_strategies.id", ondelete="SET NULL"),
         nullable=True,
     )
 
@@ -87,7 +87,7 @@ class DecisionContext(Base):
     fill: Mapped["TradeFill"] = relationship(
         "TradeFill", back_populates="decision_context"
     )
-    strategy: Mapped[Optional["Strategy"]] = relationship("Strategy")
+    strategy: Mapped[Optional["AgentStrategy"]] = relationship("AgentStrategy")
     checks: Mapped[list["CampaignCheck"]] = relationship(
         "CampaignCheck",
         back_populates="decision_context",

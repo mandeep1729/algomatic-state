@@ -18,7 +18,7 @@ from src.data.database.broker_models import (
     SnapTradeUser,
     TradeFill,
 )
-from src.data.database.strategy_models import Strategy
+from src.trading_agents.models import AgentStrategy as Strategy
 from src.data.database.trade_lifecycle_models import CampaignCheck, DecisionContext
 
 logger = logging.getLogger(__name__)

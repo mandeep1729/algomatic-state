@@ -439,10 +439,10 @@ export async function fetchStrategies(): Promise<StrategyDefinition[]> {
 
 export async function createStrategy(strategy: Omit<StrategyDefinition, 'id'>): Promise<StrategyDefinition> {
   await delay();
-  return { ...strategy, id: `strategy-${Date.now()}` };
+  return { ...strategy, id: Date.now() };
 }
 
-export async function updateStrategy(id: string, updates: Partial<StrategyDefinition>): Promise<StrategyDefinition> {
+export async function updateStrategy(id: number, updates: Partial<StrategyDefinition>): Promise<StrategyDefinition> {
   await delay();
   const existing = MOCK_STRATEGIES.find(s => s.id === id);
   if (!existing) throw new Error(`Strategy ${id} not found`);

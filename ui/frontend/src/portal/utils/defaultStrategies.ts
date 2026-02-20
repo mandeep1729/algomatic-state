@@ -18,7 +18,7 @@ export const DEFAULT_STRATEGIES = [
  * User strategies take precedence if there's a name match.
  */
 export function mergeStrategies(
-  userStrategies: Array<{ id: string; name: string }>,
+  userStrategies: Array<{ id: string | number; name: string }>,
   includeDefaults: boolean = true,
 ): Array<{ id: string; name: string; isDefault?: boolean }> {
   const merged = new Map<string, { id: string; name: string; isDefault?: boolean }>();
@@ -26,7 +26,7 @@ export function mergeStrategies(
   // Add user strategies first (they take precedence)
   for (const strategy of userStrategies) {
     const key = strategy.name.toLowerCase();
-    merged.set(key, { id: strategy.id, name: strategy.name });
+    merged.set(key, { id: String(strategy.id), name: strategy.name });
   }
 
   // Add default strategies if they don't exist

@@ -47,7 +47,10 @@ export function ContextPanel({
   // Note: initial?.strategyTags contains names, but StrategyChips uses IDs
   const getStrategyIdsFromNames = (names: string[], availableStrategies: StrategyDefinition[]): string[] => {
     return names
-      .map((name) => availableStrategies.find((s) => s.name === name)?.id)
+      .map((name) => {
+        const found = availableStrategies.find((s) => s.name === name);
+        return found ? String(found.id) : undefined;
+      })
       .filter((id): id is string => id !== undefined);
   };
 
@@ -117,7 +120,7 @@ export function ContextPanel({
   // Convert strategy IDs back to names for the API
   const getStrategyNamesFromIds = (ids: string[]): string[] => {
     return ids
-      .map((id) => strategies.find((s) => s.id === id)?.name)
+      .map((id) => strategies.find((s) => String(s.id) === id)?.name)
       .filter((name): name is string => name !== undefined);
   };
 

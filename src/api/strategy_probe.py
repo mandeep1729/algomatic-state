@@ -98,6 +98,37 @@ class TopStrategiesResponse(BaseModel):
 # Endpoints
 # -----------------------------------------------------------------------------
 
+@router.get("/strategies", response_model=ThemeStrategiesResponse)
+async def get_all_probe_strategies(
+    user_id: int = Depends(get_current_user),
+    repo: ProbeRepository = Depends(get_probe_repo),
+):
+    """Get all probe strategies (all themes).
+
+    Returns all probe strategies for cloning into user strategies.
+    """
+    logger.info("All probe strategies request: user_id=%d", user_id)
+
+    all_strategies = repo.list_all_strategies()
+    logger.debug("Found %d total probe strategies", len(all_strategies))
+
+    result = [
+        ThemeStrategyDetail(
+            display_name=s.display_name,
+            name=s.name,
+            philosophy=s.philosophy,
+            direction=s.direction,
+            details=s.details or {},
+        )
+        for s in all_strategies
+    ]
+
+    return ThemeStrategiesResponse(
+        strategy_type="all",
+        strategies=result,
+    )
+
+
 @router.get("/strategies/{strategy_type}", response_model=ThemeStrategiesResponse)
 async def get_theme_strategies(
     strategy_type: str,
