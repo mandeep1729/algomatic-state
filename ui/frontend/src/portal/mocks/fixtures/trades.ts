@@ -304,5 +304,5 @@ export const MOCK_TRADES: TradeDetail[] = [
 ];
 
 export function getTradeSummaries(): TradeSummary[] {
-  return MOCK_TRADES.map(({ stop_loss: _a, profit_target: _b, risk_reward_ratio: _c, pnl: _d, pnl_pct: _e, evaluation: _f, notes: _g, tags: _h, ...summary }) => summary);
+  return MOCK_TRADES.map(({ stop_loss: _a, profit_target: _b, risk_reward_ratio: _c, pnl: _d, pnl_pct: _e, evaluation: _f, notes: _g, ...summary }) => summary);
 }

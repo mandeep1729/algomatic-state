@@ -313,6 +313,34 @@ export default function Transactions() {
       },
     },
     {
+      key: 'tags',
+      header: 'Tags',
+      render: (trade) => {
+        const tags = trade.tags ?? [];
+        if (tags.length === 0) {
+          return <span className="text-xs text-[var(--text-secondary)] opacity-50">--</span>;
+        }
+        return (
+          <div className="flex flex-wrap gap-1">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-block rounded-full bg-[var(--accent-blue)]/10 px-2 py-0.5 text-[10px] font-medium text-[var(--accent-blue)]"
+              >
+                {tag.replace(/_/g, ' ')}
+              </span>
+            ))}
+          </div>
+        );
+      },
+      filterFn: (trade, filterText) => {
+        const tags = trade.tags ?? [];
+        if (tags.length === 0) return false;
+        const searchLower = filterText.toLowerCase();
+        return tags.some((tag) => tag.toLowerCase().includes(searchLower) || tag.replace(/_/g, ' ').toLowerCase().includes(searchLower));
+      },
+    },
+    {
       key: 'context',
       header: 'Context',
       render: (trade) => {
