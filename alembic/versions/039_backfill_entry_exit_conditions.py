@@ -42,10 +42,10 @@ def upgrade() -> None:
         result = conn.execute(
             sa.text("""
                 UPDATE agent_strategies
-                SET entry_long = :entry_long::jsonb,
-                    entry_short = :entry_short::jsonb,
-                    exit_long = :exit_long::jsonb,
-                    exit_short = :exit_short::jsonb,
+                SET entry_long = CAST(:entry_long AS jsonb),
+                    entry_short = CAST(:entry_short AS jsonb),
+                    exit_long = CAST(:exit_long AS jsonb),
+                    exit_short = CAST(:exit_short AS jsonb),
                     updated_at = NOW()
                 WHERE is_predefined = TRUE
                   AND source_strategy_id = :sid
