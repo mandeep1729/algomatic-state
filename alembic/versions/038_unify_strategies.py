@@ -9,6 +9,8 @@ Revises: 037
 Create Date: 2026-02-19
 """
 
+import json
+
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import JSONB
@@ -46,7 +48,9 @@ def upgrade() -> None:
             direction = direction_map.get(old_dir, "long_short")
 
             # Map implied_strategy_family to category, default to 'custom'
-            category = row_dict.get("implied_strategy_family") or "custom"
+            valid_categories = {"trend", "mean_reversion", "breakout", "volume_flow", "pattern", "regime", "custom"}
+            raw_category = row_dict.get("implied_strategy_family") or "custom"
+            category = raw_category if raw_category in valid_categories else "custom"
 
             # Map entry/exit criteria to JSONB (store as JSON string)
             entry_criteria = row_dict.get("entry_criteria")
@@ -60,8 +64,8 @@ def upgrade() -> None:
                          risk_profile, is_predefined, is_active, created_at, updated_at)
                     VALUES
                         (:account_id, :name, :display_name, :description, :category, :direction,
-                         :entry_long, :exit_long, :timeframes, :max_risk_pct, :min_risk_reward,
-                         :risk_profile, FALSE, :is_active, :created_at, :updated_at)
+                         :entry_long, :exit_long, CAST(:timeframes AS JSONB), :max_risk_pct, :min_risk_reward,
+                         CAST(:risk_profile AS JSONB), FALSE, :is_active, :created_at, :updated_at)
                     RETURNING id
                 """),
                 {
@@ -73,10 +77,10 @@ def upgrade() -> None:
                     "direction": direction,
                     "entry_long": f'"{entry_criteria}"' if entry_criteria else None,
                     "exit_long": f'"{exit_criteria}"' if exit_criteria else None,
-                    "timeframes": sa.type_coerce(row_dict.get("timeframes"), JSONB),
+                    "timeframes": json.dumps(row_dict.get("timeframes")) if row_dict.get("timeframes") is not None else None,
                     "max_risk_pct": row_dict.get("max_risk_pct"),
                     "min_risk_reward": row_dict.get("min_risk_reward"),
-                    "risk_profile": sa.type_coerce(row_dict.get("risk_profile"), JSONB),
+                    "risk_profile": json.dumps(row_dict.get("risk_profile")) if row_dict.get("risk_profile") is not None else None,
                     "is_active": row_dict.get("is_active", True),
                     "created_at": row_dict.get("created_at"),
                     "updated_at": row_dict.get("updated_at"),
@@ -96,14 +100,14 @@ def upgrade() -> None:
 
         # Drop FK constraint on decision_contexts.strategy_id → strategies.id
         op.drop_constraint(
-            "decision_contexts_strategy_id_fkey",
+            "fk_decision_contexts_strategy_id",
             "decision_contexts",
             type_="foreignkey",
         )
 
         # Add FK constraint on decision_contexts.strategy_id → agent_strategies.id
         op.create_foreign_key(
-            "decision_contexts_strategy_id_fkey",
+            "fk_decision_contexts_strategy_id",
             "decision_contexts",
             "agent_strategies",
             ["strategy_id"],
@@ -139,12 +143,12 @@ def downgrade() -> None:
 
     # Revert FK on decision_contexts
     op.drop_constraint(
-        "decision_contexts_strategy_id_fkey",
+        "fk_decision_contexts_strategy_id",
         "decision_contexts",
         type_="foreignkey",
     )
     op.create_foreign_key(
-        "decision_contexts_strategy_id_fkey",
+        "fk_decision_contexts_strategy_id",
         "decision_contexts",
         "strategies",
         ["strategy_id"],
