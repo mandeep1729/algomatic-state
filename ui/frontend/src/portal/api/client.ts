@@ -95,7 +95,16 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   log.debug(`${method} ${url} -> ${res.status} OK`);
-  return res.json();
+
+  // Handle 204 No Content or empty body (e.g., DELETE endpoints)
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  const text = await res.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
 }
 
 function get<T>(path: string): Promise<T> {

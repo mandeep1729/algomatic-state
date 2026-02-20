@@ -117,10 +117,10 @@ export default function AgentDetail() {
     setActionLoading(true);
     try {
       await deleteAgent(agent.id);
+      log.info(`Agent ${agent.id} deleted, navigating to agents list`);
       navigate('/app/agents');
     } catch (err) {
       log.error('Failed to delete agent', err);
-    } finally {
       setActionLoading(false);
       setShowDeleteConfirm(false);
     }
