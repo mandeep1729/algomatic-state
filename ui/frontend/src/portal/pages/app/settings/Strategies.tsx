@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import api, { fetchAgentStrategies, fetchAllProbeStrategies } from '../../../api';
 import type { StrategyDefinition, StrategyCategory, StrategyDirection, AgentStrategy } from '../../../types';
-import type { ThemeStrategyDetail } from '../../../api';
 import { StrategyForm, type CloneTemplate, type StrategyFormData } from '../../../components/strategies/StrategyForm';
 import { parseConditions, conditionsToText } from '../../../components/strategies/conditionUtils';
+import { mapProbeToFormData } from '../../../components/strategies/mapProbeToFormData';
 
 const CATEGORY_LABELS: Record<string, string> = {
   trend: 'Trend',
@@ -178,29 +178,6 @@ export default function SettingsStrategies() {
       </div>
     </div>
   );
-}
-
-// =============================================================================
-// Helper: Map probe strategy to form data
-// =============================================================================
-
-function mapProbeToFormData(s: ThemeStrategyDetail): Partial<StrategyDefinition> {
-  const details = s.details || {};
-  return {
-    name: s.name,
-    display_name: s.display_name,
-    description: s.philosophy,
-    category: (s.direction === 'long' || s.direction === 'short' ? 'custom' : 'custom') as StrategyCategory,
-    direction: s.direction === 'long_short' ? 'long_short'
-      : s.direction === 'long_only' ? 'long_only'
-      : s.direction === 'short_only' ? 'short_only'
-      : 'long_short',
-    entry_long: typeof details.entry_long === 'string' ? details.entry_long : null,
-    entry_short: typeof details.entry_short === 'string' ? details.entry_short : null,
-    exit_long: typeof details.exit === 'string' ? details.exit : null,
-    required_features: Array.isArray(details.indicators) ? details.indicators : null,
-    tags: Array.isArray(details.tags) ? details.tags : null,
-  };
 }
 
 // =============================================================================
