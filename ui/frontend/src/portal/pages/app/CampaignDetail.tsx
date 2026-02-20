@@ -15,6 +15,16 @@ import { computeCampaignRunningPnl } from '../../utils/campaignPnl';
 
 type TabKey = 'campaign' | string;
 
+/** Derive the correct contextType for a leg based on its legType. */
+function deriveLegContextType(leg: { legType: string }): DecisionContext['contextType'] {
+  switch (leg.legType) {
+    case 'close': return 'exit';
+    case 'reduce': return 'reduce';
+    case 'add': return 'add';
+    default: return 'entry';
+  }
+}
+
 export default function CampaignDetail() {
   const { campaignId } = useParams<{ campaignId: string }>();
   const [detail, setDetail] = useState<CampaignDetailType | null>(null);
@@ -248,11 +258,13 @@ export default function CampaignDetail() {
     if (ctx.scope === 'campaign' && detail) {
       setContextsByLeg((prev) => {
         const next: Record<string, DecisionContext | undefined> = { ...prev, campaign: ctx };
-        // Also update each leg's local context with the campaign-level values
+        // Also update each leg's local context with the campaign-level values,
+        // preserving each leg's original contextType (entry/exit/add/reduce).
         for (const leg of detail.legs) {
           const existing = prev[leg.legId];
           next[leg.legId] = {
             ...(existing ?? ctx),
+            contextType: existing?.contextType ?? deriveLegContextType(leg),
             strategyTags: ctx.strategyTags,
             hypothesis: ctx.hypothesis,
             exitIntent: ctx.exitIntent,
@@ -264,15 +276,19 @@ export default function CampaignDetail() {
       });
 
       try {
-        // Save context to each leg individually, in parallel
+        // Save context to each leg individually, in parallel.
+        // Preserve each leg's original contextType instead of overwriting with campaign's.
+        const currentContexts = contextsByLeg;
         const results = await Promise.allSettled(
-          detail.legs.map((leg) =>
-            api.saveDecisionContext({
+          detail.legs.map((leg) => {
+            const existingCtx = currentContexts[leg.legId];
+            return api.saveDecisionContext({
               ...ctx,
+              contextType: existingCtx?.contextType ?? deriveLegContextType(leg),
               legId: leg.legId,
               scope: 'leg',
-            }),
-          ),
+            });
+          }),
         );
 
         // Check if any saves failed
@@ -304,7 +320,7 @@ export default function CampaignDetail() {
       console.error('[CampaignDetail] Failed to save context:', err);
       throw err; // Re-throw so ContextPanel can handle it
     }
-  }, [detail]);
+  }, [detail, contextsByLeg]);
 
   if (loading) {
     return (

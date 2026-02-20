@@ -313,7 +313,7 @@ func convertBars(apiBars []Bar) []db.OHLCVBar {
 			High:      b.High,
 			Low:       b.Low,
 			Close:     b.Close,
-			Volume:    b.Volume,
+			Volume:    int64(b.Volume),
 		})
 	}
 	return bars
