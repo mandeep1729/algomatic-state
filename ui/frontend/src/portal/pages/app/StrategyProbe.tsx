@@ -813,8 +813,9 @@ function ThemeBand({
         <span className={`text-[11px] font-bold leading-tight ${isPositive ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
           {formatPct(theme.weighted_avg_pnl)}
         </span>
-        <span className="text-[9px] leading-tight text-[var(--text-secondary)]">
-          W:{theme.num_profitable} L:{theme.num_unprofitable}
+        <span className="text-[9px] leading-tight">
+          <span className="text-[#26a69a]">W:{theme.num_profitable}</span>{' '}
+          <span className="text-[#ef5350]">L:{theme.num_unprofitable}</span>
         </span>
       </div>
     );
@@ -827,8 +828,9 @@ function ThemeBand({
         <span className={`text-[11px] font-bold leading-tight ${isPositive ? 'text-[#26a69a]' : 'text-[#ef5350]'}`}>
           {formatPct(theme.weighted_avg_pnl)}
         </span>
-        <span className="text-[9px] leading-tight text-[var(--text-secondary)]">
-          W:{theme.num_profitable} L:{theme.num_unprofitable}
+        <span className="text-[9px] leading-tight">
+          <span className="text-[#26a69a]">W:{theme.num_profitable}</span>{' '}
+          <span className="text-[#ef5350]">L:{theme.num_unprofitable}</span>
         </span>
       </div>
     );
