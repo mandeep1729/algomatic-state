@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Search, X } from 'lucide-react';
 import type { StrategyDefinition, StrategyCategory, StrategyDirection } from '../../types';
+import { ConditionBuilder } from './ConditionBuilder';
+import { extractFeatures } from './conditionUtils';
+import { parseConditions } from './conditionUtils';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -48,6 +51,7 @@ export interface StrategyFormData {
   entry_long: string | null;
   entry_short: string | null;
   exit_long: string | null;
+  exit_short: string | null;
   required_features: string[] | null;
   tags: string[] | null;
   timeframes: string[];
@@ -69,6 +73,7 @@ const EMPTY_FORM: StrategyFormData = {
   entry_long: null,
   entry_short: null,
   exit_long: null,
+  exit_short: null,
   required_features: null,
   tags: null,
   timeframes: [],
@@ -368,6 +373,7 @@ export function StrategyForm({
       entry_long: d.entry_long ?? prev.entry_long,
       entry_short: d.entry_short ?? prev.entry_short,
       exit_long: d.exit_long ?? prev.exit_long,
+      exit_short: d.exit_short ?? prev.exit_short,
       required_features: d.required_features ?? prev.required_features,
       tags: d.tags ?? prev.tags,
       timeframes: d.timeframes ?? prev.timeframes,
@@ -382,6 +388,20 @@ export function StrategyForm({
 
   function handleCloneClear() {
     setForm({ ...EMPTY_FORM });
+  }
+
+  /** Auto-derive required_features from all four condition slots. */
+  function handleFeaturesChange() {
+    setForm((prev) => {
+      const all: string[] = [];
+      for (const field of [prev.entry_long, prev.entry_short, prev.exit_long, prev.exit_short]) {
+        if (!field) continue;
+        const nodes = parseConditions(field);
+        if (nodes) all.push(...extractFeatures(nodes));
+      }
+      const unique = Array.from(new Set(all));
+      return { ...prev, required_features: unique.length > 0 ? unique : null };
+    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -485,36 +505,36 @@ export function StrategyForm({
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Entry Long</label>
-          <textarea
-            value={form.entry_long || ''}
-            onChange={(e) => updateField('entry_long', e.target.value || null)}
-            rows={2}
-            className="form-input w-full resize-none text-xs"
-            placeholder="Conditions for entering a long position..."
-          />
-        </div>
-        <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Entry Short</label>
-          <textarea
-            value={form.entry_short || ''}
-            onChange={(e) => updateField('entry_short', e.target.value || null)}
-            rows={2}
-            className="form-input w-full resize-none text-xs"
-            placeholder="Conditions for entering a short position..."
-          />
-        </div>
+        <ConditionBuilder
+          label="Entry Long"
+          value={form.entry_long}
+          onChange={(v) => updateField('entry_long', v)}
+          joiner="AND"
+          onFeaturesChange={handleFeaturesChange}
+        />
+        <ConditionBuilder
+          label="Entry Short"
+          value={form.entry_short}
+          onChange={(v) => updateField('entry_short', v)}
+          joiner="AND"
+          onFeaturesChange={handleFeaturesChange}
+        />
       </div>
 
-      <div>
-        <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Exit Criteria</label>
-        <textarea
-          value={form.exit_long || ''}
-          onChange={(e) => updateField('exit_long', e.target.value || null)}
-          rows={2}
-          className="form-input w-full resize-none text-xs"
-          placeholder="When and how to exit positions..."
+      <div className="grid gap-4 sm:grid-cols-2">
+        <ConditionBuilder
+          label="Exit Long"
+          value={form.exit_long}
+          onChange={(v) => updateField('exit_long', v)}
+          joiner="OR"
+          onFeaturesChange={handleFeaturesChange}
+        />
+        <ConditionBuilder
+          label="Exit Short"
+          value={form.exit_short}
+          onChange={(v) => updateField('exit_short', v)}
+          joiner="OR"
+          onFeaturesChange={handleFeaturesChange}
         />
       </div>
 

@@ -3,6 +3,7 @@ import api, { fetchAgentStrategies, fetchAllProbeStrategies } from '../../../api
 import type { StrategyDefinition, StrategyCategory, StrategyDirection, AgentStrategy } from '../../../types';
 import type { ThemeStrategyDetail } from '../../../api';
 import { StrategyForm, type CloneTemplate, type StrategyFormData } from '../../../components/strategies/StrategyForm';
+import { parseConditions, conditionsToText } from '../../../components/strategies/conditionUtils';
 
 const CATEGORY_LABELS: Record<string, string> = {
   trend: 'Trend',
@@ -55,6 +56,7 @@ export default function SettingsStrategies() {
               entry_long: s.entry_long,
               entry_short: s.entry_short,
               exit_long: s.exit_long,
+              exit_short: s.exit_short,
               required_features: s.required_features,
               tags: s.tags,
               timeframes: s.timeframes || [],
@@ -202,6 +204,17 @@ function mapProbeToFormData(s: ThemeStrategyDetail): Partial<StrategyDefinition>
 }
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+/** Render condition text — structured DSL gets human-readable summary, plain text passes through. */
+function renderConditionText(value: string, joiner: 'AND' | 'OR'): string {
+  const nodes = parseConditions(value);
+  if (nodes) return conditionsToText(nodes, joiner);
+  return value;
+}
+
+// =============================================================================
 // Strategy Card (read view)
 // =============================================================================
 
@@ -266,13 +279,13 @@ function StrategyCard({
           {strategy.entry_long && (
             <div>
               <span className="text-[var(--text-secondary)]">Entry: </span>
-              <span>{strategy.entry_long}</span>
+              <span>{renderConditionText(strategy.entry_long, 'AND')}</span>
             </div>
           )}
           {strategy.exit_long && (
             <div>
               <span className="text-[var(--text-secondary)]">Exit: </span>
-              <span>{strategy.exit_long}</span>
+              <span>{renderConditionText(strategy.exit_long, 'OR')}</span>
             </div>
           )}
         </div>

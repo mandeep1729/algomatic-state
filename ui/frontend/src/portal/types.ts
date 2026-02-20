@@ -252,6 +252,7 @@ export interface StrategyDefinition {
   entry_long: string | null;
   entry_short: string | null;
   exit_long: string | null;
+  exit_short: string | null;
   required_features: string[] | null;
   tags: string[] | null;
   timeframes: string[];
@@ -539,6 +540,7 @@ export interface AgentStrategy {
   entry_long: string | null;
   entry_short: string | null;
   exit_long: string | null;
+  exit_short: string | null;
   required_features: string[] | null;
   tags: string[] | null;
   timeframes: string[] | null;

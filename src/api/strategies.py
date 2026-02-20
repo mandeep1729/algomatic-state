@@ -38,6 +38,7 @@ class StrategyResponse(BaseModel):
     entry_long: str | None
     entry_short: str | None
     exit_long: str | None
+    exit_short: str | None
     required_features: list[str] | None
     tags: list[str] | None
     timeframes: list[str]
@@ -62,6 +63,7 @@ class StrategyCreate(BaseModel):
     entry_long: str | None = None
     entry_short: str | None = None
     exit_long: str | None = None
+    exit_short: str | None = None
     required_features: list[str] | None = None
     tags: list[str] | None = None
     timeframes: list[str] = []
@@ -84,6 +86,7 @@ class StrategyUpdate(BaseModel):
     entry_long: Optional[str] = None
     entry_short: Optional[str] = None
     exit_long: Optional[str] = None
+    exit_short: Optional[str] = None
     required_features: Optional[list[str]] = None
     tags: Optional[list[str]] = None
     timeframes: Optional[list[str]] = None
@@ -127,6 +130,7 @@ def _strategy_to_response(strategy) -> StrategyResponse:
         entry_long=_parse_jsonb_text(strategy.entry_long),
         entry_short=_parse_jsonb_text(strategy.entry_short),
         exit_long=_parse_jsonb_text(strategy.exit_long),
+        exit_short=_parse_jsonb_text(strategy.exit_short),
         required_features=strategy.required_features,
         tags=strategy.tags,
         timeframes=strategy.timeframes or [],
@@ -185,6 +189,7 @@ async def create_strategy(
         entry_long=data.entry_long,
         entry_short=data.entry_short,
         exit_long=data.exit_long,
+        exit_short=data.exit_short,
         required_features=data.required_features,
         tags=data.tags,
         timeframes=data.timeframes,

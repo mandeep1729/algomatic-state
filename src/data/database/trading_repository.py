@@ -436,20 +436,41 @@ class TradingBuddyRepository:
             query = query.filter(StrategyModel.is_active == True)  # noqa: E712
         return query.order_by(StrategyModel.name.asc()).all()
 
+    # Fields that trigger a version bump when changed (used by Go agent-service
+    # to detect when cached compiled conditions need recompilation).
+    _VERSION_BUMP_FIELDS = frozenset({
+        "entry_long", "entry_short", "exit_long", "exit_short",
+        "atr_stop_mult", "atr_target_mult", "trailing_atr_mult", "time_stop_bars",
+    })
+
     def update_strategy(
         self,
         strategy_id: int,
         **kwargs,
     ) -> Optional[StrategyModel]:
-        """Update strategy fields."""
+        """Update strategy fields.
+
+        Automatically increments `version` when any condition or exit
+        parameter field changes, enabling Go agent-service cache invalidation.
+        """
         strategy = self.get_strategy(strategy_id)
         if strategy is None:
             logger.warning("Strategy id=%s not found for update", strategy_id)
             return None
 
+        needs_version_bump = bool(self._VERSION_BUMP_FIELDS & set(kwargs.keys()))
+
         for key, value in kwargs.items():
             if hasattr(strategy, key):
                 setattr(strategy, key, value)
+
+        if needs_version_bump:
+            strategy.version = (strategy.version or 1) + 1
+            logger.info(
+                "Strategy id=%s version bumped to %d (changed: %s)",
+                strategy_id, strategy.version,
+                list(self._VERSION_BUMP_FIELDS & set(kwargs.keys())),
+            )
 
         self.session.flush()
         logger.info("Updated strategy id=%s fields=%s", strategy_id, list(kwargs.keys()))
