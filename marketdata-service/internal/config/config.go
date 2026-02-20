@@ -60,6 +60,7 @@ type ServiceConfig struct {
 	IntervalMinutes int    `json:"interval_minutes"`
 	LogLevel        string `json:"log_level"`
 	LogFile         string `json:"log_file"`
+	BackendURL      string `json:"backend_url"`
 }
 
 // Load reads config from a JSON file, then overrides with environment variables.
@@ -107,7 +108,7 @@ func defaults() *Config {
 		},
 		Service: ServiceConfig{
 			Mode:            "both",
-			IntervalMinutes: 5,
+			IntervalMinutes: 60,
 			LogLevel:        "info",
 		},
 	}
@@ -164,6 +165,9 @@ func overrideFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("SERVICE_LOG_FILE"); v != "" {
 		cfg.Service.LogFile = v
+	}
+	if v := os.Getenv("BACKEND_URL"); v != "" {
+		cfg.Service.BackendURL = v
 	}
 }
 

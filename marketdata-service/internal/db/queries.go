@@ -34,11 +34,12 @@ type SyncLogEntry struct {
 
 // GetOrCreateTicker returns the ticker ID for the given symbol, creating it if needed.
 func (c *Client) GetOrCreateTicker(ctx context.Context, symbol string) (int, error) {
-	// Try insert first (does nothing on conflict).
+	// Insert or re-activate on conflict (ensures previously deactivated tickers
+	// become active again when explicitly requested).
 	_, err := c.pool.Exec(ctx,
 		`INSERT INTO tickers (symbol, is_active, created_at, updated_at)
 		 VALUES ($1, true, NOW(), NOW())
-		 ON CONFLICT (symbol) DO NOTHING`,
+		 ON CONFLICT (symbol) DO UPDATE SET is_active = true, updated_at = NOW()`,
 		symbol,
 	)
 	if err != nil {
@@ -168,6 +169,19 @@ func (c *Client) BulkInsertBars(ctx context.Context, tickerID int, timeframe, so
 	}
 
 	return totalInserted, nil
+}
+
+// DeactivateTicker marks a ticker as inactive.
+func (c *Client) DeactivateTicker(ctx context.Context, symbol string) error {
+	_, err := c.pool.Exec(ctx,
+		`UPDATE tickers SET is_active = false, updated_at = NOW() WHERE symbol = $1`,
+		symbol,
+	)
+	if err != nil {
+		return fmt.Errorf("deactivating ticker %q: %w", symbol, err)
+	}
+	c.logger.Info("Deactivated ticker", "symbol", symbol)
+	return nil
 }
 
 // UpdateSyncLog upserts a data_sync_log entry for the given ticker/timeframe.

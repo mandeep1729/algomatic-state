@@ -11,6 +11,7 @@ Endpoints:
 - PUT  /api/internal/accounts/{account_id}/baseline-stats -- save baseline stats
 - PUT  /api/internal/fills/{fill_id}/inferred-context     -- merge inferred context
 - GET  /api/internal/accounts                             -- list active accounts
+- GET  /api/internal/position-symbols                     -- symbols with open positions
 """
 
 import logging
@@ -19,9 +20,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import case as sa_case, func as sa_func, literal
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
+from src.data.database.broker_models import TradeFill
 from src.data.database.dependencies import get_broker_repo, get_db
 from src.data.database.broker_repository import BrokerRepository
 from src.data.database.trading_buddy_models import UserProfile
@@ -76,6 +79,10 @@ class InferredContextRequest(BaseModel):
 
 class ActiveAccountsResponse(BaseModel):
     account_ids: list[int]
+
+
+class PositionSymbolsResponse(BaseModel):
+    symbols: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -257,4 +264,38 @@ async def get_active_accounts(
 
     except Exception:
         logger.exception("Failed to fetch active accounts")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/position-symbols", response_model=PositionSymbolsResponse)
+async def get_position_symbols(
+    db: Session = Depends(get_db),
+):
+    """Return symbols with non-zero net positions across all accounts.
+
+    Computes net quantity per symbol from trade_fills
+    (buy = +qty, sell = -qty) and returns symbols where net != 0.
+    Used by marketdata-service to scope periodic scans.
+    """
+    try:
+        net_qty = sa_func.sum(
+            sa_case(
+                (TradeFill.side == "buy", TradeFill.quantity),
+                else_=-TradeFill.quantity,
+            )
+        ).label("net_qty")
+
+        rows = (
+            db.query(TradeFill.symbol)
+            .group_by(TradeFill.symbol)
+            .having(net_qty != literal(0))
+            .all()
+        )
+
+        symbols = sorted(row[0] for row in rows)
+        logger.info("Position symbols: %d symbols with open positions", len(symbols))
+        return PositionSymbolsResponse(symbols=symbols)
+
+    except Exception:
+        logger.exception("Failed to compute position symbols")
         raise HTTPException(status_code=500, detail="Internal server error")

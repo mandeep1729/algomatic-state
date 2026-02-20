@@ -202,9 +202,10 @@ func (c *Client) doWithRetry(ctx context.Context, reqURL string) (*barsResponse,
 			continue
 
 		default:
-			return nil, fmt.Errorf("Alpaca API error: status %d, body: %s",
-				resp.StatusCode, string(body),
-			)
+			return nil, &AlpacaAPIError{
+				StatusCode: resp.StatusCode,
+				Body:       string(body),
+			}
 		}
 	}
 
