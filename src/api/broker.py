@@ -7,8 +7,9 @@ Provides endpoints for:
 """
 
 import logging
+import time
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel
@@ -359,6 +360,41 @@ class ConnectionStatusResponse(BaseModel):
     brokerages: List[str] = []
 
 
+# --- Brokerage catalog & connection detail models ---
+
+class BrokerageInfo(BaseModel):
+    id: str
+    name: str
+    display_name: str
+    slug: str
+    description: Optional[str] = None
+    logo_url: Optional[str] = None
+    square_logo_url: Optional[str] = None
+    brokerage_type: Optional[str] = None
+    enabled: bool = True
+    allows_trading: bool = False
+    maintenance_mode: bool = False
+    url: Optional[str] = None
+
+
+class BrokerageListResponse(BaseModel):
+    brokerages: List[BrokerageInfo]
+
+
+class ConnectionDetail(BaseModel):
+    authorization_id: str
+    brokerage_name: str
+    brokerage_slug: str
+    brokerage_logo_url: Optional[str] = None
+    created_date: Optional[str] = None
+    disabled: bool = False
+
+
+class ConnectionStatusDetailResponse(BaseModel):
+    connected: bool
+    connections: List[ConnectionDetail]
+
+
 @router.get("/status", response_model=ConnectionStatusResponse)
 async def get_connection_status(
     user_id: int = Depends(get_current_user),
@@ -401,6 +437,162 @@ async def broker_callback(
         "status": status,
         "message": "Connection process completed. Check /api/broker/status for connection state."
     }
+
+
+# -----------------------------------------------------------------------------
+# Brokerage Catalog & Connection Detail Endpoints
+# -----------------------------------------------------------------------------
+
+# Simple in-memory cache for brokerage list (1 hour TTL)
+_brokerage_cache: Tuple[float, List[BrokerageInfo]] = (0.0, [])
+_BROKERAGE_CACHE_TTL = 3600  # 1 hour
+
+
+@router.get("/brokerages", response_model=BrokerageListResponse)
+async def list_brokerages(
+    user_id: int = Depends(get_current_user),
+    client: SnapTradeClient = Depends(get_snaptrade_client),
+):
+    """List all SnapTrade-supported brokerages (enabled only, cached 1h)."""
+    global _brokerage_cache
+    logger.debug("list_brokerages: user_id=%d", user_id)
+
+    if not client.client:
+        raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
+
+    cached_at, cached_list = _brokerage_cache
+    if cached_list and (time.time() - cached_at) < _BROKERAGE_CACHE_TTL:
+        logger.debug("Returning cached brokerage list (%d items)", len(cached_list))
+        return BrokerageListResponse(brokerages=cached_list)
+
+    raw = client.list_brokerages()
+    if raw is None:
+        raise HTTPException(status_code=502, detail="Failed to fetch brokerages from SnapTrade")
+
+    brokerages = []
+    for b in raw:
+        # Only include enabled brokerages
+        if not b.get("enabled", False):
+            continue
+        brokerages.append(BrokerageInfo(
+            id=str(b.get("id", "")),
+            name=b.get("name", ""),
+            display_name=b.get("display_name") or b.get("name", ""),
+            slug=b.get("slug", ""),
+            description=b.get("description"),
+            logo_url=b.get("aws_s3_logo_url"),
+            square_logo_url=b.get("aws_s3_square_logo_url"),
+            brokerage_type=b.get("brokerage_type", {}).get("name") if isinstance(b.get("brokerage_type"), dict) else str(b.get("brokerage_type", "")),
+            enabled=b.get("enabled", True),
+            allows_trading=b.get("allows_trading", False),
+            maintenance_mode=b.get("maintenance_mode", False),
+            url=b.get("url"),
+        ))
+
+    brokerages.sort(key=lambda x: x.display_name.lower())
+    _brokerage_cache = (time.time(), brokerages)
+    logger.info("Fetched and cached %d brokerages from SnapTrade", len(brokerages))
+
+    return BrokerageListResponse(brokerages=brokerages)
+
+
+@router.get("/connections", response_model=ConnectionStatusDetailResponse)
+async def list_connections(
+    user_id: int = Depends(get_current_user),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
+    client: SnapTradeClient = Depends(get_snaptrade_client),
+):
+    """List user's connected brokerages with per-connection details."""
+    logger.debug("list_connections: user_id=%d", user_id)
+
+    snap_user = broker_repo.get_snaptrade_user(user_id)
+    if not snap_user:
+        return ConnectionStatusDetailResponse(connected=False, connections=[])
+
+    if not client.client:
+        # Fall back to local DB connections
+        local_conns = broker_repo.get_connections_for_user(snap_user.id)
+        connections = [
+            ConnectionDetail(
+                authorization_id=c.authorization_id,
+                brokerage_name=c.brokerage_name,
+                brokerage_slug=c.brokerage_slug,
+                created_date=c.created_at.isoformat() if c.created_at else None,
+                disabled=not c.is_active,
+            )
+            for c in local_conns if c.is_active
+        ]
+        return ConnectionStatusDetailResponse(
+            connected=len(connections) > 0,
+            connections=connections,
+        )
+
+    raw = client.list_connections(
+        snap_user.snaptrade_user_id,
+        snap_user.snaptrade_user_secret,
+    )
+
+    if raw is None:
+        logger.warning("Failed to fetch connections from SnapTrade for user_id=%d", user_id)
+        return ConnectionStatusDetailResponse(connected=False, connections=[])
+
+    connections = []
+    for auth in raw:
+        brokerage = auth.get("brokerage") or {}
+        connections.append(ConnectionDetail(
+            authorization_id=str(auth.get("id", "")),
+            brokerage_name=brokerage.get("name") or auth.get("brokerage_name", "Unknown"),
+            brokerage_slug=brokerage.get("slug") or auth.get("brokerage_slug", ""),
+            brokerage_logo_url=brokerage.get("aws_s3_square_logo_url") or brokerage.get("aws_s3_logo_url"),
+            created_date=auth.get("created_date"),
+            disabled=auth.get("disabled", False),
+        ))
+
+    return ConnectionStatusDetailResponse(
+        connected=len(connections) > 0,
+        connections=connections,
+    )
+
+
+@router.delete("/connections/{authorization_id}")
+async def remove_connection(
+    authorization_id: str,
+    user_id: int = Depends(get_current_user),
+    broker_repo: BrokerRepository = Depends(get_broker_repo),
+    client: SnapTradeClient = Depends(get_snaptrade_client),
+):
+    """Disconnect a broker by removing the SnapTrade authorization."""
+    logger.debug("remove_connection: user_id=%d, auth_id=%s", user_id, authorization_id)
+
+    if not client.client:
+        raise HTTPException(status_code=503, detail="SnapTrade service unavailable")
+
+    snap_user = broker_repo.get_snaptrade_user(user_id)
+    if not snap_user:
+        raise HTTPException(status_code=404, detail="User not registered with SnapTrade")
+
+    # Verify ownership: check the connection belongs to this user
+    conn = broker_repo.get_connection_by_auth_id(authorization_id)
+    if conn and conn.snaptrade_user_id != snap_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to remove this connection")
+
+    removed = client.remove_connection(
+        authorization_id=authorization_id,
+        user_id=snap_user.snaptrade_user_id,
+        user_secret=snap_user.snaptrade_user_secret,
+    )
+
+    if not removed:
+        raise HTTPException(status_code=500, detail="Failed to remove connection from SnapTrade")
+
+    # Mark local connection as inactive
+    if conn:
+        conn.is_active = False
+        conn.updated_at = datetime.now(timezone.utc)
+        broker_repo.session.flush()
+        logger.info("Marked connection %s as inactive for user_id=%d", authorization_id, user_id)
+
+    return {"status": "disconnected", "authorization_id": authorization_id}
 
 
 # -----------------------------------------------------------------------------

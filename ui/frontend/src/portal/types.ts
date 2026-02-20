@@ -437,11 +437,46 @@ export interface BrokerConnectResponse {
 export interface BrokerSyncResponse {
   status: string;
   trades_synced: number;
+  campaigns_created?: number;
+  fills_backfilled?: number;
 }
 
 export interface BrokerStatus {
   connected: boolean;
   brokerages: string[];
+}
+
+export interface BrokerageInfo {
+  id: string;
+  name: string;
+  display_name: string;
+  slug: string;
+  description: string | null;
+  logo_url: string | null;
+  square_logo_url: string | null;
+  brokerage_type: string | null;
+  enabled: boolean;
+  allows_trading: boolean;
+  maintenance_mode: boolean;
+  url: string | null;
+}
+
+export interface BrokerageListResponse {
+  brokerages: BrokerageInfo[];
+}
+
+export interface ConnectionDetail {
+  authorization_id: string;
+  brokerage_name: string;
+  brokerage_slug: string;
+  brokerage_logo_url: string | null;
+  created_date: string | null;
+  disabled: boolean;
+}
+
+export interface ConnectionStatusDetail {
+  connected: boolean;
+  connections: ConnectionDetail[];
 }
 
 // --- Site Preferences (table column visibility, etc.) ---

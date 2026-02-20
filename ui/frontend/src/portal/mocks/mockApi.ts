@@ -36,6 +36,11 @@ import type {
   EvaluationControls,
   OnboardingStatus,
   BrokerStatus,
+  BrokerageListResponse,
+  BrokerageInfo,
+  BrokerConnectResponse,
+  BrokerSyncResponse,
+  ConnectionStatusDetail,
   TickerPnlSummary,
   PnlTimeseries,
   CampaignSummary,
@@ -470,7 +475,64 @@ export async function fetchOnboardingStatus(): Promise<OnboardingStatus> {
 
 export async function fetchBrokerStatus(): Promise<BrokerStatus> {
   await delay();
-  return { connected: true, brokerages: ['Robinhood'] };
+  return { connected: true, brokerages: ['Alpaca'] };
+}
+
+// --- Broker Catalog & Connections ---
+
+const MOCK_BROKERAGES: BrokerageInfo[] = [
+  { id: '1', name: 'ALPACA', display_name: 'Alpaca', slug: 'ALPACA', description: 'Commission-free stock trading API', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: false, url: 'https://alpaca.markets' },
+  { id: '2', name: 'INTERACTIVE_BROKERS', display_name: 'Interactive Brokers', slug: 'INTERACTIVE_BROKERS', description: 'Global electronic brokerage firm', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: false, url: 'https://interactivebrokers.com' },
+  { id: '3', name: 'SCHWAB', display_name: 'Charles Schwab', slug: 'SCHWAB', description: 'Full-service brokerage and banking', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: false, url: 'https://schwab.com' },
+  { id: '4', name: 'ROBINHOOD', display_name: 'Robinhood', slug: 'ROBINHOOD', description: 'Commission-free investing', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: false, url: 'https://robinhood.com' },
+  { id: '5', name: 'FIDELITY', display_name: 'Fidelity', slug: 'FIDELITY', description: 'Investment management and brokerage', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: false, maintenance_mode: false, url: 'https://fidelity.com' },
+  { id: '6', name: 'ETRADE', display_name: 'E*TRADE', slug: 'ETRADE', description: 'Online brokerage by Morgan Stanley', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: false, url: 'https://etrade.com' },
+  { id: '7', name: 'WEBULL', display_name: 'Webull', slug: 'WEBULL', description: 'Commission-free online brokerage', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: false, url: 'https://webull.com' },
+  { id: '8', name: 'TRADIER', display_name: 'Tradier', slug: 'TRADIER', description: 'Brokerage API platform', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: false, url: 'https://tradier.com' },
+  { id: '9', name: 'TRADESTATION', display_name: 'TradeStation', slug: 'TRADESTATION', description: 'Online brokerage for active traders', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: true, url: 'https://tradestation.com' },
+  { id: '10', name: 'TASTYTRADE', display_name: 'tastytrade', slug: 'TASTYTRADE', description: 'Options-focused brokerage', logo_url: null, square_logo_url: null, brokerage_type: 'trading', enabled: true, allows_trading: true, maintenance_mode: false, url: 'https://tastytrade.com' },
+];
+
+export async function fetchBrokerages(): Promise<BrokerageListResponse> {
+  await delay();
+  return { brokerages: [...MOCK_BROKERAGES] };
+}
+
+export async function fetchBrokerConnections(): Promise<ConnectionStatusDetail> {
+  await delay();
+  return {
+    connected: true,
+    connections: [
+      {
+        authorization_id: 'mock-auth-001',
+        brokerage_name: 'Alpaca',
+        brokerage_slug: 'ALPACA',
+        brokerage_logo_url: null,
+        created_date: '2026-01-15T10:30:00Z',
+        disabled: false,
+      },
+    ],
+  };
+}
+
+export async function connectBroker(
+  _slug?: string,
+  _redirectUrl?: string,
+): Promise<BrokerConnectResponse> {
+  await delay(500);
+  return { redirect_url: 'https://app.snaptrade.com/mock-connect' };
+}
+
+export async function disconnectBroker(
+  _authorizationId: string,
+): Promise<{ status: string; authorization_id: string }> {
+  await delay(500);
+  return { status: 'disconnected', authorization_id: _authorizationId };
+}
+
+export async function syncBrokerData(): Promise<BrokerSyncResponse> {
+  await delay(1000);
+  return { status: 'success', trades_synced: 12, campaigns_created: 3, fills_backfilled: 0 };
 }
 
 // --- OHLCV & Features (mock chart data) ---
