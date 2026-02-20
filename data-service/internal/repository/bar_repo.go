@@ -29,6 +29,7 @@ type OHLCVBar struct {
 // ValidTimeframes are the only supported timeframe values.
 var ValidTimeframes = map[string]bool{
 	"1Min":  true,
+	"5Min":  true,
 	"15Min": true,
 	"1Hour": true,
 	"1Day":  true,

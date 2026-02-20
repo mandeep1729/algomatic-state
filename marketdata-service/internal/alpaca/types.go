@@ -1,6 +1,26 @@
 package alpaca
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"time"
+)
+
+// AlpacaAPIError represents a non-retryable error from the Alpaca API (e.g. 4xx).
+type AlpacaAPIError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *AlpacaAPIError) Error() string {
+	return fmt.Sprintf("Alpaca API error: status %d, body: %s", e.StatusCode, e.Body)
+}
+
+// IsAlpacaAPIError checks whether err is (or wraps) an *AlpacaAPIError.
+func IsAlpacaAPIError(err error) bool {
+	var apiErr *AlpacaAPIError
+	return errors.As(err, &apiErr)
+}
 
 // Bar represents a single OHLCV bar from the Alpaca API.
 type Bar struct {

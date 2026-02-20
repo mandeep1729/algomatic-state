@@ -21,6 +21,7 @@ type DBClient interface {
 	GetBars1Min(ctx context.Context, tickerID int, after time.Time) ([]db.OHLCVBar, error)
 	BulkInsertBars(ctx context.Context, tickerID int, timeframe, source string, bars []db.OHLCVBar) (int, error)
 	UpdateSyncLog(ctx context.Context, entry db.SyncLogEntry) error
+	DeactivateTicker(ctx context.Context, symbol string) error
 	HealthCheck(ctx context.Context) error
 }
 
@@ -109,7 +110,7 @@ func (s *Service) doEnsureData(ctx context.Context, symbol string, timeframes []
 			needs1Min = true // Aggregation requires 1Min.
 			needsAgg = append(needsAgg, tf)
 		default:
-			s.logger.Warn("Ignoring unknown timeframe", "timeframe", tf, "symbol", symbol)
+			s.logger.Warn("Ignoring unsupported timeframe", "timeframe", tf, "symbol", symbol)
 		}
 	}
 
@@ -117,6 +118,7 @@ func (s *Service) doEnsureData(ctx context.Context, symbol string, timeframes []
 	if needs1Min {
 		n, err := s.ensure1Min(ctx, tickerID, symbol, start, end)
 		if err != nil {
+			s.handleFetchError(ctx, symbol, err)
 			return result, fmt.Errorf("ensure 1Min for %s: %w", symbol, err)
 		}
 		result["1Min"] = n
@@ -139,6 +141,7 @@ func (s *Service) doEnsureData(ctx context.Context, symbol string, timeframes []
 	if needs1Day {
 		n, err := s.ensure1Day(ctx, tickerID, symbol, start, end)
 		if err != nil {
+			s.handleFetchError(ctx, symbol, err)
 			return result, fmt.Errorf("ensure 1Day for %s: %w", symbol, err)
 		}
 		result["1Day"] = n
@@ -149,6 +152,24 @@ func (s *Service) doEnsureData(ctx context.Context, symbol string, timeframes []
 		"result", result,
 	)
 	return result, nil
+}
+
+// handleFetchError checks if an Alpaca fetch error is a client error (4xx)
+// and deactivates the ticker to prevent future polling for invalid symbols.
+func (s *Service) handleFetchError(ctx context.Context, symbol string, err error) {
+	if !alpaca.IsAlpacaAPIError(err) {
+		return
+	}
+	s.logger.Warn("Deactivating ticker due to Alpaca API error",
+		"symbol", symbol,
+		"error", err,
+	)
+	if deactivateErr := s.db.DeactivateTicker(ctx, symbol); deactivateErr != nil {
+		s.logger.Error("Failed to deactivate ticker",
+			"symbol", symbol,
+			"error", deactivateErr,
+		)
+	}
 }
 
 // ensure1Min fetches missing 1Min bars from Alpaca.

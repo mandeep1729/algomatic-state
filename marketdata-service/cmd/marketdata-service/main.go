@@ -42,6 +42,7 @@ func main() {
 		"mode", cfg.Service.Mode,
 		"interval_minutes", cfg.Service.IntervalMinutes,
 		"redis_host", cfg.Redis.Host,
+		"backend_url", cfg.Service.BackendURL,
 	)
 
 	// Set up graceful shutdown.
@@ -104,6 +105,7 @@ func main() {
 			defer wg.Done()
 			service.RunPeriodicLoop(ctx, svc,
 				time.Duration(cfg.Service.IntervalMinutes)*time.Minute,
+				cfg.Service.BackendURL,
 				logger,
 			)
 		}()
@@ -120,6 +122,7 @@ func main() {
 			defer wg.Done()
 			service.RunPeriodicLoop(ctx, svc,
 				time.Duration(cfg.Service.IntervalMinutes)*time.Minute,
+				cfg.Service.BackendURL,
 				logger,
 			)
 		}()

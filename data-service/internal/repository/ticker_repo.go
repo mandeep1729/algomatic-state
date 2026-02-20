@@ -80,11 +80,12 @@ func (r *TickerRepo) GetOrCreateTicker(ctx context.Context, symbol, name, exchan
 		assetType = "stock"
 	}
 
-	// Try insert first (does nothing on conflict).
+	// Insert or re-activate on conflict (ensures previously deactivated tickers
+	// become active again when explicitly requested).
 	tag, err := r.pool.Exec(ctx,
 		`INSERT INTO tickers (symbol, name, exchange, asset_type, is_active, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, true, NOW(), NOW())
-		 ON CONFLICT (symbol) DO NOTHING`,
+		 ON CONFLICT (symbol) DO UPDATE SET is_active = true, updated_at = NOW()`,
 		symbol, nilIfEmpty(name), nilIfEmpty(exchange), assetType,
 	)
 	if err != nil {

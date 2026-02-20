@@ -188,6 +188,20 @@ func (c *Client) UpdateSyncLog(ctx context.Context, entry db.SyncLogEntry) error
 	return nil
 }
 
+// DeactivateTicker marks a ticker as inactive via gRPC BulkUpsertTickers.
+func (c *Client) DeactivateTicker(ctx context.Context, symbol string) error {
+	_, err := c.market.BulkUpsertTickers(ctx, &pb.BulkUpsertTickersRequest{
+		Tickers: []*pb.Ticker{
+			{Symbol: symbol, IsActive: false},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("deactivating ticker %q: %w", symbol, err)
+	}
+	c.logger.Info("Deactivated ticker", "symbol", symbol)
+	return nil
+}
+
 func pbBarToDbBar(b *pb.OHLCVBar) db.OHLCVBar {
 	bar := db.OHLCVBar{
 		Timestamp: b.Timestamp.AsTime(),
