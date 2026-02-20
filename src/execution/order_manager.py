@@ -115,13 +115,20 @@ class OrderManager:
         """Get order history."""
         return self._order_history.copy()
 
-    def generate_client_order_id(self) -> str:
+    def generate_client_order_id(self, strategy_name: str | None = None) -> str:
         """Generate a unique client order ID.
+
+        Args:
+            strategy_name: Optional strategy name to embed in the ID
 
         Returns:
             Unique order ID string
         """
-        return f"algo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        uid = uuid.uuid4().hex[:8]
+        if strategy_name:
+            return f"algo_{strategy_name}_{ts}_{uid}"
+        return f"algo_{ts}_{uid}"
 
     def signal_to_order(
         self,
@@ -130,6 +137,9 @@ class OrderManager:
         order_type: OrderType | None = None,
         time_in_force: OrderTimeInForce | None = None,
         limit_offset_pct: float = 0.001,
+        strategy_name: str | None = None,
+        stop_loss_price: float | None = None,
+        take_profit_price: float | None = None,
     ) -> Order | None:
         """Convert a trading signal to an order.
 
@@ -139,13 +149,17 @@ class OrderManager:
             order_type: Order type override (None = use default)
             time_in_force: Time in force override (None = use default)
             limit_offset_pct: Offset from current price for limit orders
+            strategy_name: Strategy identifier for tagging the order
+            stop_loss_price: ATR-based stop-loss price for bracket orders
+            take_profit_price: ATR-based take-profit price for bracket orders
 
         Returns:
             Order ready for submission, or None if signal is FLAT
         """
         logger.debug(
-            "Converting signal to order: symbol=%s, direction=%s, size=%.2f, price=%.2f",
+            "Converting signal to order: symbol=%s, direction=%s, size=%.2f, price=%.2f, strategy=%s",
             signal.symbol, signal.direction.value, signal.size, current_price,
+            strategy_name or "none",
         )
         if signal.direction == SignalDirection.FLAT:
             logger.debug("Signal is FLAT, returning None")
@@ -157,7 +171,7 @@ class OrderManager:
         # Calculate quantity from signal size (assumed to be in dollars)
         if signal.size <= 0:
             logger.warning(
-                f"Signal has zero or negative size",
+                "Signal has zero or negative size",
                 extra={"symbol": signal.symbol, "size": signal.size},
             )
             return None
@@ -165,7 +179,7 @@ class OrderManager:
         quantity = int(signal.size / current_price)
         if quantity <= 0:
             logger.warning(
-                f"Calculated quantity is zero",
+                "Calculated quantity is zero",
                 extra={
                     "symbol": signal.symbol,
                     "size": signal.size,
@@ -186,8 +200,22 @@ class OrderManager:
             else:
                 limit_price = round(current_price - offset, 2)
 
-        # Create order
-        client_order_id = self.generate_client_order_id()
+        # Create order with strategy tag
+        client_order_id = self.generate_client_order_id(strategy_name=strategy_name)
+
+        metadata = {
+            "signal_timestamp": signal.timestamp.isoformat(),
+            "signal_strength": signal.strength,
+            "signal_direction": str(signal.direction),
+            "momentum_value": signal.metadata.momentum_value,
+            "regime_label": signal.metadata.regime_label,
+        }
+        if strategy_name:
+            metadata["strategy_name"] = strategy_name
+        if stop_loss_price is not None:
+            metadata["stop_loss_price"] = stop_loss_price
+        if take_profit_price is not None:
+            metadata["take_profit_price"] = take_profit_price
 
         order = Order(
             symbol=signal.symbol,
@@ -197,26 +225,25 @@ class OrderManager:
             time_in_force=time_in_force or self._default_time_in_force,
             limit_price=limit_price,
             client_order_id=client_order_id,
-            metadata={
-                "signal_timestamp": signal.timestamp.isoformat(),
-                "signal_strength": signal.strength,
-                "signal_direction": str(signal.direction),
-                "momentum_value": signal.metadata.momentum_value,
-                "regime_label": signal.metadata.regime_label,
-            },
+            metadata=metadata,
         )
 
-        logger.info(
-            f"Created order from signal",
-            extra={
-                "symbol": signal.symbol,
-                "side": str(side),
-                "quantity": quantity,
-                "order_type": str(effective_order_type),
-                "limit_price": limit_price,
-                "client_order_id": client_order_id,
-            },
-        )
+        log_extra = {
+            "symbol": signal.symbol,
+            "side": str(side),
+            "quantity": quantity,
+            "order_type": str(effective_order_type),
+            "limit_price": limit_price,
+            "client_order_id": client_order_id,
+        }
+        if strategy_name:
+            log_extra["strategy_name"] = strategy_name
+        if stop_loss_price is not None:
+            log_extra["stop_loss_price"] = stop_loss_price
+        if take_profit_price is not None:
+            log_extra["take_profit_price"] = take_profit_price
+
+        logger.info("Created order from signal", extra=log_extra)
 
         return order
 
@@ -234,7 +261,25 @@ class OrderManager:
             order.symbol, order.side, order.quantity, order.order_type,
         )
         try:
-            if order.order_type == OrderType.MARKET:
+            stop_loss_price = order.metadata.get("stop_loss_price")
+            take_profit_price = order.metadata.get("take_profit_price")
+            has_bracket = stop_loss_price is not None and take_profit_price is not None
+
+            if has_bracket and order.order_type == OrderType.MARKET:
+                logger.debug(
+                    "Submitting bracket order: stop_loss=%.2f take_profit=%.2f",
+                    stop_loss_price, take_profit_price,
+                )
+                submitted = self._client.submit_bracket_order(
+                    symbol=order.symbol,
+                    side=order.side,
+                    quantity=order.quantity,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price,
+                    time_in_force=order.time_in_force,
+                    client_order_id=order.client_order_id,
+                )
+            elif order.order_type == OrderType.MARKET:
                 submitted = self._client.submit_market_order(
                     symbol=order.symbol,
                     side=order.side,

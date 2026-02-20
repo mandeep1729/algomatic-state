@@ -22,6 +22,8 @@ class ContrarianAgentConfig(BaseSettings):
     position_size_dollars: float = 1
     paper: bool = True
     api_port: int = 8001
+    atr_stop_mult: float = 1.5
+    atr_target_mult: float = 3.0
 
     @property
     def timeframe(self) -> str:

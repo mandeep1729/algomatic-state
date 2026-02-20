@@ -175,9 +175,36 @@ async def run_agent_loop(
                     )
                     continue
 
-                # Convert signal to order
+                # Convert signal to order with ATR-based bracket stops
                 current_price = float(df["close"].iloc[-1])
-                order = order_manager.signal_to_order(signal, current_price=current_price)
+
+                stop_loss_price = None
+                take_profit_price = None
+                if "atr_14" in features.columns:
+                    atr = float(features["atr_14"].iloc[-1])
+                    if atr > 0:
+                        if signal.direction == SignalDirection.LONG:
+                            stop_loss_price = round(current_price - agent_config.atr_stop_mult * atr, 2)
+                            take_profit_price = round(current_price + agent_config.atr_target_mult * atr, 2)
+                        else:
+                            stop_loss_price = round(current_price + agent_config.atr_stop_mult * atr, 2)
+                            take_profit_price = round(current_price - agent_config.atr_target_mult * atr, 2)
+                        logger.debug(
+                            "ATR bracket: atr=%.4f stop_loss=%.2f take_profit=%.2f",
+                            atr, stop_loss_price, take_profit_price,
+                        )
+                    else:
+                        logger.warning("ATR is zero or negative, skipping bracket legs")
+                else:
+                    logger.warning("atr_14 not in features, skipping bracket legs")
+
+                order = order_manager.signal_to_order(
+                    signal,
+                    current_price=current_price,
+                    strategy_name=strategy_type,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price,
+                )
                 if order is None:
                     continue
 

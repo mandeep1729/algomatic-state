@@ -11,9 +11,12 @@ from alpaca.trading.requests import (
     GetOrdersRequest,
     MarketOrderRequest,
     LimitOrderRequest,
+    StopLossRequest,
+    TakeProfitRequest,
     QueryOrderStatus,
 )
 from alpaca.trading.enums import (
+    OrderClass as AlpacaOrderClass,
     OrderSide as AlpacaOrderSide,
     OrderType as AlpacaOrderType,
     TimeInForce as AlpacaTimeInForce,
@@ -511,6 +514,74 @@ class AlpacaClient:
             f"Submitted limit order",
             extra=log_extra,
         )
+
+        return order
+
+    def submit_bracket_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: float,
+        stop_loss_price: float,
+        take_profit_price: float,
+        time_in_force: OrderTimeInForce = OrderTimeInForce.DAY,
+        client_order_id: str | None = None,
+        strategy_id: int | None = None,
+    ) -> Order:
+        """Submit a bracket order with stop-loss and take-profit legs.
+
+        Args:
+            symbol: Asset symbol
+            side: Buy or sell
+            quantity: Number of shares
+            stop_loss_price: Stop-loss trigger price
+            take_profit_price: Take-profit limit price
+            time_in_force: Time in force
+            client_order_id: Optional client order ID
+            strategy_id: Optional strategy ID for tracking
+
+        Returns:
+            Order with broker order ID (parent leg)
+        """
+        alpaca_side = AlpacaOrderSide.BUY if side == OrderSide.BUY else AlpacaOrderSide.SELL
+        alpaca_tif = self._convert_time_in_force(time_in_force)
+
+        order_client_id = client_order_id
+        if strategy_id is not None and not order_client_id:
+            import uuid
+            order_client_id = f"strat_{strategy_id}_{uuid.uuid4().hex[:8]}"
+
+        request = MarketOrderRequest(
+            symbol=symbol,
+            qty=quantity,
+            side=alpaca_side,
+            time_in_force=alpaca_tif,
+            client_order_id=order_client_id,
+            order_class=AlpacaOrderClass.BRACKET,
+            stop_loss=StopLossRequest(stop_price=round(stop_loss_price, 2)),
+            take_profit=TakeProfitRequest(limit_price=round(take_profit_price, 2)),
+        )
+
+        response = self._retry_with_backoff(
+            f"submit_bracket_order_{symbol}",
+            self._client.submit_order,
+            request,
+        )
+
+        order = self._convert_alpaca_order(response)
+
+        log_extra = {
+            "symbol": symbol,
+            "side": str(side),
+            "quantity": quantity,
+            "stop_loss_price": round(stop_loss_price, 2),
+            "take_profit_price": round(take_profit_price, 2),
+            "broker_order_id": order.broker_order_id,
+        }
+        if strategy_id is not None:
+            log_extra["strategy_id"] = strategy_id
+
+        logger.info("Submitted bracket order", extra=log_extra)
 
         return order
 
