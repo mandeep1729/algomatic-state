@@ -194,9 +194,11 @@ async def run_agent_loop(
                             atr, stop_loss_price, take_profit_price,
                         )
                     else:
-                        logger.warning("ATR is zero or negative, skipping bracket legs")
+                        logger.warning("ATR is zero or negative for %s — rejecting order (no bracket protection)", ticker)
+                        continue
                 else:
-                    logger.warning("atr_14 not in features, skipping bracket legs")
+                    logger.warning("atr_14 not in features for %s — rejecting order (no bracket protection)", ticker)
+                    continue
 
                 order = order_manager.signal_to_order(
                     signal,
