@@ -61,6 +61,7 @@ export interface TradeSummary {
   status: TradeStatus;
   timeframe: string;
   context_summary: ContextSummary | null;
+  tags: string[];
 }
 
 export interface TradeListResponse {

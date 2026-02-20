@@ -49,7 +49,7 @@ export default function EvaluationDisplay({ evaluation }: EvaluationDisplayProps
   return (
     <div>
       {/* Summary bar */}
-      <SeveritySummaryBar counts={evaluation.counts} hasBlockers={evaluation.has_blockers} />
+      <SeveritySummaryBar counts={evaluation.counts} hasBlockers={evaluation.has_blockers} allItems={evaluation.all_items} />
 
       {/* Evaluation summary text */}
       <div className="mb-6 rounded-lg border border-[var(--border-color)] bg-[var(--bg-secondary)] p-4">
@@ -118,12 +118,23 @@ export default function EvaluationDisplay({ evaluation }: EvaluationDisplayProps
 
 // --- Sub-components ---
 
-function SeveritySummaryBar({ counts, hasBlockers }: { counts: Record<string, number>; hasBlockers: boolean }) {
+function SeveritySummaryBar({
+  counts,
+  hasBlockers,
+  allItems,
+}: {
+  counts: Record<string, number>;
+  hasBlockers: boolean;
+  allItems: EvaluationItemResponse[];
+}) {
+  // Derive blocker count from all_items as a fallback when counts.blocker is missing
+  const blockerCount = counts.blocker ?? allItems.filter((i) => i.severity === 'blocker').length;
+
   return (
     <div className="mb-4 flex flex-wrap items-center gap-3">
       {hasBlockers && (
         <div className="flex items-center gap-1.5 rounded-md bg-[var(--accent-red)]/15 px-3 py-1.5 text-xs font-medium text-[var(--accent-red)]">
-          {'\u26D4'} {counts.blocker ?? 0} blocker{(counts.blocker ?? 0) !== 1 ? 's' : ''}
+          {'\u26D4'} {blockerCount} blocker{blockerCount !== 1 ? 's' : ''}
         </div>
       )}
       {(counts.critical ?? 0) > 0 && (

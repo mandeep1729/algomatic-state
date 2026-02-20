@@ -63,6 +63,7 @@ class TradeResponse(BaseModel):
     executed_at: datetime
     brokerage: str
     context_summary: Optional[ContextSummary] = None
+    tags: List[str] = []
 
 class TradeListAPIResponse(BaseModel):
     trades: List[TradeResponse]
@@ -342,6 +343,21 @@ async def get_trades(
                 hypothesis_snippet=hypothesis_snippet,
             )
 
+    def _extract_tags(raw_tags: Optional[dict]) -> List[str]:
+        """Extract display tags from the JSONB tags field.
+
+        The TradeFill.tags column is a JSONB dict with broker metadata.
+        Convert dict keys to a list of display-friendly strings, filtering
+        out internal keys like strategy_id.
+        """
+        if not raw_tags:
+            return []
+        if isinstance(raw_tags, list):
+            return [str(t) for t in raw_tags]
+        # Dict: use keys as tags, excluding internal metadata keys
+        internal_keys = {"strategy_id"}
+        return [k for k in raw_tags if k not in internal_keys]
+
     return TradeListAPIResponse(
         trades=[
             TradeResponse(
@@ -354,6 +370,7 @@ async def get_trades(
                 executed_at=t.executed_at,
                 brokerage=t.connection.brokerage_name,
                 context_summary=context_map.get(t.id),
+                tags=_extract_tags(t.tags),
             )
             for t in trades
         ],

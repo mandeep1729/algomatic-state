@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import api, { fetchAgentStrategies, fetchAllProbeStrategies } from '../../../api';
 import type { StrategyDefinition, StrategyCategory, StrategyDirection, AgentStrategy } from '../../../types';
-import type { ThemeStrategyDetail } from '../../../api';
 import { StrategyForm, type CloneTemplate, type StrategyFormData } from '../../../components/strategies/StrategyForm';
 import { parseConditions, conditionsToText } from '../../../components/strategies/conditionUtils';
 

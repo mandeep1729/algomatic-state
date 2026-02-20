@@ -307,6 +307,7 @@ interface BrokerTradeResponse {
   executed_at: string;
   brokerage: string;
   context_summary: BrokerContextSummary | null;
+  tags: string[];
 }
 
 interface BrokerTradeListResponse {
@@ -363,6 +364,7 @@ export async function fetchTrades(params: {
     status: 'closed' as const,
     timeframe: '',
     context_summary: t.context_summary,
+    tags: t.tags ?? [],
   }));
 
   return { trades, total: res.total, page: res.page, limit: res.limit };
@@ -857,6 +859,7 @@ export interface ThemeStrategyDetail {
   name: string;
   philosophy: string;
   direction: string;
+  strategy_type?: string;
   details: Record<string, unknown>;
 }
 
