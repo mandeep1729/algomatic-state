@@ -342,12 +342,37 @@ export function StrategyForm({
   }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+
+  // ---------------------------------------------------------------------------
+  // Validation
+  // ---------------------------------------------------------------------------
+
+  const validationErrors = useMemo(() => {
+    const errors: Record<string, string> = {};
+    if (!form.name.trim()) errors.name = 'Name is required';
+    if (!form.display_name.trim()) errors.display_name = 'Display name is required';
+    if (form.timeframes.length === 0) errors.timeframes = 'At least one timeframe is required';
+    return errors;
+  }, [form.name, form.display_name, form.timeframes]);
+
+  const isFormValid = Object.keys(validationErrors).length === 0;
+
+  const missingFieldsSummary = useMemo(() => {
+    const missing = Object.values(validationErrors);
+    return missing.length > 0 ? missing.join(', ') : '';
+  }, [validationErrors]);
+
+  function markTouched(field: string) {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+  }
 
   function updateField<K extends keyof StrategyFormData>(key: K, value: StrategyFormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   function toggleTimeframe(tf: string) {
+    markTouched('timeframes');
     setForm((prev) => ({
       ...prev,
       timeframes: prev.timeframes.includes(tf)
@@ -388,8 +413,13 @@ export function StrategyForm({
     e.preventDefault();
     setError(null);
 
-    if (!form.name.trim()) { setError('Name is required'); return; }
-    if (!form.display_name.trim()) { setError('Display name is required'); return; }
+    // Mark all validatable fields as touched so inline errors show
+    setTouched({ name: true, display_name: true, timeframes: true });
+
+    if (!isFormValid) {
+      setError(missingFieldsSummary);
+      return;
+    }
 
     setSaving(true);
     try {
@@ -417,24 +447,36 @@ export function StrategyForm({
       {/* Section 1: Identity */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Name</label>
+          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">
+            Name <span className="text-[var(--accent-red)]">*</span>
+          </label>
           <input
             type="text"
             value={form.name}
             onChange={(e) => updateField('name', e.target.value)}
-            className="form-input h-9 w-full text-sm"
+            onBlur={() => markTouched('name')}
+            className={`form-input h-9 w-full text-sm ${touched.name && validationErrors.name ? 'border-[var(--accent-red)]' : ''}`}
             placeholder="e.g. momentum_pullback"
           />
+          {touched.name && validationErrors.name && (
+            <p className="mt-1 text-[11px] text-[var(--accent-red)]">{validationErrors.name}</p>
+          )}
         </div>
         <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Display Name</label>
+          <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">
+            Display Name <span className="text-[var(--accent-red)]">*</span>
+          </label>
           <input
             type="text"
             value={form.display_name}
             onChange={(e) => updateField('display_name', e.target.value)}
-            className="form-input h-9 w-full text-sm"
+            onBlur={() => markTouched('display_name')}
+            className={`form-input h-9 w-full text-sm ${touched.display_name && validationErrors.display_name ? 'border-[var(--accent-red)]' : ''}`}
             placeholder="e.g. Momentum Pullback"
           />
+          {touched.display_name && validationErrors.display_name && (
+            <p className="mt-1 text-[11px] text-[var(--accent-red)]">{validationErrors.display_name}</p>
+          )}
         </div>
       </div>
 
@@ -520,7 +562,9 @@ export function StrategyForm({
 
       {/* Section 3: Timeframes, Indicators, Tags */}
       <div>
-        <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">Timeframes</label>
+        <label className="mb-1 block text-xs font-medium text-[var(--text-secondary)]">
+          Timeframes <span className="text-[var(--accent-red)]">*</span>
+        </label>
         <div className="flex flex-wrap gap-1.5">
           {TIMEFRAME_OPTIONS.map((tf) => (
             <button
@@ -537,6 +581,9 @@ export function StrategyForm({
             </button>
           ))}
         </div>
+        {touched.timeframes && validationErrors.timeframes && (
+          <p className="mt-1 text-[11px] text-[var(--accent-red)]">{validationErrors.timeframes}</p>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -644,21 +691,29 @@ export function StrategyForm({
       )}
 
       {/* Actions */}
-      <div className="flex gap-3">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-md bg-[var(--accent-blue)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Strategy'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-        >
-          Cancel
-        </button>
+      <div className="space-y-2">
+        <div className="flex gap-3">
+          <button
+            type="submit"
+            disabled={saving || !isFormValid}
+            title={!isFormValid ? missingFieldsSummary : undefined}
+            className="rounded-md bg-[var(--accent-blue)] px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Strategy'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-md border border-[var(--border-color)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          >
+            Cancel
+          </button>
+        </div>
+        {!isFormValid && (
+          <p className="text-[11px] text-[var(--text-secondary)]">
+            Fill in all required fields (*) to enable the button
+          </p>
+        )}
       </div>
     </form>
   );
