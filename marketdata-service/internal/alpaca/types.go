@@ -29,7 +29,7 @@ type Bar struct {
 	High       float64   `json:"h"`
 	Low        float64   `json:"l"`
 	Close      float64   `json:"c"`
-	Volume     int64     `json:"v"`
+	Volume     float64   `json:"v"`
 	TradeCount int       `json:"n"`
 	VWAP       float64   `json:"vw"`
 }

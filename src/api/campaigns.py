@@ -441,6 +441,20 @@ def _build_contexts_by_leg(
             notes=ctx.notes,
             updatedAt=_format_dt(ctx.updated_at),
         ).model_dump()
+
+    # Derive a synthetic "campaign" key from the most recently updated leg.
+    # Campaign-level saves write identical values to all legs, so the latest
+    # leg context is representative of the campaign-level state.
+    if result:
+        latest_key = max(result, key=lambda k: result[k].get("updatedAt", ""))
+        latest = result[latest_key]
+        result["campaign"] = {
+            **latest,
+            "scope": "campaign",
+            "legId": None,
+            "contextType": "post_trade_reflection",
+        }
+
     return result
 
 
