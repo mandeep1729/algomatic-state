@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from src.api.auth_middleware import get_current_user
 from src.data.database.dependencies import get_agent_repo
+from src.trading_agents.dsl_validator import validate_strategy_conditions
 from src.trading_agents.repository import TradingAgentRepository
 
 logger = logging.getLogger(__name__)
@@ -34,9 +35,10 @@ class StrategyResponse(BaseModel):
     description: Optional[str] = None
     category: str
     direction: str
-    entry_long: Optional[str] = None
-    entry_short: Optional[str] = None
-    exit_long: Optional[str] = None
+    entry_long: Optional[Union[str, list]] = None
+    entry_short: Optional[Union[str, list]] = None
+    exit_long: Optional[Union[str, list]] = None
+    exit_short: Optional[Union[str, list]] = None
     required_features: Optional[list] = None
     tags: Optional[list] = None
     timeframes: Optional[list] = None
@@ -57,10 +59,10 @@ class StrategyCreate(BaseModel):
     description: Optional[str] = None
     category: str = "custom"
     direction: str = "long_short"
-    entry_long: Optional[Union[str, dict]] = None
-    entry_short: Optional[Union[str, dict]] = None
-    exit_long: Optional[Union[str, dict]] = None
-    exit_short: Optional[Union[str, dict]] = None
+    entry_long: Optional[Union[str, list, dict]] = None
+    entry_short: Optional[Union[str, list, dict]] = None
+    exit_long: Optional[Union[str, list, dict]] = None
+    exit_short: Optional[Union[str, list, dict]] = None
     required_features: Optional[list] = None
     tags: Optional[list] = None
     timeframes: Optional[list] = None
@@ -76,10 +78,10 @@ class StrategyUpdate(BaseModel):
     display_name: Optional[str] = None
     description: Optional[str] = None
     direction: Optional[str] = None
-    entry_long: Optional[Union[str, dict]] = None
-    entry_short: Optional[Union[str, dict]] = None
-    exit_long: Optional[Union[str, dict]] = None
-    exit_short: Optional[Union[str, dict]] = None
+    entry_long: Optional[Union[str, list, dict]] = None
+    entry_short: Optional[Union[str, list, dict]] = None
+    exit_long: Optional[Union[str, list, dict]] = None
+    exit_short: Optional[Union[str, list, dict]] = None
     required_features: Optional[list] = None
     tags: Optional[list] = None
     timeframes: Optional[list] = None
@@ -178,17 +180,6 @@ class ActivityResponse(BaseModel):
 # -----------------------------------------------------------------------------
 
 
-def _parse_jsonb_text(value) -> str | None:
-    """Extract plain text from JSONB-stored entry/exit fields."""
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return value
-    if isinstance(value, list):
-        return "\n".join(str(item) for item in value)
-    return str(value)
-
-
 def _strategy_to_response(s) -> StrategyResponse:
     return StrategyResponse(
         id=s.id,
@@ -197,9 +188,10 @@ def _strategy_to_response(s) -> StrategyResponse:
         description=s.description,
         category=s.category,
         direction=s.direction,
-        entry_long=_parse_jsonb_text(s.entry_long),
-        entry_short=_parse_jsonb_text(s.entry_short),
-        exit_long=_parse_jsonb_text(s.exit_long),
+        entry_long=s.entry_long,
+        entry_short=s.entry_short,
+        exit_long=s.exit_long,
+        exit_short=s.exit_short,
         required_features=s.required_features,
         tags=s.tags,
         timeframes=s.timeframes,
@@ -322,6 +314,11 @@ async def create_strategy(
     if not data.name.strip():
         raise HTTPException(status_code=400, detail="Strategy name is required")
 
+    # Validate DSL conditions if provided as lists
+    dsl_errors = validate_strategy_conditions(data.model_dump())
+    if dsl_errors:
+        raise HTTPException(status_code=400, detail={"validation_errors": dsl_errors})
+
     strategy = repo.create_strategy(
         account_id=user_id,
         **data.model_dump(),
@@ -368,6 +365,11 @@ async def update_strategy(
     updates = data.model_dump(exclude_none=True)
     if not updates:
         raise HTTPException(status_code=400, detail="No fields to update")
+
+    # Validate DSL conditions if any entry/exit fields are being updated
+    dsl_errors = validate_strategy_conditions(updates)
+    if dsl_errors:
+        raise HTTPException(status_code=400, detail={"validation_errors": dsl_errors})
 
     updated = repo.update_strategy(strategy_id, **updates)
     return _strategy_to_response(updated)
