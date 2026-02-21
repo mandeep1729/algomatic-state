@@ -11,7 +11,7 @@ from datetime import date, datetime
 from typing import Literal, Optional
 
 from sqlalchemy import case, distinct, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from src.data.database.broker_models import (
     BrokerConnection,
@@ -128,7 +128,9 @@ class BrokerRepository:
         account_id: Optional[int] = None,
     ) -> Optional[TradeFill]:
         """Get a trade fill by ID, optionally scoped to account."""
-        query = self.session.query(TradeFill).filter(TradeFill.id == fill_id)
+        query = self.session.query(TradeFill).options(
+            joinedload(TradeFill.decision_context),
+        ).filter(TradeFill.id == fill_id)
         if account_id is not None:
             query = query.filter(TradeFill.account_id == account_id)
         return query.first()
@@ -142,7 +144,9 @@ class BrokerRepository:
         order_desc: bool = True,
     ) -> list[TradeFill]:
         """Get trade fills for an account with optional filters."""
-        query = self.session.query(TradeFill).filter(
+        query = self.session.query(TradeFill).options(
+            joinedload(TradeFill.decision_context),
+        ).filter(
             TradeFill.account_id == account_id,
         )
         if symbol:
@@ -178,11 +182,15 @@ class BrokerRepository:
             Tuple of (fills, total_count).
         """
         if snaptrade_user_id is not None:
-            query = self.session.query(TradeFill).join(BrokerConnection).filter(
+            query = self.session.query(TradeFill).options(
+                joinedload(TradeFill.decision_context),
+            ).join(BrokerConnection).filter(
                 BrokerConnection.snaptrade_user_id == snaptrade_user_id,
             )
         else:
-            query = self.session.query(TradeFill).filter(
+            query = self.session.query(TradeFill).options(
+                joinedload(TradeFill.decision_context),
+            ).filter(
                 TradeFill.account_id == account_id,
             )
 

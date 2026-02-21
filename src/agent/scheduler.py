@@ -150,8 +150,8 @@ async def run_agent_loop(
                 len(df), df.index[0], df.index[-1], float(df["close"].iloc[-1]),
             )
 
-            # 4. Compute features
-            features = pipeline.compute(df)
+            # 4. Compute features (only need latest bar for signal generation)
+            features = pipeline.compute_incremental(df, new_bars=1)
             if features.empty:
                 logger.warning("Feature computation produced empty result")
                 await asyncio.sleep(interval)

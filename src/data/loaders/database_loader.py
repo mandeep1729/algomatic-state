@@ -555,8 +555,8 @@ class DatabaseLoader(BaseDataLoader):
                     f"(out of {len(df)} total, {len(existing_timestamps)} existing)"
                 )
 
-                # Compute all features on full dataframe (needed for lookback periods)
-                features_df = pipeline.compute(df)
+                # Compute features incrementally (only process new bars + lookback context)
+                features_df = pipeline.compute_incremental(df, new_bars=len(missing_timestamps))
 
                 if features_df.empty:
                     logger.warning(f"No features computed for {symbol}/{timeframe}")

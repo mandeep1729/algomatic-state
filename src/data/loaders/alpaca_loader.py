@@ -57,7 +57,13 @@ class AlpacaLoader(BaseDataLoader):
             rate_limit=rate_limit,
             max_retries=max_retries,
         )
-        self.cache = DataCache(cache_dir) if use_cache else None
+        # Pass configured max_cache_age_hours so stale data is auto-expired
+        try:
+            from config.settings import get_settings
+            max_age = get_settings().data.max_cache_age_hours
+        except Exception:
+            max_age = 24
+        self.cache = DataCache(cache_dir, max_cache_age_hours=max_age) if use_cache else None
         self.use_cache = use_cache
         self.validate = validate
 

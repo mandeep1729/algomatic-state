@@ -210,6 +210,79 @@ class MarketDataGrpcClient:
         logger.debug("Retrieved %d bars for %s/%s", len(df), symbol, timeframe)
         return df
 
+    @staticmethod
+    def _validate_bars(df: pd.DataFrame) -> pd.DataFrame:
+        """Validate OHLCV bar data before insertion.
+
+        Checks for:
+        - Negative prices
+        - OHLC consistency (high >= open/close/low, low <= open/close/high)
+        - Negative volume
+
+        Args:
+            df: DataFrame with OHLCV columns.
+
+        Returns:
+            DataFrame with invalid rows removed.
+        """
+        initial_count = len(df)
+        if initial_count == 0:
+            return df
+
+        # Reject negative prices
+        price_cols = ["open", "high", "low", "close"]
+        negative_mask = (df[price_cols] < 0).any(axis=1)
+        if negative_mask.any():
+            n_neg = negative_mask.sum()
+            logger.warning(
+                "Rejecting %d bars with negative prices", n_neg,
+            )
+            df = df[~negative_mask]
+
+        if df.empty:
+            return df
+
+        # OHLC consistency: high must be >= open, close, low; low must be <= open, close, high
+        inconsistent_high = (
+            (df["high"] < df["open"])
+            | (df["high"] < df["close"])
+            | (df["high"] < df["low"])
+        )
+        inconsistent_low = (
+            (df["low"] > df["open"])
+            | (df["low"] > df["close"])
+            | (df["low"] > df["high"])
+        )
+        inconsistent = inconsistent_high | inconsistent_low
+        if inconsistent.any():
+            n_bad = inconsistent.sum()
+            logger.warning(
+                "Rejecting %d bars with OHLC inconsistency (high < low or similar)", n_bad,
+            )
+            df = df[~inconsistent]
+
+        if df.empty:
+            return df
+
+        # Reject negative volume
+        if "volume" in df.columns:
+            neg_vol = df["volume"] < 0
+            if neg_vol.any():
+                n_neg_vol = neg_vol.sum()
+                logger.warning("Rejecting %d bars with negative volume", n_neg_vol)
+                df = df[~neg_vol]
+
+        removed = initial_count - len(df)
+        if removed > 0:
+            logger.info(
+                "Bar validation: %d/%d bars passed (%d rejected)",
+                len(df), initial_count, removed,
+            )
+        else:
+            logger.debug("Bar validation: all %d bars passed", initial_count)
+
+        return df
+
     def bulk_insert_bars(
         self,
         df: pd.DataFrame,
@@ -219,6 +292,12 @@ class MarketDataGrpcClient:
     ) -> int:
         """Insert multiple bars. Returns number of rows inserted."""
         if df.empty:
+            return 0
+
+        # Validate bars before insertion
+        df = self._validate_bars(df)
+        if df.empty:
+            logger.warning("All bars rejected by validation, nothing to insert")
             return 0
 
         # Convert DataFrame rows to protobuf bars.

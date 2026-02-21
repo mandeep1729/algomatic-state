@@ -12,6 +12,7 @@ Single source of truth for all database session management:
 
 import logging
 from contextlib import contextmanager
+from functools import lru_cache
 from typing import Generator
 
 from sqlalchemy.orm import Session
@@ -19,6 +20,38 @@ from sqlalchemy.orm import Session
 from src.data.database.connection import get_db_manager
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Singleton gRPC channel for the Go data-service
+# ---------------------------------------------------------------------------
+
+@lru_cache(maxsize=1)
+def _get_grpc_channel():
+    """Create and return a singleton gRPC channel to the data-service.
+
+    gRPC channels internally manage connection pooling, reconnection,
+    and HTTP/2 multiplexing.  Creating one per request wastes TCP setup
+    overhead and risks ephemeral port exhaustion under load.
+    """
+    import grpc
+    from config.settings import get_settings
+
+    settings = get_settings()
+    target = settings.data_service.target
+    channel = grpc.insecure_channel(
+        target,
+        options=[
+            ("grpc.max_receive_message_length", 20 * 1024 * 1024),
+            # Keepalive: ping every 30s, wait 10s for response
+            ("grpc.keepalive_time_ms", 30_000),
+            ("grpc.keepalive_timeout_ms", 10_000),
+            ("grpc.keepalive_permit_without_calls", 1),
+            ("grpc.http2.max_pings_without_data", 0),
+        ],
+    )
+    logger.info("Created singleton gRPC channel to %s", target)
+    return channel
 
 
 def get_db() -> Generator[Session, None, None]:
@@ -113,6 +146,7 @@ def get_market_grpc_client():
     """FastAPI dependency returning a MarketDataGrpcClient.
 
     Uses gRPC to communicate with the data-service instead of direct DB access.
+    Reuses a singleton gRPC channel with keepalive for efficiency.
 
     Usage::
 
@@ -120,19 +154,10 @@ def get_market_grpc_client():
         async def get_bars(repo = Depends(get_market_grpc_client)):
             ...
     """
-    import grpc
-    from config.settings import get_settings
     from src.data.grpc_client import MarketDataGrpcClient
 
-    settings = get_settings()
-    channel = grpc.insecure_channel(
-        settings.data_service.target,
-        options=[("grpc.max_receive_message_length", 20 * 1024 * 1024)],
-    )
-    try:
-        yield MarketDataGrpcClient(channel)
-    finally:
-        channel.close()
+    channel = _get_grpc_channel()
+    yield MarketDataGrpcClient(channel)
 
 
 def get_agent_repo():
@@ -174,21 +199,14 @@ def grpc_market_client():
     Use in helpers, orchestrators, scripts — anywhere outside FastAPI's
     dependency injection that needs market data access.
 
+    Reuses the singleton gRPC channel for efficiency.
+
     Usage::
 
         with grpc_market_client() as repo:
             df = repo.get_bars("AAPL", "1Min")
     """
-    import grpc
-    from config.settings import get_settings
     from src.data.grpc_client import MarketDataGrpcClient
 
-    settings = get_settings()
-    channel = grpc.insecure_channel(
-        settings.data_service.target,
-        options=[("grpc.max_receive_message_length", 20 * 1024 * 1024)],
-    )
-    try:
-        yield MarketDataGrpcClient(channel)
-    finally:
-        channel.close()
+    channel = _get_grpc_channel()
+    yield MarketDataGrpcClient(channel)

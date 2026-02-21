@@ -58,6 +58,9 @@ import type {
 const log = createLogger('ApiClient');
 
 const TOKEN_KEY = 'auth_token';
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 3;
+const INITIAL_RETRY_DELAY_MS = 1_000;
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem(TOKEN_KEY);
@@ -71,31 +74,82 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const method = options?.method ?? 'GET';
   log.debug(`${method} ${url}`);
 
-  const res = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(),
-      ...options?.headers,
-    },
-    ...options,
-  });
+  const isGet = method === 'GET';
+  const maxAttempts = isGet ? MAX_RETRIES : 1;
+  let lastError: unknown;
 
-  if (res.status === 401) {
-    // Token expired or invalid — clear auth state and redirect
-    log.warn(`${method} ${url} -> 401 Unauthorized, redirecting to login`);
-    localStorage.removeItem(TOKEN_KEY);
-    window.location.href = '/auth/login';
-    throw new Error('Authentication expired');
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+          ...options?.headers,
+        },
+        ...options,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (res.status === 401) {
+        // Token expired or invalid — clear auth state and redirect (no retry)
+        log.warn(`${method} ${url} -> 401 Unauthorized, redirecting to login`);
+        localStorage.removeItem(TOKEN_KEY);
+        window.location.href = '/auth/login';
+        throw new Error('Authentication expired');
+      }
+
+      // Retry on 5xx server errors for GET requests
+      if (res.status >= 500 && isGet && attempt < maxAttempts) {
+        const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+        log.warn(
+          `${method} ${url} -> ${res.status}, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        log.error(`${method} ${url} -> ${res.status}`, body || res.statusText);
+        throw new Error(`API error ${res.status}: ${body || res.statusText}`);
+      }
+
+      log.debug(`${method} ${url} -> ${res.status} OK`);
+      return res.json();
+    } catch (err: unknown) {
+      clearTimeout(timeoutId);
+
+      // AbortController timeout produces an AbortError
+      const isAbort =
+        err instanceof DOMException && err.name === 'AbortError';
+      const isNetworkError =
+        isAbort || (err instanceof TypeError && err.message === 'Failed to fetch');
+
+      // Do not retry non-network errors (e.g. 401 redirect, 4xx throws)
+      if (!isNetworkError || !isGet || attempt >= maxAttempts) {
+        if (isAbort) {
+          log.error(`${method} ${url} -> request timed out after ${REQUEST_TIMEOUT_MS}ms`);
+          throw new Error(`Request timeout: ${method} ${url}`);
+        }
+        throw err;
+      }
+
+      lastError = err;
+      const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+      log.warn(
+        `${method} ${url} -> network error, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    log.error(`${method} ${url} -> ${res.status}`, body || res.statusText);
-    throw new Error(`API error ${res.status}: ${body || res.statusText}`);
-  }
-
-  log.debug(`${method} ${url} -> ${res.status} OK`);
-  return res.json();
+  // Should not reach here, but satisfy TypeScript
+  throw lastError;
 }
 
 function get<T>(path: string): Promise<T> {

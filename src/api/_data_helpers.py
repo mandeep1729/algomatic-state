@@ -253,7 +253,7 @@ async def compute_features_internal(
                     timeframe, len(missing_timestamps), len(df),
                 )
 
-            features_df = pipeline.compute(df)
+            features_df = pipeline.compute_incremental(df, new_bars=len(missing_timestamps))
             if features_df.empty:
                 continue
 

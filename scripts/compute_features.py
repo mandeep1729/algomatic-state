@@ -125,7 +125,7 @@ def _process_timeframe(repo, ticker, timeframe, pipeline, version, force, stats)
         stats["timeframes_skipped"] += 1
         return
 
-    features_df = pipeline.compute(df)
+    features_df = pipeline.compute_incremental(df, new_bars=len(missing))
     if features_df.empty:
         logger.warning(f"  {timeframe}: No features computed")
         return

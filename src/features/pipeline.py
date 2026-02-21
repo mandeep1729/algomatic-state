@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from config.settings import get_settings
 from .base import BaseFeatureCalculator, FeatureSpec
 from .registry import (
     create_calculators_from_config,
@@ -201,6 +202,89 @@ class FeaturePipeline:
 
         logger.info(f"Feature computation complete: {len(result)} rows, {len(result.columns)} features")
         return result
+
+    def compute_incremental(
+        self,
+        df: pd.DataFrame,
+        new_bars: int,
+        market_df: pd.DataFrame | None = None,
+        lookback_buffer: int | None = None,
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Compute features only for new bars, using minimal lookback context.
+
+        Slices the input DataFrame to only include enough rows for
+        ``max_lookback + lookback_buffer + new_bars``, computes features on
+        that slice, then trims the output to only the ``new_bars`` rows.
+        This avoids recomputing features for the entire history.
+
+        When ``new_bars >= len(df)`` (or when the required context window
+        exceeds the DataFrame length), this falls through to a full
+        ``compute()`` call with no trimming.
+
+        Args:
+            df: Full DataFrame with datetime index and OHLCV columns.
+            new_bars: Number of new (most recent) bars that need features.
+            market_df: Optional market benchmark data.
+            lookback_buffer: Extra rows beyond ``max_lookback`` to include
+                for safety.  Defaults to ``FeatureConfig.lookback_buffer``
+                from settings (typically 100).
+            **kwargs: Additional arguments forwarded to ``compute()``.
+
+        Returns:
+            DataFrame with features for (at most) the ``new_bars`` most
+            recent rows.
+        """
+        total_rows = len(df)
+
+        if new_bars <= 0:
+            logger.debug("compute_incremental called with new_bars=%d, returning empty", new_bars)
+            return pd.DataFrame()
+
+        if lookback_buffer is None:
+            try:
+                lookback_buffer = get_settings().features.lookback_buffer
+            except Exception:
+                lookback_buffer = 100  # default from FeatureConfig
+                logger.debug(
+                    "Could not load settings for lookback_buffer, using default=%d",
+                    lookback_buffer,
+                )
+
+        required_context = self.max_lookback + lookback_buffer + new_bars
+
+        if required_context >= total_rows:
+            logger.debug(
+                "compute_incremental: required context %d >= total rows %d, "
+                "computing full DataFrame",
+                required_context, total_rows,
+            )
+            return self.compute(df, market_df=market_df, **kwargs)
+
+        # Slice to only the rows needed for correct computation
+        input_slice = df.iloc[-required_context:]
+        logger.info(
+            "compute_incremental: sliced %d -> %d rows "
+            "(new_bars=%d, max_lookback=%d, buffer=%d)",
+            total_rows, len(input_slice), new_bars, self.max_lookback, lookback_buffer,
+        )
+
+        features = self.compute(input_slice, market_df=market_df, **kwargs)
+
+        if features.empty:
+            return features
+
+        # Trim to only the new_bars most-recent rows
+        # Use the original df's last new_bars timestamps as the filter
+        target_index = df.index[-new_bars:]
+        trimmed = features.loc[features.index.isin(target_index)]
+
+        logger.debug(
+            "compute_incremental: trimmed features from %d to %d rows",
+            len(features), len(trimmed),
+        )
+
+        return trimmed
 
     def compute_subset(
         self,
