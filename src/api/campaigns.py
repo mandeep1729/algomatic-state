@@ -25,6 +25,7 @@ from src.data.database.broker_repository import BrokerRepository
 from src.data.database.trading_repository import TradingBuddyRepository
 from src.data.database.broker_models import TradeFill
 from src.data.database.trade_lifecycle_models import DecisionContext
+from src.reviewer.publisher import publish_context_updated, publish_campaigns_rebuilt
 
 logger = logging.getLogger(__name__)
 
@@ -958,6 +959,10 @@ async def save_fill_context(
         )
 
     db.commit()
+
+    # Fire-and-forget: trigger behavioral checks for this fill
+    publish_context_updated(fill_id=fill_id, account_id=user_id)
+
     return _context_to_api_response(ctx, broker_repo)
 
 
@@ -997,6 +1002,12 @@ async def rebuild_campaigns(
         total_stats = repo.rebuild_all_campaigns(user_id)
 
     db.commit()
+
+    # Fire-and-forget: trigger behavioral checks for rebuilt campaigns
+    publish_campaigns_rebuilt(
+        account_id=user_id,
+        campaigns_created=total_stats["campaigns_created"],
+    )
 
     logger.info("Rebuild complete for user_id=%d: %s", user_id, total_stats)
     return RebuildCampaignsResponse(**total_stats)
