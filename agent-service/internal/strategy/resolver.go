@@ -57,20 +57,31 @@ func (r *Resolver) Resolve(ctx context.Context, strategyID int) (*types.Strategy
 	}
 	r.mu.RUnlock()
 
-	// Predefined strategy: resolve from go-strats registry.
-	if row.IsPredefined && row.SourceStrategyID != nil {
+	// Predefined or cloned strategy: resolve conditions from go-strats registry.
+	if row.SourceStrategyID != nil {
 		sourceID := *row.SourceStrategyID
-		def := strategy.Get(sourceID)
-		if def == nil {
+		baseDef := strategy.Get(sourceID)
+		if baseDef == nil {
 			return nil, fmt.Errorf(
-				"predefined strategy %d references go-strats ID %d which is not registered",
+				"strategy %d references go-strats ID %d which is not registered",
 				strategyID, sourceID,
 			)
 		}
 
-		r.logger.Debug("Resolved predefined strategy",
-			"db_id", strategyID, "source_id", sourceID, "name", def.Name,
-		)
+		var def *types.StrategyDef
+		if row.IsPredefined {
+			// Pure predefined: use go-strats def directly.
+			def = baseDef
+			r.logger.Debug("Resolved predefined strategy",
+				"db_id", strategyID, "source_id", sourceID, "name", def.Name,
+			)
+		} else {
+			// Cloned: go-strats conditions + DB row parameters.
+			def = cloneDefWithDBParams(baseDef, row)
+			r.logger.Info("Resolved cloned strategy",
+				"db_id", strategyID, "source_id", sourceID, "name", def.Name,
+			)
+		}
 
 		r.mu.Lock()
 		r.cache[strategyID] = &cachedEntry{def: def, version: row.Version}
@@ -168,6 +179,54 @@ func compileCustomStrategy(row *repository.AgentStrategyRow) (*types.StrategyDef
 		TimeStopBars:       timeStopBars,
 		RequiredIndicators: features,
 	}, nil
+}
+
+// cloneDefWithDBParams creates a new StrategyDef using conditions from the
+// go-strats base definition and parameters from the DB row. This handles
+// cloned strategies where the user may have customised direction or risk
+// parameters but the entry/exit logic is inherited from the source.
+func cloneDefWithDBParams(base *types.StrategyDef, row *repository.AgentStrategyRow) *types.StrategyDef {
+	def := &types.StrategyDef{
+		ID:                 row.ID,
+		Name:               row.Name,
+		DisplayName:        row.DisplayName,
+		Category:           row.Category,
+		EntryLong:          base.EntryLong,
+		EntryShort:         base.EntryShort,
+		ExitLong:           base.ExitLong,
+		ExitShort:          base.ExitShort,
+		RequiredIndicators: base.RequiredIndicators,
+		// Defaults from base; overridden below if DB has values.
+		ATRStopMult:     base.ATRStopMult,
+		ATRTargetMult:   base.ATRTargetMult,
+		TrailingATRMult: base.TrailingATRMult,
+		TimeStopBars:    base.TimeStopBars,
+	}
+
+	// Override parameters from DB row when present.
+	if row.ATRStopMult != nil {
+		def.ATRStopMult = *row.ATRStopMult
+	}
+	if row.ATRTargetMult != nil {
+		def.ATRTargetMult = *row.ATRTargetMult
+	}
+	if row.TrailingATRMult != nil {
+		def.TrailingATRMult = *row.TrailingATRMult
+	}
+	if row.TimeStopBars != nil {
+		def.TimeStopBars = *row.TimeStopBars
+	}
+
+	// Direction from DB row (user may change on clone).
+	def.Direction = types.LongShort
+	switch row.Direction {
+	case "long_only":
+		def.Direction = types.LongOnly
+	case "short_only":
+		def.Direction = types.ShortOnly
+	}
+
+	return def
 }
 
 // ClearCache removes all cached strategy definitions.
