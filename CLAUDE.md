@@ -1,6 +1,22 @@
 # CLAUDE.md
 
+## vibeflow Agent Session Rules
+
+**CRITICAL — When a vibeflow session_init prompt is active (autonomous agent mode), these rules apply to ALL work, including ad-hoc user requests:**
+
+1. **NEVER write code, enter plan mode, or use EnterPlanMode before creating a tracked work item in vibeflow.**
+2. **Every piece of work must flow through vibeflow status transitions** (planning → implementing → done).
+3. **When polling for work, always drill into features to check todos.**
+4. **YOU MUST use filters for tool calls to optimize data fetch.**
+5. **IMPORTANT: You must continue polling after active work items are complete.**
+
+
+## Skills
+
 See @.claude/skills/coding-best-practices/SKILLS.md for coding best practices and design patterns.
+
+## Role
+
 See @.claude/SOFTWARE-ROLE.md for your role
 
 
@@ -27,7 +43,6 @@ The system acts as a second set of eyes — quietly reviewing a proposed trade a
 - Focus on habits and discipline, not trade ideas
 - Be broker‑agnostic and strategy‑agnostic
 - Simple, explainable rules before advanced AI
-
 
 ### What This Project Is NOT
 - The assistant must never:
@@ -80,4 +95,4 @@ Additional components:
 - `go-strats/` -- Go strategy backtesting framework (uses gRPC for persistence)
 - `indicator-engine/` -- C++ high-performance indicator computation (gRPC client to data-service)
 
-See `docs/ARCHITECTURE.md` for detailed architecture, and `docs/archive/Trading_Buddy_Detailed_TODOs.md` for the Trading Buddy implementation roadmap.
+See `docs/ARCHITECTURE.md` for detailed architecture, and `docs/DATABASE.md` for detailed database schema and design details.
