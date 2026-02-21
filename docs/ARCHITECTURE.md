@@ -142,6 +142,17 @@ algomatic-state/
 │   ├── cmd/probe/              # CLI entry point
 │   └── pkg/                    # Core packages (api, backend, conditions, engine, persistence)
 │
+├── agent-service/              # Go agent service (manages trading agent lifecycle)
+│   ├── cmd/agent-service/      # Entry point (main.go)
+│   ├── internal/
+│   │   ├── alpaca/             # Alpaca trading client
+│   │   ├── config/             # Configuration
+│   │   ├── db/                 # Database connection pool (pgx)
+│   │   ├── repository/         # Agent, order, activity, strategy repositories
+│   │   ├── runner/             # Agent loop orchestrator and signal computation
+│   │   └── strategy/           # Strategy resolver (compiles JSONB DSL)
+│   └── Dockerfile
+│
 ├── src/                        # Python source code
 │   ├── __init__.py
 │   │
@@ -179,6 +190,7 @@ algomatic-state/
 │   │   ├── data_sync.py        # Data sync endpoints
 │   │   ├── analysis.py         # HMM analysis endpoints
 │   │   ├── regimes.py          # Regime state endpoints (HMM + PCA)
+│   │   ├── trading_agents.py   # Trading agent CRUD, lifecycle, and order endpoints
 │   │   └── internal.py         # Internal/admin endpoints
 │   │
 │   ├── data/                   # Data layer
@@ -214,8 +226,11 @@ algomatic-state/
 │   │
 │   ├── messaging/              # Pub/sub message bus (in-memory + Redis backends)
 │   │   ├── __init__.py
+│   │   ├── base.py             # Abstract MessageBusBackend ABC
 │   │   ├── events.py           # Event, EventType
-│   │   └── bus.py              # MessageBus, get_message_bus singleton
+│   │   ├── bus.py              # MessageBus, get_message_bus singleton
+│   │   ├── redis_bus.py        # Redis-backed message bus implementation
+│   │   └── serialization.py   # Event serialization for Redis transport
 │   │
 │   ├── marketdata/             # Market data provider abstraction
 │   │   ├── __init__.py
@@ -241,9 +256,18 @@ algomatic-state/
 │   │   ├── risk_reward.py      # Risk/Reward evaluator (R:R, sizing, stop distance)
 │   │   ├── exit_plan.py        # Exit plan evaluator (stop/target presence, proximity)
 │   │   ├── regime_fit.py       # Regime fit evaluator (direction conflict, transition risk, OOD)
-│   │   └── mtfa.py             # Multi-timeframe alignment evaluator
+│   │   ├── mtfa.py             # Multi-timeframe alignment evaluator
+│   │   ├── stop_placement.py   # Stop placement evaluator (stop vs structure, ATR distance)
+│   │   ├── structure_awareness.py # Structure awareness evaluator (support/resistance proximity)
+│   │   └── volatility_liquidity.py # Volatility and liquidity evaluator (spread, volume, vol regime)
 │   │
 │   ├── orchestrator.py         # EvaluatorOrchestrator (sequential/parallel execution, scoring)
+│   │
+│   ├── trading_agents/         # Trading agent management
+│   │   ├── __init__.py
+│   │   ├── models.py           # AgentStrategy, TradingAgent, AgentOrder, AgentActivityLog models
+│   │   ├── repository.py       # TradingAgentsRepository (CRUD for agents, orders, activity)
+│   │   └── predefined.py       # Predefined strategy catalog
 │   │
 │   ├── features/               # Feature engineering
 │   │   ├── __init__.py
@@ -291,6 +315,20 @@ algomatic-state/
 │   │   ├── metrics.py          # Performance metrics
 │   │   └── report.py           # Reporting
 │   │
+│   ├── reviewer/               # Event-driven behavioral checks service
+│   │   ├── __init__.py
+│   │   ├── main.py             # Standalone entry point
+│   │   ├── orchestrator.py     # Event subscriber and check dispatcher
+│   │   ├── publisher.py        # Review event publishing helpers
+│   │   ├── api_client.py       # API client for reviewer service
+│   │   ├── baseline.py         # Baseline check logic
+│   │   └── checks/             # Individual check implementations
+│   │       ├── __init__.py
+│   │       ├── base.py         # BaseCheck ABC
+│   │       ├── risk_sanity.py  # Risk sanity checks
+│   │       ├── entry_quality.py # Entry quality checks
+│   │       └── runner.py       # CheckRunner execution engine
+│   │
 │   ├── execution/              # Live trading
 │   │   ├── __init__.py
 │   │   ├── client.py           # Alpaca client wrapper
@@ -305,16 +343,25 @@ algomatic-state/
 │       ├── __init__.py
 │       └── logging.py          # Centralized logging setup with file logging
 │
-├── tests/                      # Test suite
+├── tests/                      # Test suite (80+ test files)
 │   ├── conftest.py             # Shared fixtures
+│   ├── integration/            # Integration tests
+│   │   └── test_data_pipeline.py
 │   └── unit/
-│       ├── backtest/           # Backtest tests
-│       ├── broker/             # Broker integration tests
-│       ├── data/               # Data layer tests
-│       ├── evaluators/         # Evaluator tests
-│       ├── execution/          # Execution tests
-│       ├── features/           # Feature tests
-│       └── hmm/                # HMM module tests
+│       ├── api/                # API endpoint tests (auth, broker, campaigns, strategies, etc.)
+│       ├── backtest/           # Backtest engine and metrics tests
+│       ├── broker/             # Broker model and SnapTrade client tests
+│       ├── checks/             # Behavioral check tests
+│       ├── data/               # Data layer tests (loaders, repositories, aggregator)
+│       ├── evaluators/         # Evaluator tests (context, mtfa, regime_fit, stop_placement, etc.)
+│       ├── execution/          # Execution tests (orders, risk manager, order tracker)
+│       ├── features/           # Feature tests (returns, volatility, volume, intrabar, etc.)
+│       ├── hmm/                # HMM module tests (artifacts, config, encoders, scalers)
+│       ├── marketdata/         # Market data service and orchestrator tests
+│       ├── messaging/          # Message bus, events, redis bus, serialization tests
+│       ├── reviewer/           # Reviewer orchestrator, publisher, deduplication tests
+│       ├── rules/              # Guardrails tests
+│       └── trade/              # Trade intent and evaluation tests
 │
 ├── scripts/                    # CLI scripts
 │   ├── helpers/                # Shared helper modules
@@ -333,12 +380,31 @@ algomatic-state/
 │
 ├── alembic/                    # Database migrations
 │   ├── env.py
-│   └── versions/               # 33 migrations (001-033)
+│   └── versions/               # 40 migrations (001-040)
 │
 ├── ui/                         # Web UI
 │   ├── backend/
 │   │   └── api.py              # FastAPI backend
 │   ├── frontend/               # React + TypeScript frontend
+│   │   └── src/portal/         # Portal SPA (100+ components)
+│   │       ├── api/            # API client and endpoint wrappers
+│   │       ├── components/     # Reusable UI components
+│   │       │   ├── agents/     # Agent management (status, orders, create modal)
+│   │       │   ├── campaigns/  # Campaign detail (timeline, checks, context)
+│   │       │   ├── charts/     # ECharts-based analytics (equity curve, drawdown, heatmaps)
+│   │       │   ├── investigate/ # Trade investigation (filters, driver cards, subset metrics)
+│   │       │   ├── strategies/ # Strategy form with condition builder
+│   │       │   └── ui/         # Generic UI primitives (Section, StatCard)
+│   │       ├── context/        # React contexts (Auth, Chart, Investigate)
+│   │       ├── layouts/        # Page layouts (App, Public, Onboarding, Root)
+│   │       ├── pages/          # Route pages
+│   │       │   ├── app/        # Authenticated pages (Dashboard, Campaigns, Agents, Investigate, etc.)
+│   │       │   ├── settings/   # Settings pages (Profile, Risk, Strategies, Brokers)
+│   │       │   ├── auth/       # Login page
+│   │       │   ├── help/       # Help articles
+│   │       │   └── public/     # Public pages (Home, FAQ, Pricing, legal)
+│   │       ├── routes/         # Route definitions
+│   │       └── utils/          # Utility functions (metrics, filters, P&L calculations)
 │   ├── run_backend.py          # Backend entry point
 │   ├── start_ui.sh             # Linux/macOS startup script
 │   └── start_ui.bat            # Windows startup script
@@ -365,6 +431,7 @@ algomatic-state/
     ├── PRD.md                  # Product requirements document
     ├── PITFALLS.md             # ML and trading pitfalls research
     ├── STRATEGIES_REPO.md      # 100 TA-Lib based trading strategies
+    ├── TRADE_CHECKS_REFERENCE.md # Behavioral check codes and descriptions
     └── archive/                # Historical design documents
         ├── STATE_VECTOR_HMM_IMPLEMENTATION_PLAN.md
         ├── Trading_Buddy_Master_Roadmap_and_DB_Schema.md
@@ -477,10 +544,12 @@ class BaseFeature(ABC):
 
 | Category | Features | Description |
 |----------|----------|-------------|
-| Returns | log_return_1m, log_return_5m, momentum_20, roc_10 | Price change measures |
-| Volatility | realized_vol_30, atr_14, garman_klass_vol | Price dispersion measures |
-| Volume | volume_ma_ratio, obv, vwap_deviation | Trading activity measures |
-| Structure | high_low_range, close_position, gap | Bar shape and pattern measures |
+| Returns | r1, r5, r15, r60, cumret_60, ema_diff, slope_60, trend_strength | Price change and trend measures |
+| Volatility | rv_15, rv_60, range_1, atr_60, range_z_60, vol_of_vol | Price dispersion and range measures |
+| Volume | vol1, dvol1, relvol_60, vol_z_60, dvol_z_60 | Trading activity and participation measures |
+| Intrabar | clv, body_ratio, upper_wick, lower_wick | Candle structure and shape measures |
+| Time of Day | tod_sin, tod_cos, is_open_window, is_close_window, is_midday | Time-based session encoding |
+| Market Context | mkt_r5, mkt_r15, mkt_rv_60, beta_60, resid_rv_60 | Broad market and relative measures |
 
 #### FeaturePipeline
 Orchestrates feature computation with:
@@ -675,7 +744,10 @@ EvaluatorOrchestrator
      ├─► RiskRewardEvaluator (R:R, sizing, stop sanity)
      ├─► ExitPlanEvaluator (stop/target presence)
      ├─► RegimeFitEvaluator (direction vs regime, transition risk)
-     └─► MTFAEvaluator (timeframe alignment)
+     ├─► MTFAEvaluator (timeframe alignment)
+     ├─► StopPlacementEvaluator (stop vs structure, ATR distance)
+     ├─► StructureAwarenessEvaluator (support/resistance proximity)
+     └─► VolatilityLiquidityEvaluator (spread, volume, volatility regime)
      │
      ▼
 Deduplicate + Score (100 base - penalties)
@@ -792,8 +864,75 @@ get_current_user() Middleware (validates JWT)
 - `main.py`: Standalone entry point (runs as a separate process)
 - `orchestrator.py`: Event subscriber and check dispatcher
 - `publisher.py`: Review event publishing helpers
+- `checks/`: Individual check implementations
+  - `base.py`: BaseCheck ABC
+  - `risk_sanity.py`: Risk sanity checks (position sizing, stop distance, overtrading)
+  - `entry_quality.py`: Entry quality checks (timing, setup quality)
+  - `runner.py`: CheckRunner execution engine
 
 Events handled: `REVIEW_LEG_CREATED`, `REVIEW_CAMPAIGNS_POPULATED`, `REVIEW_CONTEXT_UPDATED`, `REVIEW_RISK_PREFS_UPDATED`.
+
+### 14. Go Agent Service
+
+**Purpose**: Manages trading agent lifecycle -- polls for active agents, resolves strategy definitions, runs agent loops, and tracks orders and activity.
+
+**Location**: `agent-service/`
+
+#### Architecture
+```
+┌─────────────────────────────────────────────────────┐
+│                  Agent Service (Go)                    │
+│                                                        │
+│  ┌──────────────┐    ┌──────────────────────────┐     │
+│  │  Orchestrator │    │  Agent Loop (per agent)   │     │
+│  │  (polls DB    │───►│  1. Resolve strategy      │     │
+│  │   for active  │    │  2. Fetch market data     │     │
+│  │   agents)     │    │  3. Compute signals       │     │
+│  └──────────────┘    │  4. Risk check            │     │
+│                       │  5. Submit orders (Alpaca) │     │
+│                       │  6. Log activity           │     │
+│                       └──────────────────────────┘     │
+│                                                        │
+│  Repositories: agent_repo, order_repo,                │
+│                activity_repo, strategy_repo            │
+└─────────────────────────────────────────────────────┘
+```
+
+- Configurable via `AS_*` environment variables
+- Strategy resolver compiles JSONB DSL conditions into executable logic
+- Uses `version` column on `agent_strategies` for cache invalidation
+- Docker Compose service with PostgreSQL dependency
+
+### 15. Trading Agents Management
+
+**Purpose**: Python-side management of trading agent configurations, predefined strategy catalog, and API endpoints.
+
+**Location**: `src/trading_agents/`, `src/api/trading_agents.py`
+
+- **Models** (`models.py`): `AgentStrategy`, `TradingAgent`, `AgentOrder`, `AgentActivityLog` SQLAlchemy models
+- **Repository** (`repository.py`): CRUD operations for agents, orders, and activity logs
+- **Predefined Strategies** (`predefined.py`): Catalog of predefined strategy definitions with entry/exit conditions
+- **API Router** (`trading_agents.py`): REST endpoints for strategy CRUD, agent lifecycle (start/pause/stop), and order/activity queries
+
+### 16. Portal UI
+
+**Purpose**: Full single-page application for the trading copilot platform.
+
+**Location**: `ui/frontend/src/portal/`
+
+**Key sections:**
+- **Public pages**: Landing, FAQ, How It Works, Pricing, legal (Terms, Privacy, Disclaimer)
+- **Auth**: Google OAuth login flow
+- **App pages**: Dashboard, Campaigns (with detail view), Investigate/Insights, Journal, Agents (with detail view), Strategy Probe, Evaluate
+- **Settings**: Profile, Risk preferences, Strategies (with condition builder), Brokers, Data & Privacy
+- **Help**: Evaluations explained, Behavioral Signals, Why Flags, Common Misunderstandings
+
+**Component highlights:**
+- ECharts-based analytics (equity curve, drawdown, return distribution, rolling Sharpe, time-of-day heatmap)
+- Campaign timeline with checks summary, context panel, and emotion chips
+- Trade investigation with filter bar, driver cards, subset metrics, and compare toggle
+- Strategy condition builder with grouped select and condition DSL
+- Agent management with status badges, order tables, and activity logs
 
 ## Data Flow Diagrams
 
@@ -1011,9 +1150,10 @@ The full stack runs via `docker-compose.yml`:
 | `indicator-engine` | C++ binary (built from `indicator-engine/Dockerfile`) | High-performance indicator computation |
 | `marketdata-service` | Go binary (built from `marketdata-service/Dockerfile`) | Market data fetching (Alpaca) + aggregation |
 | `reviewer-service` | Python (built from `Dockerfile`) | Event-driven behavioral checks |
+| `agent-service` | Go binary (built from `agent-service/Dockerfile`) | Trading agent lifecycle management |
 | `pgadmin` | dpage/pgadmin4 | Database management UI (profile: tools) |
 
-Service dependencies: `data-service` → `postgres`; `indicator-engine` / `marketdata-service` → `data-service` + `redis`; `reviewer-service` → `postgres` + `data-service` + `redis`.
+Service dependencies: `data-service` → `postgres`; `indicator-engine` / `marketdata-service` → `data-service` + `redis`; `reviewer-service` → `postgres` + `data-service` + `redis`; `agent-service` → `postgres`.
 
 ## Technology Stack
 

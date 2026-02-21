@@ -4,7 +4,7 @@ Trading copilot platform combining HMM-based market regime tracking with a modul
 
 ## Overview
 
-Algomatic State has three major subsystems:
+Algomatic State has the following major subsystems:
 
 1. **Regime Tracking Engine** -- Multi-timeframe Hidden Markov Model (HMM) approach to market state inference. The system learns continuous latent state vectors from engineered features and uses Gaussian HMMs to infer discrete market regimes.
 
@@ -22,6 +22,8 @@ Algomatic State has three major subsystems:
 - **Trade Evaluation**: Pluggable evaluator modules (risk/reward, exit plan, regime fit, MTFA)
 - **Standalone Momentum Agent**: Dockerised agent with scheduler loop, risk manager, and Alpaca/Finnhub data providers
 - **Broker Integration**: SnapTrade-based broker connection and direct Alpaca API for trade history sync
+- **Go Agent Service**: Manages trading agent lifecycle, strategy resolution, and order execution via Alpaca
+- **Portal UI**: Full SPA with public pages, authentication, trade investigation/insights, agent management, and settings
 
 
 ## Installation
@@ -75,7 +77,7 @@ python scripts/download_data.py --symbols AAPL MSFT --start 2023-01-01 --end 202
 python scripts/compute_features.py --symbols AAPL --timeframe 1Min
 ```
 
-### 6. Start the Web UI
+### 4. Start the Web UI
 
 The web UI provides interactive regime state visualization with price charts, feature exploration, and regime statistics. It consists of a FastAPI backend and a React frontend.
 
@@ -125,7 +127,7 @@ The UI will be available at `http://localhost:5173`.
 
 See [docs/APIs.md](docs/APIs.md) for the full API reference.
 
-### 7. Launch the Momentum Trading Agent
+### 5. Launch the Momentum Trading Agent
 
 The momentum agent runs a configurable loop that fetches market data, computes features, generates momentum signals, and places paper trades via Alpaca. It includes an internal FastAPI endpoint for health checks and market data retrieval.
 
@@ -229,7 +231,7 @@ To enable verbose debug logging, set `AGENT_LOG_LEVEL=DEBUG` in your environment
 - Use `./start-agents.sh` which creates log directories with correct ownership
 - Or manually create the log directory: `mkdir -p ~/projects/algomatic/logs`
 
-### 8. Launch Additional Trading Agents (Optional)
+### 6. Launch Additional Trading Agents (Optional)
 
 Besides the basic momentum agent, the project includes three additional trading strategy agents that can be run independently:
 
@@ -280,7 +282,7 @@ Each agent has its own environment variable prefix:
 | VWAP | `VWAP_` | `dist_vwap_60` (distance from VWAP) | long: 0.005, short: -0.005 |
 
 
-### 9. Run the Market Data Service
+### 7. Run the Market Data Service
 
 The market data service is a Go-based background process that fetches OHLCV bars from Alpaca on a schedule and listens for `MARKET_DATA_REQUEST` events via Redis. It replaces ad-hoc provider calls with a centralised fetch-and-persist loop.
 
@@ -317,7 +319,7 @@ docker logs -f algomatic-marketdata-service
 
 Logs are mounted to `${LOGS_DIR:-./logs}/marketdata-service/` on the host.
 
-### 10. Run the Reviewer Service
+### 8. Run the Reviewer Service
 
 The reviewer service is an event-driven Python process that runs behavioral checks against position campaigns. It subscribes to review events on the Redis message bus and persists check results to the database.
 

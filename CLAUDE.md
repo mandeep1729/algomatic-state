@@ -52,7 +52,7 @@ The system acts as a second set of eyes — quietly reviewing a proposed trade a
 
 ## Codebase Structure
 
-The project has three major subsystems:
+The project has the following major subsystems:
 
 1. **Regime Tracking Engine** (`src/features/state/hmm/`, `src/features/state/pca/`) -- HMM and PCA-based market state inference from engineered features. The feature pipeline is in `src/features/`.
 
@@ -69,6 +69,12 @@ The project has three major subsystems:
 7. **Go Data Service** (`data-service/`, `proto/`) -- gRPC service (Go) that owns all market data tables (`tickers`, `ohlcv_bars`, `computed_features`, `data_sync_log`, probe tables). All Python market data access flows through `MarketDataGrpcClient` (`src/data/grpc_client.py`) via gRPC. Trading tables remain in Python via SQLAlchemy repositories.
 
 8. **Go Market Data Service** (`marketdata-service/`) -- Go service that fetches market data from Alpaca, aggregates timeframes, and writes to the data-service via gRPC.
+
+9. **Go Agent Service** (`agent-service/`) -- Go service that manages trading agent lifecycle. Polls for active agents, resolves their strategy definitions, runs agent loops (fetch data, compute signals, submit orders via Alpaca), and tracks orders and activity. Repositories: `agent_repo`, `order_repo`, `activity_repo`, `strategy_repo`.
+
+10. **Trading Agents Management** (`src/trading_agents/`, `src/api/trading_agents.py`) -- Python models, repository, and API for managing trading agent configurations. Predefined strategy catalog (`predefined.py`), agent CRUD, lifecycle control (start/pause/stop), and order/activity endpoints.
+
+11. **Portal UI** (`ui/frontend/src/portal/`) -- Full SPA built with React + TypeScript. Public pages (landing, FAQ, how-it-works), Google OAuth login, app pages (dashboard, campaigns, investigate/insights, journal, agents, strategy probe, evaluate), settings (profile, risk, strategies, brokers), and help section.
 
 Supporting infrastructure: data loaders (`src/data/`), database models and repositories (`src/data/database/`), repository layer (`BrokerRepository`, `JournalRepository`, `ProbeRepository`, `TradingBuddyRepository`), unified dependency injection (`src/data/database/dependencies.py`), broker integration (`src/api/broker.py`, `src/api/alpaca.py`, `src/execution/snaptrade_client.py`), backtesting (`src/backtest/`), configuration (`config/settings.py`), authentication (`src/api/auth.py`, `src/api/auth_middleware.py`).
 
