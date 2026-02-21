@@ -56,6 +56,8 @@ class TradingRunnerConfig:
         log_dir: Directory for trade logs
         enable_order_tracking: Enable real-time order tracking
         dry_run: Generate signals but don't submit orders
+        circuit_breaker_threshold: Consecutive failures before circuit opens
+        circuit_breaker_cooldown: Seconds to pause when circuit is open
     """
 
     symbols: list[str] = field(default_factory=list)
@@ -68,6 +70,8 @@ class TradingRunnerConfig:
     log_dir: Path = field(default_factory=lambda: Path("logs/trading"))
     enable_order_tracking: bool = True
     dry_run: bool = False
+    circuit_breaker_threshold: int = 5
+    circuit_breaker_cooldown: int = 300  # 5 minutes
 
 
 class TradingRunner:
@@ -135,6 +139,10 @@ class TradingRunner:
         self._last_bar_time: dict[str, datetime] = {}
         self._data_cache: dict[str, pd.DataFrame] = {}
         self._features_cache: dict[str, pd.DataFrame] = {}
+
+        # Circuit breaker state
+        self._consecutive_failures = 0
+        self._circuit_open = False
 
         # Callbacks
         self._signal_callbacks: list[Callable[[Signal], None]] = []
@@ -266,9 +274,22 @@ class TradingRunner:
         try:
             while self._running and not self._shutdown_requested:
                 try:
+                    # Circuit breaker: if open, wait for cooldown then probe
+                    if self._circuit_open:
+                        cooldown = self._config.circuit_breaker_cooldown
+                        logger.critical(
+                            "Circuit breaker OPEN after %d consecutive failures. "
+                            "Pausing for %ds before probing.",
+                            self._consecutive_failures, cooldown,
+                        )
+                        time.sleep(cooldown)
+                        self._circuit_open = False
+                        logger.info("Circuit breaker: probing with next cycle...")
+
                     # Check if market is open
                     if not self._client.is_market_open():
                         logger.debug("Market closed, waiting...")
+                        self._consecutive_failures = 0  # Reset on non-error idle
                         time.sleep(60)
                         continue
 
@@ -282,13 +303,34 @@ class TradingRunner:
                     # Run trading cycle
                     self._trading_cycle()
 
+                    # Success — reset circuit breaker
+                    if self._consecutive_failures > 0:
+                        logger.info(
+                            "Trading cycle succeeded, resetting failure counter (was %d)",
+                            self._consecutive_failures,
+                        )
+                    self._consecutive_failures = 0
+
                     # Wait for next cycle
                     time.sleep(self._config.signal_interval_seconds)
 
                 except Exception as e:
-                    logger.error(f"Error in trading loop", extra={"error": str(e)})
+                    self._consecutive_failures += 1
+                    logger.error(
+                        "Error in trading loop (failure %d/%d)",
+                        self._consecutive_failures,
+                        self._config.circuit_breaker_threshold,
+                        extra={"error": str(e)},
+                    )
                     self._notify_error(e)
-                    time.sleep(10)  # Brief pause before retrying
+
+                    if self._consecutive_failures >= self._config.circuit_breaker_threshold:
+                        self._circuit_open = True
+                    else:
+                        # Exponential backoff: 10s, 20s, 40s, ...
+                        backoff = min(10 * (2 ** (self._consecutive_failures - 1)), 120)
+                        logger.warning("Retrying in %ds...", backoff)
+                        time.sleep(backoff)
 
         finally:
             self._running = False

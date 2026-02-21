@@ -1,6 +1,22 @@
 # CLAUDE.md
 
+## vibeflow Agent Session Rules
+
+**CRITICAL — When a vibeflow session_init prompt is active (autonomous agent mode), these rules apply to ALL work, including ad-hoc user requests:**
+
+1. **NEVER write code, enter plan mode, or use EnterPlanMode before creating a tracked work item in vibeflow.**
+2. **Every piece of work must flow through vibeflow status transitions** (planning → implementing → done).
+3. **When polling for work, always drill into features to check todos.**
+4. **YOU MUST use filters for tool calls to optimize data fetch.**
+5. **IMPORTANT: You must continue polling after active work items are complete.**
+
+
+## Skills
+
 See @.claude/skills/coding-best-practices/SKILLS.md for coding best practices and design patterns.
+
+## Role
+
 See @.claude/SOFTWARE-ROLE.md for your role
 
 
@@ -28,7 +44,6 @@ The system acts as a second set of eyes — quietly reviewing a proposed trade a
 - Be broker‑agnostic and strategy‑agnostic
 - Simple, explainable rules before advanced AI
 
-
 ### What This Project Is NOT
 - The assistant must never:
 - Predict price direction
@@ -52,23 +67,27 @@ The system acts as a second set of eyes — quietly reviewing a proposed trade a
 
 ## Codebase Structure
 
-The project has three major subsystems:
+The project has the following major subsystems:
 
 1. **Regime Tracking Engine** (`src/features/state/hmm/`, `src/features/state/pca/`) -- HMM and PCA-based market state inference from engineered features. The feature pipeline is in `src/features/`.
 
 2. **Trading Buddy** (`src/evaluators/`, `src/orchestrator.py`, `src/trade/`, `src/rules/`, `src/api/trading_buddy.py`) -- Modular trade evaluation system. Pluggable evaluators check risk/reward, exit plans, regime fit, and multi-timeframe alignment. Guardrails enforce the no-prediction policy.
 
-3. **Standalone Momentum Agent** (`src/agent/`) -- Dockerised agent with a scheduler loop that fetches data (Alpaca or Finnhub via `src/marketdata/`), computes features, generates signals, and submits orders through the execution layer (`src/execution/`).
+3. **Messaging & Market Data Service** (`src/messaging/`, `src/marketdata/`) -- In-memory pub/sub message bus decoupling market data fetching from consumers. `MarketDataOrchestrator` coordinates between the bus and `MarketDataService`.
 
-4. **Messaging & Market Data Service** (`src/messaging/`, `src/marketdata/`) -- In-memory pub/sub message bus decoupling market data fetching from consumers. `MarketDataOrchestrator` coordinates between the bus and `MarketDataService`.
+4. **Trade Lifecycle & Campaigns** (`src/api/campaigns.py`, `src/data/database/trade_lifecycle_models.py`) -- Tracks trade journeys from flat-to-flat using fills as the atomic unit. Decision contexts capture trader reasoning per fill, campaign_fills provides derived FIFO zero-crossing groupings. Behavioral checks (`src/checks/`, `src/reviewer/`) run against decision contexts.
 
-5. **Trade Lifecycle & Campaigns** (`src/api/campaigns.py`, `src/data/database/trade_lifecycle_models.py`) -- Tracks trade journeys from flat-to-flat using fills as the atomic unit. Decision contexts capture trader reasoning per fill, campaign_fills provides derived FIFO zero-crossing groupings. Behavioral checks (`src/checks/`, `src/reviewer/`) run against decision contexts.
+5. **Reviewer Service** (`src/reviewer/`) -- Event-driven service that subscribes to review events on the Redis message bus and runs behavioral checks against trade fills and decision contexts.
 
-6. **Reviewer Service** (`src/reviewer/`) -- Event-driven service that subscribes to review events on the Redis message bus and runs behavioral checks against trade fills and decision contexts.
+6. **Go Data Service** (`data-service/`, `proto/`) -- gRPC service (Go) that owns all market data tables (`tickers`, `ohlcv_bars`, `computed_features`, `data_sync_log`, probe tables). All Python market data access flows through `MarketDataGrpcClient` (`src/data/grpc_client.py`) via gRPC. Trading tables remain in Python via SQLAlchemy repositories.
 
-7. **Go Data Service** (`data-service/`, `proto/`) -- gRPC service (Go) that owns all market data tables (`tickers`, `ohlcv_bars`, `computed_features`, `data_sync_log`, probe tables). All Python market data access flows through `MarketDataGrpcClient` (`src/data/grpc_client.py`) via gRPC. Trading tables remain in Python via SQLAlchemy repositories.
+7. **Go Market Data Service** (`marketdata-service/`) -- Go service that fetches market data from Alpaca, aggregates timeframes, and writes to the data-service via gRPC.
 
-8. **Go Market Data Service** (`marketdata-service/`) -- Go service that fetches market data from Alpaca, aggregates timeframes, and writes to the data-service via gRPC.
+8. **Go Agent Service** (`agent-service/`) -- Go service that manages trading agent lifecycle. Polls for active agents, resolves their strategy definitions, runs agent loops (fetch data, compute signals, submit orders via Alpaca), and tracks orders and activity. Repositories: `agent_repo`, `order_repo`, `activity_repo`, `strategy_repo`.
+
+9. **Trading Agents Management** (`src/trading_agents/`, `src/api/trading_agents.py`) -- Python models, repository, and API for managing trading agent configurations. Predefined strategy catalog (`predefined.py`), agent CRUD, lifecycle control (start/pause/stop), and order/activity endpoints.
+
+10. **Portal UI** (`ui/frontend/src/portal/`) -- Full SPA built with React + TypeScript. Public pages (landing, FAQ, how-it-works), Google OAuth login, app pages (dashboard, campaigns, investigate/insights, journal, agents, strategy probe, evaluate), settings (profile, risk, strategies, brokers), and help section.
 
 Supporting infrastructure: data loaders (`src/data/`), database models and repositories (`src/data/database/`), repository layer (`BrokerRepository`, `JournalRepository`, `ProbeRepository`, `TradingBuddyRepository`), unified dependency injection (`src/data/database/dependencies.py`), broker integration (`src/api/broker.py`, `src/api/alpaca.py`, `src/execution/snaptrade_client.py`), backtesting (`src/backtest/`), configuration (`config/settings.py`), authentication (`src/api/auth.py`, `src/api/auth_middleware.py`).
 
@@ -76,4 +95,4 @@ Additional components:
 - `go-strats/` -- Go strategy backtesting framework (uses gRPC for persistence)
 - `indicator-engine/` -- C++ high-performance indicator computation (gRPC client to data-service)
 
-See `docs/ARCHITECTURE.md` for detailed architecture, and `docs/archive/Trading_Buddy_Detailed_TODOs.md` for the Trading Buddy implementation roadmap.
+See `docs/ARCHITECTURE.md` for detailed architecture, and `docs/DATABASE.md` for detailed database schema and design details.

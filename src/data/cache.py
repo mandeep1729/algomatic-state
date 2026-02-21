@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import pickle
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -10,21 +11,36 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Default max cache age in hours when not configured
+_DEFAULT_MAX_CACHE_AGE_HOURS = 24
+
 
 class DataCache:
     """File-based cache for market data using pickle format.
 
     Caches data by symbol and date range to avoid redundant API calls.
+    Cached entries are automatically expired after ``max_cache_age_hours``.
     """
 
-    def __init__(self, cache_dir: str | Path = "data/cache"):
+    def __init__(
+        self,
+        cache_dir: str | Path = "data/cache",
+        max_cache_age_hours: int = _DEFAULT_MAX_CACHE_AGE_HOURS,
+    ):
         """Initialize the cache.
 
         Args:
             cache_dir: Directory to store cached files
+            max_cache_age_hours: Maximum cache age in hours before entries
+                are considered stale and evicted on access.
         """
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.max_cache_age_hours = max_cache_age_hours
+        logger.debug(
+            "DataCache initialized: dir=%s, max_age=%dh",
+            self.cache_dir, self.max_cache_age_hours,
+        )
 
     def _get_cache_key(
         self,
@@ -84,10 +100,28 @@ class DataCache:
         cache_path = self._get_cache_path(symbol, cache_key)
 
         if cache_path.exists():
+            # Check TTL — expire stale cache entries
+            try:
+                file_age_hours = (time.time() - cache_path.stat().st_mtime) / 3600
+                if file_age_hours > self.max_cache_age_hours:
+                    logger.info(
+                        "Cache expired for %s (age=%.1fh, max=%dh), removing %s",
+                        symbol, file_age_hours, self.max_cache_age_hours, cache_path,
+                    )
+                    cache_path.unlink(missing_ok=True)
+                    return None
+            except OSError:
+                logger.warning(
+                    "Cannot stat cache file for %s, removing %s",
+                    symbol, cache_path, exc_info=True,
+                )
+                cache_path.unlink(missing_ok=True)
+                return None
+
             try:
                 with open(cache_path, "rb") as f:
                     data = pickle.load(f)
-                logger.debug("Cache hit for %s", symbol)
+                logger.debug("Cache hit for %s (age=%.1fh)", symbol, file_age_hours)
                 return data
             except Exception:
                 logger.warning(

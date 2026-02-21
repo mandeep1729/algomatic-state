@@ -4,7 +4,7 @@ Trading copilot platform combining HMM-based market regime tracking with a modul
 
 ## Overview
 
-Algomatic State has three major subsystems:
+Algomatic State has the following major subsystems:
 
 1. **Regime Tracking Engine** -- Multi-timeframe Hidden Markov Model (HMM) approach to market state inference. The system learns continuous latent state vectors from engineered features and uses Gaussian HMMs to infer discrete market regimes.
 
@@ -20,8 +20,9 @@ Algomatic State has three major subsystems:
 - **Walk-Forward Validation**: Time-based cross-validation with leakage prevention
 - **Production Monitoring**: Drift detection, shadow inference, retraining triggers
 - **Trade Evaluation**: Pluggable evaluator modules (risk/reward, exit plan, regime fit, MTFA)
-- **Standalone Momentum Agent**: Dockerised agent with scheduler loop, risk manager, and Alpaca/Finnhub data providers
 - **Broker Integration**: SnapTrade-based broker connection and direct Alpaca API for trade history sync
+- **Go Agent Service**: Manages trading agent lifecycle, strategy resolution, and order execution via Alpaca
+- **Portal UI**: Full SPA with public pages, authentication, trade investigation/insights, agent management, and settings
 
 
 ## Installation
@@ -75,7 +76,7 @@ python scripts/download_data.py --symbols AAPL MSFT --start 2023-01-01 --end 202
 python scripts/compute_features.py --symbols AAPL --timeframe 1Min
 ```
 
-### 6. Start the Web UI
+### 4. Start the Web UI
 
 The web UI provides interactive regime state visualization with price charts, feature exploration, and regime statistics. It consists of a FastAPI backend and a React frontend.
 
@@ -125,162 +126,13 @@ The UI will be available at `http://localhost:5173`.
 
 See [docs/APIs.md](docs/APIs.md) for the full API reference.
 
-### 7. Launch the Momentum Trading Agent
+### 5. Trading Agents
 
-The momentum agent runs a configurable loop that fetches market data, computes features, generates momentum signals, and places paper trades via Alpaca. It includes an internal FastAPI endpoint for health checks and market data retrieval.
+Trading agents are managed through the **Go agent-service** (`agent-service/`), which runs as part of the main Docker Compose stack. Agents are created, configured, and controlled via the Portal UI (Agents page) or the REST API (`/api/trading-agents/`).
 
-#### Option A: Using the startup script (recommended)
+The agent-service supports 100+ predefined strategies, agent lifecycle management (start/pause/stop), and tracks all orders and activity in the database. See `agent-service/` for implementation details and `src/api/trading_agents.py` for the API endpoints.
 
-The `start-agents.sh` script handles log directory creation with proper permissions and starts agents via Docker Compose:
-
-```bash
-# 1. Copy and configure your environment
-cp .env.example .env
-# Edit .env to set ALPACA_API_KEY, ALPACA_SECRET_KEY, and optionally FINNHUB_API_KEY
-
-# 2. Start the database first
-docker compose up -d postgres
-
-# 3. Start all agents in the background
-./start-agents.sh -d
-
-# Or start a specific agent
-./start-agents.sh -d momentum-agent
-
-# View agent logs
-docker logs -f trader-momentum-agent
-```
-
-#### Option B: Docker Compose (manual)
-
-If you prefer to run Docker Compose directly without the helper script:
-
-```bash
-# 1. Copy and configure your environment
-cp .env.example .env
-# Edit .env to set ALPACA_API_KEY, ALPACA_SECRET_KEY, and optionally FINNHUB_API_KEY
-
-# 2. Start the database
-docker compose up -d postgres
-
-# 3. Start the momentum agent
-docker compose -f docker-compose.agents.yml up -d momentum-agent
-
-# 4. (Optional) Include pgAdmin for database management
-docker compose --profile tools up -d
-
-# 5. View agent logs
-docker logs -f trader-momentum-agent
-```
-
-#### Option C: Run locally without Docker
-
-```bash
-# Ensure the database is running (either via Docker or locally)
-docker compose up -d postgres
-
-# Run the agent directly
-python -m src.agent.main
-```
-
-#### Agent Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `AGENT_SYMBOL` | `AAPL` | Ticker symbol to trade |
-| `AGENT_INTERVAL_MINUTES` | `15` | Minutes between each loop iteration |
-| `AGENT_DATA_PROVIDER` | `alpaca` | Market data source (`alpaca` or `finnhub`) |
-| `AGENT_LOOKBACK_DAYS` | `5` | Days of historical data to fetch each cycle |
-| `AGENT_POSITION_SIZE_DOLLARS` | `1` | Dollar amount per position (docker-compose uses `1000`) |
-| `AGENT_PAPER` | `true` | Use Alpaca paper trading (`true`/`false`) |
-| `AGENT_API_PORT` | `8000` | Port for internal FastAPI health/data endpoint |
-| `AGENT_LOG_LEVEL` | `INFO` | Agent logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `STRATEGY_MOMENTUM_FEATURE` | `r5` | Feature used for momentum signal |
-| `STRATEGY_LONG_THRESHOLD` | `0.001` | Momentum value above which to go long |
-| `STRATEGY_SHORT_THRESHOLD` | `-0.001` | Momentum value below which to go short |
-
-The agent requires `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` to be set for order submission. If using Finnhub as the data provider, also set `FINNHUB_API_KEY`.
-
-#### Log Locations
-
-Logs are written to the following locations:
-
-| Running Mode | Log Location |
-|---|---|
-| Docker (via `start-agents.sh`) | `~/projects/algomatic/logs/momentum-agent-logs/` |
-| Docker (manual) | Container path `/app/logs/` (mounted to host as configured in compose file) |
-| Local (no Docker) | `./logs/agent.log` (project root) |
-
-To enable verbose debug logging, set `AGENT_LOG_LEVEL=DEBUG` in your environment or `.env` file.
-
-#### Troubleshooting
-
-**Agent not starting:**
-- Verify Alpaca credentials are set correctly in `.env`
-- Check that the PostgreSQL database is running: `docker compose ps`
-- Review logs for errors: `docker logs trader-momentum-agent`
-
-**No trades being placed:**
-- The agent only trades during market hours (9:30 AM - 4:00 PM ET, weekdays)
-- Ensure `AGENT_PAPER=true` is set for paper trading (default)
-- Check that the momentum thresholds are appropriate for current market conditions
-
-**Permission errors on log files:**
-- Use `./start-agents.sh` which creates log directories with correct ownership
-- Or manually create the log directory: `mkdir -p ~/projects/algomatic/logs`
-
-### 8. Launch Additional Trading Agents (Optional)
-
-Besides the basic momentum agent, the project includes three additional trading strategy agents that can be run independently:
-
-- **Breakout Agent**: Trades price breakouts above recent highs and breakdowns below recent lows
-- **Contrarian Agent**: Takes positions against the prevailing momentum (mean reversion)
-- **VWAP Agent**: Trades based on distance from Volume Weighted Average Price
-
-#### Running Multiple Agents
-
-Use the `start-agents.sh` script or Docker Compose directly:
-
-```bash
-# Start infrastructure first
-docker compose up -d postgres
-
-# Using start-agents.sh (recommended):
-./start-agents.sh -d                              # Start all agents
-./start-agents.sh -d breakout-agent vwap-agent   # Start specific agents
-
-# Or using Docker Compose directly:
-docker compose -f docker-compose.agents.yml up -d                          # All agents
-docker compose -f docker-compose.agents.yml up -d breakout-agent vwap-agent  # Specific agents
-
-# View logs for a specific agent
-docker logs -f trader-breakout-agent
-docker logs -f trader-contrarian-agent
-docker logs -f trader-vwap-agent
-```
-
-#### Agent Log Locations
-
-| Agent | Container Name | Log Directory (via `start-agents.sh`) |
-|---|---|---|
-| Momentum | `trader-momentum-agent` | `~/projects/algomatic/logs/momentum-agent-logs/` |
-| Contrarian | `trader-contrarian-agent` | `~/projects/algomatic/logs/contrarian-agent-logs/` |
-| Breakout | `trader-breakout-agent` | `~/projects/algomatic/logs/breakout-agent-logs/` |
-| VWAP | `trader-vwap-agent` | `~/projects/algomatic/logs/vwap-agent-logs/` |
-
-#### Agent-Specific Environment Variables
-
-Each agent has its own environment variable prefix:
-
-| Agent | Prefix | Key Feature | Default Thresholds |
-|---|---|---|---|
-| Momentum | `AGENT_` | `r5` (5-bar return) | long: 0.001, short: -0.001 |
-| Contrarian | `CONTRARIAN_` | `r5` | long: -0.001, short: 0.001 |
-| Breakout | `BREAKOUT_` | `breakout_20` (distance from 20-bar high) | long: 0.001, short: -0.02 |
-| VWAP | `VWAP_` | `dist_vwap_60` (distance from VWAP) | long: 0.005, short: -0.005 |
-
-
-### 9. Run the Market Data Service
+### 6. Run the Market Data Service
 
 The market data service is a Go-based background process that fetches OHLCV bars from Alpaca on a schedule and listens for `MARKET_DATA_REQUEST` events via Redis. It replaces ad-hoc provider calls with a centralised fetch-and-persist loop.
 
@@ -317,7 +169,7 @@ docker logs -f algomatic-marketdata-service
 
 Logs are mounted to `${LOGS_DIR:-./logs}/marketdata-service/` on the host.
 
-### 10. Run the Reviewer Service
+### 7. Run the Reviewer Service
 
 The reviewer service is an event-driven Python process that runs behavioral checks against position campaigns. It subscribes to review events on the Redis message bus and persists check results to the database.
 
@@ -409,10 +261,9 @@ Publish is **synchronous** -- when `bus.publish()` returns, the data is already 
 
 ### Automatic Startup
 
-The orchestrator starts automatically in both entry points:
+The orchestrator starts automatically in the web UI backend:
 
 - **Web UI backend** (`ui/backend/api.py`): Started via `@app.on_event("startup")`, stopped on shutdown.
-- **Momentum agent** (`src/agent/main.py`): Started before the scheduler loop begins.
 
 No extra configuration is needed beyond the existing provider credentials (`ALPACA_API_KEY`/`ALPACA_SECRET_KEY` or `FINNHUB_API_KEY`).
 

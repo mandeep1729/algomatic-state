@@ -5,8 +5,10 @@ and returns the authenticated user's account ID.
 """
 
 import logging
+import threading
 from typing import Optional
 
+from cachetools import TTLCache
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -18,6 +20,11 @@ from src.data.database.trading_repository import TradingBuddyRepository
 logger = logging.getLogger(__name__)
 
 security = HTTPBearer(auto_error=False)
+
+# Cache active-user lookups for 5 minutes to avoid a DB query on every request.
+# Key: user_id (int), Value: bool (is_active).
+_user_active_cache: TTLCache[int, bool] = TTLCache(maxsize=1024, ttl=300)
+_user_cache_lock = threading.Lock()
 
 
 def get_current_user(
@@ -87,16 +94,27 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Verify user still exists and is active
-    with session_scope() as session:
-        repo = TradingBuddyRepository(session)
-        account = repo.get_account(int(user_id))
-        if account is None or not account.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account not found or inactive",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    # Verify user still exists and is active (cached for 5 minutes)
+    uid = int(user_id)
+    with _user_cache_lock:
+        is_active = _user_active_cache.get(uid)
 
-    logger.debug("JWT validated successfully for user_id=%s", user_id)
-    return int(user_id)
+    if is_active is None:
+        # Cache miss — query the database
+        with session_scope() as session:
+            repo = TradingBuddyRepository(session)
+            account = repo.get_account(uid)
+            is_active = account is not None and account.is_active
+        with _user_cache_lock:
+            _user_active_cache[uid] = is_active
+        logger.debug("Cached user active status for user_id=%s: %s", uid, is_active)
+
+    if not is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account not found or inactive",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    logger.debug("JWT validated successfully for user_id=%s", uid)
+    return uid

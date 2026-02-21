@@ -4,13 +4,14 @@ PostgreSQL database schema and configuration for the Trading Buddy platform.
 
 ## Schema Overview
 
-The database consists of five main domains:
+The database consists of six main domains:
 
 1. **Market Data** - OHLCV bars, features, sync tracking
 2. **User Management** - Accounts, profiles, custom rules, waitlist
-3. **Strategies** - User-defined and benchmark trading strategies, strategy probes
-4. **Trade Lifecycle** - Fills, decision contexts, campaign checks, campaign groupings
-5. **Broker Integration** - SnapTrade users, broker connections
+3. **Strategies** - Unified strategy definitions (agent_strategies), strategy probes
+4. **Trading Agents** - Agent instances, orders, activity logs
+5. **Trade Lifecycle** - Fills, decision contexts, campaign checks, campaign groupings
+6. **Broker Integration** - SnapTrade users, broker connections
 
 ## Market Data Tables
 
@@ -224,6 +225,82 @@ Individual trades from strategy probe runs.
 | metrics | JSONB | Additional trade metrics |
 | created_at | TIMESTAMPTZ | Creation time |
 
+## Trading Agent Tables
+
+### `agent_strategies`
+Strategy definitions for trading agents (predefined + custom). Unified table that replaced the legacy `strategies` table (migration 038).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| account_id | INTEGER | Foreign key to user_accounts (NULL for predefined) |
+| name | VARCHAR(100) | Strategy name |
+| description | TEXT | Strategy description |
+| direction | VARCHAR(10) | 'long', 'short', or 'both' |
+| strategy_type | VARCHAR(50) | Strategy classification (momentum, breakout, etc.) |
+| entry_long | JSONB | Long entry conditions (DSL) |
+| entry_short | JSONB | Short entry conditions (DSL) |
+| exit_long | JSONB | Long exit conditions (DSL) |
+| exit_short | JSONB | Short exit conditions (DSL) |
+| timeframes | JSONB | Applicable timeframes |
+| max_risk_pct | FLOAT | Max risk per trade (%) |
+| min_risk_reward | FLOAT | Min risk/reward ratio |
+| risk_profile | JSONB | Strategy-specific risk overrides |
+| tags | JSONB | Tags and metadata |
+| is_predefined | BOOLEAN | Whether strategy is system-provided |
+| is_active | BOOLEAN | Whether strategy is active |
+| version | INTEGER | Strategy version (cache invalidation, default 1) |
+| implied_strategy_family | VARCHAR(50) | Auto-detected strategy theme |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+### `trading_agents`
+Trading agent instances with configuration and status tracking.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL | Primary key |
+| account_id | INTEGER | Foreign key to user_accounts |
+| strategy_id | INTEGER | Foreign key to agent_strategies |
+| name | VARCHAR(100) | Agent display name |
+| symbol | VARCHAR(20) | Ticker symbol to trade |
+| timeframe | VARCHAR(10) | Primary trading timeframe |
+| status | VARCHAR(20) | 'idle', 'running', 'paused', 'stopped', 'error' |
+| config | JSONB | Agent configuration overrides |
+| last_heartbeat | TIMESTAMPTZ | Last activity timestamp |
+| created_at | TIMESTAMPTZ | Creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+### `agent_orders`
+Orders placed by trading agents.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| agent_id | INTEGER | Foreign key to trading_agents |
+| symbol | VARCHAR(20) | Traded symbol |
+| side | VARCHAR(10) | 'buy' or 'sell' |
+| qty | FLOAT | Order quantity |
+| order_type | VARCHAR(20) | 'market', 'limit', etc. |
+| status | VARCHAR(20) | Order status |
+| alpaca_order_id | VARCHAR(255) | Alpaca order ID |
+| filled_avg_price | FLOAT | Average fill price |
+| filled_qty | FLOAT | Filled quantity |
+| submitted_at | TIMESTAMPTZ | Submission time |
+| filled_at | TIMESTAMPTZ | Fill time |
+| created_at | TIMESTAMPTZ | Creation time |
+
+### `agent_activity_log`
+Audit trail for agent activities (start, stop, signal, order, error, etc.).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | BIGSERIAL | Primary key |
+| agent_id | INTEGER | Foreign key to trading_agents |
+| event_type | VARCHAR(50) | Activity type |
+| details | JSONB | Activity details |
+| created_at | TIMESTAMPTZ | Event time |
+
 ## Broker Integration Tables
 
 ### `snaptrade_users`
@@ -378,7 +455,7 @@ All repositories are injected via FastAPI `Depends()` functions from `src/data/d
 
 ## Migrations
 
-Alembic is used for database migrations. The project currently has 33 migrations (001-033).
+Alembic is used for database migrations. The project currently has 40 migrations (001-040).
 
 ```bash
 # Run pending migrations
@@ -429,9 +506,15 @@ alembic history
 | 029 | Add implied_strategy_family to strategies |
 | 030 | Waitlist table |
 | 031 | Seed app user and benchmark strategies |
-| 032 | Add user account stats columns |
+| 032 | Add decision_context inferred_context column |
 | 033 | Add user profiles stats |
 | 034 | Add check_name column to campaign_checks |
+| 035 | Add campaign_checks dedup composite index |
+| 036 | Trading agents tables (agent_strategies, trading_agents, agent_orders, agent_activity_log) |
+| 037 | Add tags column (JSONB) to trade_fills |
+| 038 | Unify strategies (extend agent_strategies, migrate rows, drop legacy strategies table) |
+| 039 | Backfill entry/exit conditions in agent_strategies from predefined data |
+| 040 | Add strategy version column to agent_strategies (cache invalidation) |
 
 ## Docker Services
 
@@ -450,6 +533,7 @@ docker compose --profile tools up -d  # Include pgAdmin
 | `indicator-engine` | C++ binary | High-performance indicator computation |
 | `marketdata-service` | Go binary | Market data fetching (Alpaca) + aggregation |
 | `reviewer-service` | Python | Event-driven behavioral checks |
+| `agent-service` | Go binary | Trading agent lifecycle management |
 | `pgadmin` | dpage/pgadmin4 | Database management UI (port 5050, profile: tools) |
 
 ## Configuration

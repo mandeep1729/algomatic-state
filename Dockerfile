@@ -35,4 +35,4 @@ COPY . .
 RUN mkdir -p /app/logs /var/log/reviewer-service && chmod 777 /app/logs /var/log/reviewer-service
 
 # User is set at runtime via docker-compose (user: "${UID}:${GID}")
-CMD ["python", "-m", "src.agent.main"]
+CMD ["python", "-m", "src.reviewer.main"]

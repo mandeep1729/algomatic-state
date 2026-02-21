@@ -848,3 +848,198 @@ Submit a waitlist signup request. **Public endpoint -- no authentication require
   "already_registered": false
 }
 ```
+
+## Trading Agents
+
+### `GET /api/agents/strategies`
+List all available strategies (predefined + user's custom). Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Momentum: Multi-Timeframe",
+    "description": "Trend-following momentum strategy",
+    "direction": "both",
+    "strategy_type": "momentum",
+    "is_predefined": true,
+    "entry_long": {...},
+    "exit_long": {...},
+    "is_active": true
+  }
+]
+```
+
+### `GET /api/agents/strategies/{strategy_id}`
+Get a specific strategy's detail. Requires Bearer token.
+
+### `POST /api/agents/strategies`
+Create a custom strategy. Requires Bearer token.
+
+**Request Body:**
+```json
+{
+  "name": "My Custom Strategy",
+  "description": "Custom breakout strategy",
+  "direction": "long",
+  "strategy_type": "breakout",
+  "entry_long": {"conditions": [...]},
+  "exit_long": {"conditions": [...]}
+}
+```
+
+### `POST /api/agents/strategies/{strategy_id}/clone`
+Clone a predefined strategy into user's custom strategies. Requires Bearer token.
+
+### `PUT /api/agents/strategies/{strategy_id}`
+Update a custom strategy. Requires Bearer token. Only the strategy owner can update.
+
+### `GET /api/agents`
+List all trading agents for the authenticated user. Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "AAPL Momentum Bot",
+    "symbol": "AAPL",
+    "timeframe": "15Min",
+    "status": "running",
+    "strategy": {"id": 1, "name": "Momentum: Multi-Timeframe"},
+    "last_heartbeat": "2024-01-15T14:30:00Z"
+  }
+]
+```
+
+### `GET /api/agents/{agent_id}`
+Get a specific agent's detail. Requires Bearer token.
+
+### `POST /api/agents`
+Create a new trading agent. Requires Bearer token.
+
+**Request Body:**
+```json
+{
+  "name": "AAPL Momentum Bot",
+  "symbol": "AAPL",
+  "timeframe": "15Min",
+  "strategy_id": 1,
+  "config": {}
+}
+```
+
+### `PUT /api/agents/{agent_id}`
+Update an agent's configuration. Requires Bearer token.
+
+### `DELETE /api/agents/{agent_id}`
+Delete an agent. Requires Bearer token.
+
+### `POST /api/agents/{agent_id}/start`
+Start a trading agent. Requires Bearer token.
+
+### `POST /api/agents/{agent_id}/pause`
+Pause a running agent. Requires Bearer token.
+
+### `POST /api/agents/{agent_id}/stop`
+Stop a running agent. Requires Bearer token.
+
+### `GET /api/agents/{agent_id}/orders`
+List orders placed by an agent. Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "symbol": "AAPL",
+    "side": "buy",
+    "qty": 10,
+    "order_type": "market",
+    "status": "filled",
+    "filled_avg_price": 150.25,
+    "submitted_at": "2024-01-15T14:30:00Z",
+    "filled_at": "2024-01-15T14:30:01Z"
+  }
+]
+```
+
+### `GET /api/agents/{agent_id}/activity`
+List activity log for an agent. Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "event_type": "signal_generated",
+    "details": {"direction": "long", "strength": 0.8},
+    "created_at": "2024-01-15T14:30:00Z"
+  }
+]
+```
+
+## Strategy Probe
+
+### `GET /api/strategy-probe/strategies`
+Get all probe strategies across all themes. Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "momentum_ema_crossover",
+    "display_name": "EMA Crossover Momentum",
+    "philosophy": "Captures momentum shifts...",
+    "strategy_type": "momentum",
+    "direction": "both",
+    "is_active": true
+  }
+]
+```
+
+### `GET /api/strategy-probe/strategies/{strategy_type}`
+Get all strategies for a given theme (e.g., "momentum", "breakout"). Requires Bearer token.
+
+### `GET /api/strategy-probe/top-strategies/{symbol}/{strategy_type}`
+Get top 3 strategies for a theme within a specific week. Requires Bearer token.
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| week_start | string | null | Week start date (YYYY-MM-DD) |
+
+**Response:**
+```json
+[
+  {
+    "strategy_name": "momentum_ema_crossover",
+    "display_name": "EMA Crossover Momentum",
+    "total_trades": 15,
+    "win_rate": 0.67,
+    "profit_factor": 2.1,
+    "total_pnl": 450.00,
+    "sharpe_ratio": 1.8
+  }
+]
+```
+
+### `GET /api/strategy-probe/{symbol}`
+Get weekly strategy theme rankings for a given symbol. Requires Bearer token.
+
+**Response:**
+```json
+[
+  {
+    "open_day": "2024-01-08",
+    "strategy_type": "momentum",
+    "total_trades": 45,
+    "win_rate": 0.62,
+    "profit_factor": 1.9,
+    "total_pnl": 1200.00
+  }
+]
+```
