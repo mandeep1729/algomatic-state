@@ -57,8 +57,8 @@ func (r *Resolver) Resolve(ctx context.Context, strategyID int) (*types.Strategy
 	}
 	r.mu.RUnlock()
 
-	// Predefined or cloned strategy: resolve conditions from go-strats registry.
-	if row.SourceStrategyID != nil {
+	// Predefined strategy: resolve conditions from go-strats registry.
+	if row.IsPredefined && row.SourceStrategyID != nil {
 		sourceID := *row.SourceStrategyID
 		baseDef := strategy.Get(sourceID)
 		if baseDef == nil {
@@ -68,36 +68,27 @@ func (r *Resolver) Resolve(ctx context.Context, strategyID int) (*types.Strategy
 			)
 		}
 
-		var def *types.StrategyDef
-		if row.IsPredefined {
-			// Pure predefined: use go-strats def directly.
-			def = baseDef
-			r.logger.Debug("Resolved predefined strategy",
-				"db_id", strategyID, "source_id", sourceID, "name", def.Name,
-			)
-		} else {
-			// Cloned: go-strats conditions + DB row parameters.
-			def = cloneDefWithDBParams(baseDef, row)
-			r.logger.Info("Resolved cloned strategy",
-				"db_id", strategyID, "source_id", sourceID, "name", def.Name,
-			)
-		}
+		r.logger.Debug("Resolved predefined strategy",
+			"db_id", strategyID, "source_id", sourceID, "name", baseDef.Name,
+		)
 
 		r.mu.Lock()
-		r.cache[strategyID] = &cachedEntry{def: def, version: row.Version}
+		r.cache[strategyID] = &cachedEntry{def: baseDef, version: row.Version}
 		r.mu.Unlock()
 
-		return def, nil
+		return baseDef, nil
 	}
 
-	// Custom strategy: compile from JSONB DSL conditions.
+	// Cloned or custom strategy: compile from JSONB DSL conditions.
+	// source_strategy_id is lineage metadata only — never a fallback.
 	def, err := compileCustomStrategy(row)
 	if err != nil {
-		return nil, fmt.Errorf("compiling custom strategy %d (%s): %w", strategyID, row.Name, err)
+		return nil, fmt.Errorf("compiling strategy %d (%s): %w", strategyID, row.Name, err)
 	}
 
-	r.logger.Info("Compiled custom strategy from DSL",
+	r.logger.Info("Compiled strategy from DSL",
 		"db_id", strategyID, "name", row.Name, "version", row.Version,
+		"cloned_from", row.SourceStrategyID,
 	)
 
 	r.mu.Lock()
@@ -179,54 +170,6 @@ func compileCustomStrategy(row *repository.AgentStrategyRow) (*types.StrategyDef
 		TimeStopBars:       timeStopBars,
 		RequiredIndicators: features,
 	}, nil
-}
-
-// cloneDefWithDBParams creates a new StrategyDef using conditions from the
-// go-strats base definition and parameters from the DB row. This handles
-// cloned strategies where the user may have customised direction or risk
-// parameters but the entry/exit logic is inherited from the source.
-func cloneDefWithDBParams(base *types.StrategyDef, row *repository.AgentStrategyRow) *types.StrategyDef {
-	def := &types.StrategyDef{
-		ID:                 row.ID,
-		Name:               row.Name,
-		DisplayName:        row.DisplayName,
-		Category:           row.Category,
-		EntryLong:          base.EntryLong,
-		EntryShort:         base.EntryShort,
-		ExitLong:           base.ExitLong,
-		ExitShort:          base.ExitShort,
-		RequiredIndicators: base.RequiredIndicators,
-		// Defaults from base; overridden below if DB has values.
-		ATRStopMult:     base.ATRStopMult,
-		ATRTargetMult:   base.ATRTargetMult,
-		TrailingATRMult: base.TrailingATRMult,
-		TimeStopBars:    base.TimeStopBars,
-	}
-
-	// Override parameters from DB row when present.
-	if row.ATRStopMult != nil {
-		def.ATRStopMult = *row.ATRStopMult
-	}
-	if row.ATRTargetMult != nil {
-		def.ATRTargetMult = *row.ATRTargetMult
-	}
-	if row.TrailingATRMult != nil {
-		def.TrailingATRMult = *row.TrailingATRMult
-	}
-	if row.TimeStopBars != nil {
-		def.TimeStopBars = *row.TimeStopBars
-	}
-
-	// Direction from DB row (user may change on clone).
-	def.Direction = types.LongShort
-	switch row.Direction {
-	case "long_only":
-		def.Direction = types.LongOnly
-	case "short_only":
-		def.Direction = types.ShortOnly
-	}
-
-	return def
 }
 
 // ClearCache removes all cached strategy definitions.
