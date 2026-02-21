@@ -3,7 +3,10 @@
 For predefined strategies:
 - is_predefined=True, account_id=None (global)
 - source_strategy_id = go-strats ID (1-100)
-- Entry/exit conditions are human-readable descriptions derived from Go source.
+- Entry/exit conditions are executable DSL JSON arrays matching Go condition functions.
+  Each condition is a dict with an "op" field and operator-specific parameters.
+  The Go DSL compiler (go-strats/pkg/dsl/) compiles these into the same ConditionFn
+  closures that the predefined go-strats registry uses.
 """
 
 
@@ -23,10 +26,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Classic dual-EMA crossover captures medium-term trend shifts.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "EMA20 crosses above EMA50 AND close > EMA50",
-            "entry_short": "EMA20 crosses below EMA50 AND close < EMA50",
-            "exit_long": "EMA20 crosses below EMA50",
-            "exit_short": "EMA20 crosses above EMA50",
+            "entry_long": [
+                {"op": "crosses_above", "col": "ema_20", "ref": {"col": "ema_50"}},
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "ema_20", "ref": {"col": "ema_50"}},
+                {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "ema_20", "ref": {"col": "ema_50"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "ema_20", "ref": {"col": "ema_50"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["ema_20", "ema_50", "atr_14"],
@@ -38,10 +51,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Slow crossover captures major trend reversals with wide stops.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "EMA50 crosses above EMA200",
-            "entry_short": "EMA50 crosses below EMA200",
-            "exit_long": "EMA50 crosses below EMA200",
-            "exit_short": "EMA50 crosses above EMA200",
+            "entry_long": [
+                {"op": "crosses_above", "col": "ema_50", "ref": {"col": "ema_200"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "ema_50", "ref": {"col": "ema_200"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "ema_50", "ref": {"col": "ema_200"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "ema_50", "ref": {"col": "ema_200"}},
+            ],
             "atr_stop_mult": 2.5,
             "time_stop_bars": 120,
             "required_features": ["ema_50", "ema_200", "atr_14"],
@@ -53,10 +74,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Adaptive moving average filters noise; price crossing KAMA signals trend change.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Close crosses above KAMA(30)",
-            "entry_short": "Close crosses below KAMA(30)",
-            "exit_long": "Close crosses below KAMA(30)",
-            "exit_short": "Close crosses above KAMA(30)",
+            "entry_long": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "kama_30"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "kama_30"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "kama_30"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "kama_30"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["kama_30", "atr_14"],
@@ -68,10 +97,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "MACD crossover filtered by ADX ensures entries only in trending markets.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "MACD crosses above signal AND ADX > 20",
-            "entry_short": "MACD crosses below signal AND ADX > 20",
-            "exit_long": "MACD crosses below signal",
-            "exit_short": "MACD crosses above signal",
+            "entry_long": [
+                {"op": "crosses_above", "col": "macd", "ref": {"col": "macd_signal"}},
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "macd", "ref": {"col": "macd_signal"}},
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "macd", "ref": {"col": "macd_signal"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "macd", "ref": {"col": "macd_signal"}},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["macd", "macd_signal", "adx_14", "atr_14"],
         },
@@ -82,10 +121,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Histogram zero-line cross captures momentum shifts earlier than MACD line cross.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "MACD histogram crosses above 0",
-            "entry_short": "MACD histogram crosses below 0",
-            "exit_long": "MACD histogram crosses below 0",
-            "exit_short": "MACD histogram crosses above 0",
+            "entry_long": [
+                {"op": "crosses_above", "col": "macd_hist", "ref": {"value": 0}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "macd_hist", "ref": {"value": 0}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "macd_hist", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "macd_hist", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["macd_hist", "atr_14"],
@@ -97,10 +144,22 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Rising ADX with DI alignment confirms strengthening trend.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "+DI > -DI AND ADX rising over 3 bars AND ADX > 20",
-            "entry_short": "-DI > +DI AND ADX rising over 3 bars AND ADX > 20",
-            "exit_long": "-DI crosses above +DI",
-            "exit_short": "+DI crosses above -DI",
+            "entry_long": [
+                {"op": "above", "col": "plus_di_14", "ref": {"col": "minus_di_14"}},
+                {"op": "rising", "col": "adx_14", "n": 3},
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+            ],
+            "entry_short": [
+                {"op": "above", "col": "minus_di_14", "ref": {"col": "plus_di_14"}},
+                {"op": "rising", "col": "adx_14", "n": 3},
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+            ],
+            "exit_long": [
+                {"op": "crosses_above", "col": "minus_di_14", "ref": {"col": "plus_di_14"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "plus_di_14", "ref": {"col": "minus_di_14"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["adx_14", "plus_di_14", "minus_di_14", "psar", "atr_14"],
@@ -112,10 +171,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Parabolic SAR provides built-in trailing stop that accelerates with trend.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Close crosses above Parabolic SAR",
-            "entry_short": "Close crosses below Parabolic SAR",
-            "exit_long": "Close crosses below Parabolic SAR",
-            "exit_short": "Close crosses above Parabolic SAR",
+            "entry_long": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "psar"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "psar"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "psar"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "psar"}},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["psar", "atr_14"],
         },
@@ -126,10 +193,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Triple-smoothed EMA rate of change filters noise; signal cross confirms trend.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "TRIX crosses above its SMA",
-            "entry_short": "TRIX crosses below its SMA",
-            "exit_long": "TRIX crosses below its SMA",
-            "exit_short": "TRIX crosses above its SMA",
+            "entry_long": [
+                {"op": "trix_crosses_above_sma"},
+            ],
+            "entry_short": [
+                {"op": "trix_crosses_below_sma"},
+            ],
+            "exit_long": [
+                {"op": "trix_crosses_below_sma"},
+            ],
+            "exit_short": [
+                {"op": "trix_crosses_above_sma"},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["trix_15", "atr_14"],
         },
@@ -140,10 +215,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Absolute Price Oscillator zero-line cross with EMA trend filter.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "APO crosses above 0 AND close > EMA50",
-            "entry_short": "APO crosses below 0 AND close < EMA50",
-            "exit_long": "APO crosses below 0",
-            "exit_short": "APO crosses above 0",
+            "entry_long": [
+                {"op": "crosses_above", "col": "apo", "ref": {"value": 0}},
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "apo", "ref": {"value": 0}},
+                {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "apo", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "apo", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["apo", "ema_50", "atr_14"],
         },
@@ -154,10 +239,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Rate of Change zero-line break confirmed by long-term trend direction.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Close > SMA200 AND ROC(10) crosses above 0",
-            "entry_short": "Close < SMA200 AND ROC(10) crosses below 0",
-            "exit_long": "ROC(10) crosses below 0",
-            "exit_short": "ROC(10) crosses above 0",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "sma_200"}},
+                {"op": "crosses_above", "col": "roc_10", "ref": {"value": 0}},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "close", "ref": {"col": "sma_200"}},
+                {"op": "crosses_below", "col": "roc_10", "ref": {"value": 0}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "roc_10", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "roc_10", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 30,
             "required_features": ["roc_10", "sma_200", "atr_14"],
@@ -169,8 +264,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Enter trending pullbacks at the fast EMA for high-probability continuation.",
             "category": "trend",
             "direction": "long_only",
-            "entry_long": "Close > EMA50 AND ADX > 20 AND price pulls back to EMA20",
-            "exit_long": "Close < EMA20",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "pullback_to", "level_col": "ema_20", "tolerance_atr_mult": 0.5},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["ema_20", "ema_50", "adx_14", "atr_14"],
@@ -182,10 +283,22 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Bollinger middle band acts as dynamic support/resistance in trending markets.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "ADX > 20 AND close > BB middle AND price pulls back to BB middle",
-            "entry_short": "ADX > 20 AND close < BB middle AND price pulls back below BB middle",
-            "exit_long": "Close < BB middle",
-            "exit_short": "Close > BB middle",
+            "entry_long": [
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+                {"op": "pullback_to", "level_col": "bb_middle", "tolerance_atr_mult": 0.5},
+            ],
+            "entry_short": [
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+                {"op": "pullback_below", "level_col": "bb_middle", "tolerance_atr_mult": 0.5},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["bb_middle", "adx_14", "atr_14"],
@@ -197,10 +310,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "ATR channel around EMA captures strong breakouts beyond normal volatility.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Close breaks above EMA20 + 2x ATR channel",
-            "entry_short": "Close breaks below EMA20 - 2x ATR channel",
-            "exit_long": "Close < EMA20",
-            "exit_short": "Close > EMA20",
+            "entry_long": [
+                {"op": "close_above_upper_channel", "col": "ema_20", "multiplier": 2.0},
+            ],
+            "entry_short": [
+                {"op": "close_below_lower_channel", "col": "ema_20", "multiplier": 2.0},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_20"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["ema_20", "atr_14"],
@@ -212,10 +333,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Linear regression slope quantifies trend direction; combined with SMA filter.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Linear regression slope(20) > 0 AND close > SMA50",
-            "entry_short": "Linear regression slope(20) < 0 AND close < SMA50",
-            "exit_long": "Linear regression slope(20) crosses below 0",
-            "exit_short": "Linear regression slope(20) crosses above 0",
+            "entry_long": [
+                {"op": "above", "col": "linearreg_slope_20", "ref": {"value": 0}},
+                {"op": "above", "col": "close", "ref": {"col": "sma_50"}},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "linearreg_slope_20", "ref": {"value": 0}},
+                {"op": "below", "col": "close", "ref": {"col": "sma_50"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "linearreg_slope_20", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "linearreg_slope_20", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 40,
             "required_features": ["linearreg_slope_20", "sma_50", "atr_14"],
@@ -227,10 +358,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Aroon oscillator detects new trend initiation when one direction dominates.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Aroon Up crosses above 70 AND Aroon Down < 30",
-            "entry_short": "Aroon Down crosses above 70 AND Aroon Up < 30",
-            "exit_long": "Aroon Down crosses above 70",
-            "exit_short": "Aroon Up crosses above 70",
+            "entry_long": [
+                {"op": "crosses_above", "col": "aroon_up_25", "ref": {"value": 70}},
+                {"op": "below", "col": "aroon_down_25", "ref": {"value": 30}},
+            ],
+            "entry_short": [
+                {"op": "crosses_above", "col": "aroon_down_25", "ref": {"value": 70}},
+                {"op": "below", "col": "aroon_up_25", "ref": {"value": 30}},
+            ],
+            "exit_long": [
+                {"op": "crosses_above", "col": "aroon_down_25", "ref": {"value": 70}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "aroon_up_25", "ref": {"value": 70}},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["aroon_up_25", "aroon_down_25", "atr_14"],
         },
@@ -241,8 +382,17 @@ def get_predefined_strategies() -> list[dict]:
             "description": "EMA stack alignment (20>50>200) proxies Ichimoku cloud bullish conditions.",
             "category": "trend",
             "direction": "long_only",
-            "entry_long": "EMA20 > EMA50 AND EMA50 > EMA200 AND close > EMA20",
-            "exit_long": "EMA20 < EMA50 OR close < EMA50",
+            "entry_long": [
+                {"op": "above", "col": "ema_20", "ref": {"col": "ema_50"}},
+                {"op": "above", "col": "ema_50", "ref": {"col": "ema_200"}},
+                {"op": "above", "col": "close", "ref": {"col": "ema_20"}},
+            ],
+            "exit_long": [
+                {"op": "any_of", "conditions": [
+                    {"op": "below", "col": "ema_20", "ref": {"col": "ema_50"}},
+                    {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+                ]},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["ema_20", "ema_50", "ema_200", "atr_14"],
@@ -254,10 +404,22 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Breakout beyond BB bands with expanding width confirms genuine volatility expansion.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "ADX > 20 AND close breaks above upper BB AND BB width increasing over 5 bars",
-            "entry_short": "ADX > 20 AND close breaks below lower BB AND BB width increasing over 5 bars",
-            "exit_long": "Close < BB middle",
-            "exit_short": "Close > BB middle",
+            "entry_long": [
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "breaks_above_level", "level_col": "bb_upper"},
+                {"op": "bb_width_increasing", "n": 5},
+            ],
+            "entry_short": [
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "breaks_below_level", "level_col": "bb_lower"},
+                {"op": "bb_width_increasing", "n": 5},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["adx_14", "bb_upper", "bb_lower", "bb_middle", "bb_width", "atr_14"],
@@ -269,10 +431,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Percentage Price Oscillator normalises MACD; SMA200 filter ensures trend alignment.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Close > SMA200 AND PPO crosses above PPO signal",
-            "entry_short": "Close < SMA200 AND PPO crosses below PPO signal",
-            "exit_long": "PPO crosses below PPO signal",
-            "exit_short": "PPO crosses above PPO signal",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "sma_200"}},
+                {"op": "crosses_above", "col": "ppo", "ref": {"col": "ppo_signal"}},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "close", "ref": {"col": "sma_200"}},
+                {"op": "crosses_below", "col": "ppo", "ref": {"col": "ppo_signal"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "ppo", "ref": {"col": "ppo_signal"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "ppo", "ref": {"col": "ppo_signal"}},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["ppo", "ppo_signal", "sma_200", "atr_14"],
         },
@@ -283,10 +455,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Tight EMA compression signals coiling energy; breakout indicates directional resolve.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "EMA ribbon compressed for 10 bars then breaks upward (spread < 0.5% ATR)",
-            "entry_short": "EMA ribbon compressed for 10 bars then breaks downward (spread < 0.5% ATR)",
-            "exit_long": "EMA ribbon reverses (EMA20 < EMA50 by > 0.5% ATR)",
-            "exit_short": "EMA ribbon reverses (EMA20 > EMA50 by > 0.5% ATR)",
+            "entry_long": [
+                {"op": "ribbon_break_long", "lookback": 10, "multiplier": 0.5},
+            ],
+            "entry_short": [
+                {"op": "ribbon_break_short", "lookback": 10, "multiplier": 0.5},
+            ],
+            "exit_long": [
+                {"op": "ribbon_exit_long", "multiplier": 0.5},
+            ],
+            "exit_short": [
+                {"op": "ribbon_exit_short", "multiplier": 0.5},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["ema_20", "ema_50", "atr_14"],
@@ -298,8 +478,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "VWAP proxy with ADX and RSI filters identifies intraday trending conditions.",
             "category": "trend",
             "direction": "long_only",
-            "entry_long": "Close > typical price SMA(20) AND ADX > 20 AND RSI > 55",
-            "exit_long": "Close < typical price SMA(20)",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "typical_price_sma_20"}},
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "above", "col": "rsi_14", "ref": {"value": 55}},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "typical_price_sma_20"}},
+            ],
             "atr_stop_mult": 1.5,
             "time_stop_bars": 10,
             "required_features": ["typical_price_sma_20", "adx_14", "rsi_14", "atr_14"],
@@ -311,8 +497,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Enter trend pullbacks when RSI resets and DI direction is confirmed.",
             "category": "trend",
             "direction": "long_only",
-            "entry_long": "+DI > -DI AND ADX > 20 AND RSI was below 50 then crosses above within 5 bars",
-            "exit_long": "-DI crosses above +DI",
+            "entry_long": [
+                {"op": "above", "col": "plus_di_14", "ref": {"col": "minus_di_14"}},
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "was_below_then_crosses_above", "col": "rsi_14", "threshold": 50, "lookback": 5},
+            ],
+            "exit_long": [
+                {"op": "crosses_above", "col": "minus_di_14", "ref": {"col": "plus_di_14"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["plus_di_14", "minus_di_14", "adx_14", "rsi_14", "atr_14"],
@@ -324,8 +516,16 @@ def get_predefined_strategies() -> list[dict]:
             "description": "RSI dip-and-recover in an uptrend signals exhausted sellers and fresh momentum.",
             "category": "trend",
             "direction": "long_only",
-            "entry_long": "Close > EMA50 AND RSI was below 50 then crosses above within 10 bars",
-            "exit_long": "RSI crosses below 45 OR close < EMA50",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+                {"op": "was_below_then_crosses_above", "col": "rsi_14", "threshold": 50, "lookback": 10},
+            ],
+            "exit_long": [
+                {"op": "any_of", "conditions": [
+                    {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 45}},
+                    {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+                ]},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["ema_50", "rsi_14", "atr_14"],
         },
@@ -336,10 +536,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "ATR-based envelope around SMA captures momentum breakouts normalized for volatility.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Close breaks above SMA20 + 1.5x ATR envelope",
-            "entry_short": "Close breaks below SMA20 - 1.5x ATR envelope",
-            "exit_long": "Close < SMA20",
-            "exit_short": "Close > SMA20",
+            "entry_long": [
+                {"op": "breaks_above_sma_envelope", "col": "sma_20", "multiplier": 1.5},
+            ],
+            "entry_short": [
+                {"op": "breaks_below_sma_envelope", "col": "sma_20", "multiplier": 1.5},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "sma_20"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "sma_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["sma_20", "atr_14"],
@@ -351,10 +559,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Hilbert Transform trendline adapts to dominant cycle; cross signals trend change.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Close crosses above Hilbert Transform trendline",
-            "entry_short": "Close crosses below Hilbert Transform trendline",
-            "exit_long": "Close crosses below Hilbert Transform trendline",
-            "exit_short": "Close crosses above Hilbert Transform trendline",
+            "entry_long": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "ht_trendline"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "ht_trendline"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "ht_trendline"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "ht_trendline"}},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["ht_trendline", "atr_14"],
         },
@@ -365,10 +581,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Short-term momentum (3 consecutive directional closes) with EMA trend confirmation.",
             "category": "trend",
             "direction": "long_short",
-            "entry_long": "Close > EMA50 AND 3 consecutive higher closes",
-            "entry_short": "Close < EMA50 AND 3 consecutive lower closes",
-            "exit_long": "2 consecutive lower closes",
-            "exit_short": "2 consecutive higher closes",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+                {"op": "consecutive_higher_closes", "n": 3},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+                {"op": "consecutive_lower_closes", "n": 3},
+            ],
+            "exit_long": [
+                {"op": "consecutive_lower_closes", "n": 2},
+            ],
+            "exit_short": [
+                {"op": "consecutive_higher_closes", "n": 2},
+            ],
             "atr_stop_mult": 1.5,
             "time_stop_bars": 8,
             "required_features": ["ema_50", "atr_14"],
@@ -383,8 +609,13 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Buy oversold dips in uptrending markets for mean reversion to the norm.",
             "category": "mean_reversion",
             "direction": "long_only",
-            "entry_long": "Close > SMA200 AND RSI(14) crosses above 30",
-            "exit_long": "RSI(14) > 55",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "sma_200"}},
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 30}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "rsi_14", "ref": {"value": 55}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 2.5,
             "time_stop_bars": 20,
@@ -397,8 +628,13 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Fade overbought rallies in downtrending markets for mean reversion.",
             "category": "mean_reversion",
             "direction": "short_only",
-            "entry_short": "Close < SMA200 AND RSI(14) crosses below 70",
-            "exit_short": "RSI(14) < 45",
+            "entry_short": [
+                {"op": "below", "col": "close", "ref": {"col": "sma_200"}},
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 70}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "rsi_14", "ref": {"value": 45}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 2.5,
             "required_features": ["close", "sma_200", "rsi_14", "atr_14"],
@@ -410,10 +646,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Price bouncing off Bollinger extremes tends to revert toward the middle band.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Close crosses above lower BB",
-            "entry_short": "Close crosses below upper BB",
-            "exit_long": "Close crosses above BB middle",
-            "exit_short": "Close crosses below BB middle",
+            "entry_long": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "bb_lower"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "bb_upper"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["close", "bb_upper", "bb_middle", "bb_lower", "atr_14"],
@@ -425,10 +669,22 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Multiple touches of Bollinger extremes with RSI confirmation increase reversion probability.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Double tap below lower BB within 5 bars AND RSI < 35 AND close crosses above lower BB",
-            "entry_short": "Double tap above upper BB within 5 bars AND RSI > 65 AND close crosses below upper BB",
-            "exit_long": "Close crosses above BB middle",
-            "exit_short": "Close crosses below BB middle",
+            "entry_long": [
+                {"op": "double_tap_below_bb", "lookback": 5},
+                {"op": "below", "col": "rsi_14", "ref": {"value": 35}},
+                {"op": "crosses_above", "col": "close", "ref": {"col": "bb_lower"}},
+            ],
+            "entry_short": [
+                {"op": "double_tap_above_bb", "lookback": 5},
+                {"op": "above", "col": "rsi_14", "ref": {"value": 65}},
+                {"op": "crosses_below", "col": "close", "ref": {"col": "bb_upper"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["close", "bb_upper", "bb_middle", "bb_lower", "rsi_14", "atr_14"],
@@ -440,10 +696,22 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Stochastic crossovers at extreme zones signal short-term exhaustion and reversion.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Stoch %K crosses above %D AND %K < 20 AND %D < 20",
-            "entry_short": "Stoch %K crosses below %D AND %K > 80 AND %D > 80",
-            "exit_long": "Stoch %K > 50",
-            "exit_short": "Stoch %K < 50",
+            "entry_long": [
+                {"op": "crosses_above", "col": "stoch_k", "ref": {"col": "stoch_d"}},
+                {"op": "below", "col": "stoch_k", "ref": {"value": 20}},
+                {"op": "below", "col": "stoch_d", "ref": {"value": 20}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "stoch_k", "ref": {"col": "stoch_d"}},
+                {"op": "above", "col": "stoch_k", "ref": {"value": 80}},
+                {"op": "above", "col": "stoch_d", "ref": {"value": 80}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "stoch_k", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "stoch_k", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 1.5,
             "time_stop_bars": 10,
             "required_features": ["stoch_k", "stoch_d", "atr_14"],
@@ -455,10 +723,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Williams %R extreme reversals capture quick snapback momentum.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Williams %R crosses above -80",
-            "entry_short": "Williams %R crosses below -20",
-            "exit_long": "Williams %R > -50",
-            "exit_short": "Williams %R < -50",
+            "entry_long": [
+                {"op": "crosses_above", "col": "willr_14", "ref": {"value": -80}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "willr_14", "ref": {"value": -20}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "willr_14", "ref": {"value": -50}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "willr_14", "ref": {"value": -50}},
+            ],
             "atr_stop_mult": 1.5,
             "time_stop_bars": 8,
             "required_features": ["willr_14", "atr_14"],
@@ -470,10 +746,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "CCI crossing back through extremes signals momentum exhaustion and reversion.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "CCI(20) crosses above -100",
-            "entry_short": "CCI(20) crosses below 100",
-            "exit_long": "CCI(20) > 0",
-            "exit_short": "CCI(20) < 0",
+            "entry_long": [
+                {"op": "crosses_above", "col": "cci_20", "ref": {"value": -100}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "cci_20", "ref": {"value": 100}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "cci_20", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "cci_20", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 1.5,
             "time_stop_bars": 12,
             "required_features": ["cci_20", "atr_14"],
@@ -485,10 +769,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Money Flow Index extremes combine price and volume for higher-quality reversion signals.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "MFI(14) crosses above 20",
-            "entry_short": "MFI(14) crosses below 80",
-            "exit_long": "MFI(14) > 50",
-            "exit_short": "MFI(14) < 50",
+            "entry_long": [
+                {"op": "crosses_above", "col": "mfi_14", "ref": {"value": 20}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "mfi_14", "ref": {"value": 80}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "mfi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "mfi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["mfi_14", "atr_14"],
@@ -500,10 +792,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Ultra-short RSI(2) extremes capture quick snapback moves with tight risk.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "RSI(2) < 5 AND close > SMA50",
-            "entry_short": "RSI(2) > 95 AND close < SMA50",
-            "exit_long": "RSI(2) > 60",
-            "exit_short": "RSI(2) < 40",
+            "entry_long": [
+                {"op": "below", "col": "rsi_2", "ref": {"value": 5}},
+                {"op": "above", "col": "close", "ref": {"col": "sma_50"}},
+            ],
+            "entry_short": [
+                {"op": "above", "col": "rsi_2", "ref": {"value": 95}},
+                {"op": "below", "col": "close", "ref": {"col": "sma_50"}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "rsi_2", "ref": {"value": 60}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "rsi_2", "ref": {"value": 40}},
+            ],
             "atr_stop_mult": 1.0,
             "time_stop_bars": 5,
             "required_features": ["rsi_2", "close", "sma_50", "atr_14"],
@@ -515,10 +817,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Extreme price deviation from EMA signals rubber-band snap-back potential.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Close deviates > 2x ATR below EMA20",
-            "entry_short": "Close deviates > 2x ATR above EMA20",
-            "exit_long": "Close > EMA20",
-            "exit_short": "Close < EMA20",
+            "entry_long": [
+                {"op": "deviation_below", "col": "close", "ref_col": "ema_20", "atr_mult": 2.0},
+            ],
+            "entry_short": [
+                {"op": "deviation_above", "col": "close", "ref_col": "ema_20", "atr_mult": 2.0},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "close", "ref": {"col": "ema_20"}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 2.0,
             "required_features": ["close", "ema_20", "atr_14"],
@@ -530,10 +840,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Statistical extremes (z-score beyond 2) with RSI confirmation signal reversion.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Z-score(20) < -2 AND RSI rising over 2 bars",
-            "entry_short": "Z-score(20) > 2 AND RSI falling over 2 bars",
-            "exit_long": "Z-score(20) > 0",
-            "exit_short": "Z-score(20) < 0",
+            "entry_long": [
+                {"op": "below", "col": "zscore_20", "ref": {"value": -2}},
+                {"op": "rising", "col": "rsi_14", "n": 2},
+            ],
+            "entry_short": [
+                {"op": "above", "col": "zscore_20", "ref": {"value": 2}},
+                {"op": "falling", "col": "rsi_14", "n": 2},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "zscore_20", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "zscore_20", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["zscore_20", "rsi_14", "atr_14"],
@@ -545,10 +865,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "After extreme compression, the first breakout often fails; fading it captures the snap back.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "BB width in squeeze (bottom 50th percentile) AND close < lower BB",
-            "entry_short": "BB width in squeeze (bottom 50th percentile) AND close > upper BB",
-            "exit_long": "Close crosses above BB middle",
-            "exit_short": "Close crosses below BB middle",
+            "entry_long": [
+                {"op": "squeeze", "width_col": "bb_width", "lookback": 50},
+                {"op": "below", "col": "close", "ref": {"col": "bb_lower"}},
+            ],
+            "entry_short": [
+                {"op": "squeeze", "width_col": "bb_width", "lookback": 50},
+                {"op": "above", "col": "close", "ref": {"col": "bb_upper"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
+            "exit_short": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 10,
             "required_features": ["close", "bb_upper", "bb_middle", "bb_lower", "bb_width", "atr_14"],
@@ -560,10 +890,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Range-bound price reverting from Donchian extremes toward the midpoint.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Close crosses above Donchian low(20)",
-            "entry_short": "Close crosses below Donchian high(20)",
-            "exit_long": "Close > Donchian mid(20)",
-            "exit_short": "Close < Donchian mid(20)",
+            "entry_long": [
+                {"op": "crosses_above", "col": "close", "ref": {"col": "donchian_low_20"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "close", "ref": {"col": "donchian_high_20"}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "close", "ref": {"col": "donchian_mid_20"}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "close", "ref": {"col": "donchian_mid_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["donchian_high_20", "donchian_low_20", "donchian_mid_20", "atr_14"],
@@ -575,10 +913,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Price-RSI divergence reveals waning momentum; reversion follows as trend exhausts.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Bullish RSI divergence over 5 bars AND RSI < 40",
-            "entry_short": "Bearish RSI divergence over 5 bars AND RSI > 60",
-            "exit_long": "RSI crosses above 50",
-            "exit_short": "RSI crosses below 50",
+            "entry_long": [
+                {"op": "bullish_divergence", "indicator_col": "rsi_14", "lookback": 5},
+                {"op": "below", "col": "rsi_14", "ref": {"value": 40}},
+            ],
+            "entry_short": [
+                {"op": "bearish_divergence", "indicator_col": "rsi_14", "lookback": 5},
+                {"op": "above", "col": "rsi_14", "ref": {"value": 60}},
+            ],
+            "exit_long": [
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 25,
             "required_features": ["close", "high", "low", "rsi_14", "atr_14"],
@@ -590,10 +938,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "MACD histogram divergence from price signals momentum exhaustion.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Bullish MACD histogram divergence over 10 bars AND histogram crosses above 0",
-            "entry_short": "Bearish MACD histogram divergence over 10 bars AND histogram crosses below 0",
-            "exit_long": "MACD histogram crosses below 0",
-            "exit_short": "MACD histogram crosses above 0",
+            "entry_long": [
+                {"op": "bullish_divergence", "indicator_col": "macd_hist", "lookback": 10},
+                {"op": "crosses_above", "col": "macd_hist", "ref": {"value": 0}},
+            ],
+            "entry_short": [
+                {"op": "bearish_divergence", "indicator_col": "macd_hist", "lookback": 10},
+                {"op": "crosses_below", "col": "macd_hist", "ref": {"value": 0}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "macd_hist", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "macd_hist", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.5,
             "time_stop_bars": 30,
             "required_features": ["close", "high", "low", "macd_hist", "atr_14"],
@@ -605,10 +963,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Stochastic turning at extremes captures momentum reversal with tight timing.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Stoch %K < 20 AND %K rising over 2 bars",
-            "entry_short": "Stoch %K > 80 AND %K falling over 2 bars",
-            "exit_long": "Stoch %K > 50",
-            "exit_short": "Stoch %K < 50",
+            "entry_long": [
+                {"op": "below", "col": "stoch_k", "ref": {"value": 20}},
+                {"op": "rising", "col": "stoch_k", "n": 2},
+            ],
+            "entry_short": [
+                {"op": "above", "col": "stoch_k", "ref": {"value": 80}},
+                {"op": "falling", "col": "stoch_k", "n": 2},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "stoch_k", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "stoch_k", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 1.5,
             "time_stop_bars": 10,
             "required_features": ["stoch_k", "atr_14"],
@@ -620,10 +988,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Deviation from typical price SMA with RSI filter captures intraday reversion.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Close deviates > 1.5x ATR below typical price SMA(20) AND RSI < 40",
-            "entry_short": "Close deviates > 1.5x ATR above typical price SMA(20) AND RSI > 60",
-            "exit_long": "Close > typical price SMA(20)",
-            "exit_short": "Close < typical price SMA(20)",
+            "entry_long": [
+                {"op": "mean_rev_long", "ref_col": "typical_price_sma_20", "multiplier": 1.5},
+                {"op": "below", "col": "rsi_14", "ref": {"value": 40}},
+            ],
+            "entry_short": [
+                {"op": "mean_rev_short", "ref_col": "typical_price_sma_20", "multiplier": 1.5},
+                {"op": "above", "col": "rsi_14", "ref": {"value": 60}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "close", "ref": {"col": "typical_price_sma_20"}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "close", "ref": {"col": "typical_price_sma_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 12,
             "required_features": ["typical_price_sma_20", "rsi_14", "atr_14"],
@@ -635,10 +1013,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Low ADX confirms ranging market; RSI extremes signal reversion opportunities.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "ADX < 15 AND RSI crosses above 30",
-            "entry_short": "ADX < 15 AND RSI crosses below 70",
-            "exit_long": "RSI > 50",
-            "exit_short": "RSI < 50",
+            "entry_long": [
+                {"op": "below", "col": "adx_14", "ref": {"value": 15}},
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 30}},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "adx_14", "ref": {"value": 15}},
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 70}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "rsi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["adx_14", "rsi_14", "atr_14"],
@@ -650,10 +1038,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Bollinger %B crossing back from extremes signals mean reversion momentum.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "BB %B crosses above 0.1",
-            "entry_short": "BB %B crosses below 0.9",
-            "exit_long": "BB %B > 0.5",
-            "exit_short": "BB %B < 0.5",
+            "entry_long": [
+                {"op": "crosses_above", "col": "bb_percentb", "ref": {"value": 0.1}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "bb_percentb", "ref": {"value": 0.9}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "bb_percentb", "ref": {"value": 0.5}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "bb_percentb", "ref": {"value": 0.5}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["bb_percentb", "atr_14"],
@@ -665,10 +1061,22 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Extreme CCI with wide range bar signals exhaustion; next close confirms reversal.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "CCI(20) < -200 AND bar range > 2x ATR AND bullish close",
-            "entry_short": "CCI(20) > 200 AND bar range > 2x ATR AND bearish close",
-            "exit_long": "CCI(20) > -100",
-            "exit_short": "CCI(20) < 100",
+            "entry_long": [
+                {"op": "below", "col": "cci_20", "ref": {"value": -200}},
+                {"op": "range_exceeds_atr", "multiplier": 2.0},
+                {"op": "consecutive_higher_closes", "n": 1},
+            ],
+            "entry_short": [
+                {"op": "above", "col": "cci_20", "ref": {"value": 200}},
+                {"op": "range_exceeds_atr", "multiplier": 2.0},
+                {"op": "consecutive_lower_closes", "n": 1},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "cci_20", "ref": {"value": -100}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "cci_20", "ref": {"value": 100}},
+            ],
             "atr_stop_mult": 2.5,
             "atr_target_mult": 3.0,
             "required_features": ["cci_20", "atr_14"],
@@ -680,10 +1088,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "RSI crossing 50 in low-ADX environments captures range momentum.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "ADX < 20 AND RSI crosses above 50",
-            "entry_short": "ADX < 20 AND RSI crosses below 50",
-            "exit_long": "RSI crosses below 50",
-            "exit_short": "RSI crosses above 50",
+            "entry_long": [
+                {"op": "below", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 25,
             "required_features": ["adx_14", "rsi_14", "atr_14"],
@@ -695,8 +1113,16 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Bullish candle at lower Bollinger Band confirms demand overcoming supply.",
             "category": "mean_reversion",
             "direction": "long_only",
-            "entry_long": "Low < lower BB AND bullish engulfing or harami pattern",
-            "exit_long": "Close > BB middle",
+            "entry_long": [
+                {"op": "below", "col": "low", "ref": {"col": "bb_lower"}},
+                {"op": "any_of", "conditions": [
+                    {"op": "candle_bullish", "pattern_col": "cdl_engulfing"},
+                    {"op": "candle_bullish", "pattern_col": "cdl_harami"},
+                ]},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["low", "bb_lower", "bb_middle", "cdl_engulfing", "cdl_harami", "atr_14"],
@@ -708,8 +1134,16 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Bearish candle at upper Bollinger Band confirms supply overcoming demand.",
             "category": "mean_reversion",
             "direction": "short_only",
-            "entry_short": "High > upper BB AND bearish engulfing or shooting star pattern",
-            "exit_short": "Close < BB middle",
+            "entry_short": [
+                {"op": "above", "col": "high", "ref": {"col": "bb_upper"}},
+                {"op": "any_of", "conditions": [
+                    {"op": "candle_bearish", "pattern_col": "cdl_engulfing"},
+                    {"op": "candle_bearish", "pattern_col": "cdl_shooting_star"},
+                ]},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["high", "bb_upper", "bb_middle", "cdl_engulfing", "cdl_shooting_star", "atr_14"],
@@ -721,10 +1155,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Extreme deviation from slow MA with RSI filter captures position-scale reversions.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "Close deviates > 2x ATR below SMA50 AND RSI < 40",
-            "entry_short": "Close deviates > 2x ATR above SMA50 AND RSI > 60",
-            "exit_long": "Close > SMA50",
-            "exit_short": "Close < SMA50",
+            "entry_long": [
+                {"op": "deviation_below", "col": "close", "ref_col": "sma_50", "atr_mult": 2.0},
+                {"op": "below", "col": "rsi_14", "ref": {"value": 40}},
+            ],
+            "entry_short": [
+                {"op": "deviation_above", "col": "close", "ref_col": "sma_50", "atr_mult": 2.0},
+                {"op": "above", "col": "rsi_14", "ref": {"value": 60}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "close", "ref": {"col": "sma_50"}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "close", "ref": {"col": "sma_50"}},
+            ],
             "atr_stop_mult": 2.5,
             "time_stop_bars": 30,
             "required_features": ["close", "sma_50", "rsi_14", "atr_14"],
@@ -736,10 +1180,22 @@ def get_predefined_strategies() -> list[dict]:
             "description": "ATR contraction with low ADX signals coiling; RSI 50 cross triggers the snap.",
             "category": "mean_reversion",
             "direction": "long_short",
-            "entry_long": "ATR < 80% of ATR SMA(50) AND ADX < 20 AND RSI was below 50 then crosses above within 10 bars",
-            "entry_short": "ATR < 80% of ATR SMA(50) AND ADX < 20 AND RSI was above 50 then crosses below within 10 bars",
-            "exit_long": "RSI crosses below 50",
-            "exit_short": "RSI crosses above 50",
+            "entry_long": [
+                {"op": "atr_below_contracted_sma", "factor": 0.80},
+                {"op": "below", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "was_below_then_crosses_above", "col": "rsi_14", "threshold": 50, "lookback": 10},
+            ],
+            "entry_short": [
+                {"op": "atr_below_contracted_sma", "factor": 0.80},
+                {"op": "below", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "was_above_then_crosses_below", "col": "rsi_14", "threshold": 50, "lookback": 10},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 25,
             "required_features": ["atr_14", "atr_sma_50", "adx_14", "rsi_14"],
@@ -754,10 +1210,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Classic channel breakout captures new highs/lows as trend initiators.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close breaks above Donchian high(20)",
-            "entry_short": "Close breaks below Donchian low(20)",
-            "exit_long": "Close breaks below Donchian low(20)",
-            "exit_short": "Close breaks above Donchian high(20)",
+            "entry_long": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+            ],
+            "entry_short": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+            ],
+            "exit_long": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+            ],
+            "exit_short": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 4.0,
             "trailing_atr_mult": 2.0,
@@ -770,10 +1234,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Donchian breakout filtered by expanded range confirms genuine momentum.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close breaks above Donchian high(20) AND bar range > 1.2x ATR",
-            "entry_short": "Close breaks below Donchian low(20) AND bar range > 1.2x ATR",
-            "exit_long": "Close breaks below Donchian low(20)",
-            "exit_short": "Close breaks above Donchian high(20)",
+            "entry_long": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+                {"op": "range_exceeds_atr", "multiplier": 1.2},
+            ],
+            "entry_short": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+                {"op": "range_exceeds_atr", "multiplier": 1.2},
+            ],
+            "exit_long": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+            ],
+            "exit_short": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["donchian_high_20", "donchian_low_20", "atr_14"],
@@ -785,10 +1259,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Bollinger Band breakout with rising width confirms volatility expansion.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close > upper BB AND BB width rising over 3 bars",
-            "entry_short": "Close < lower BB AND BB width rising over 3 bars",
-            "exit_long": "Close < BB middle",
-            "exit_short": "Close > BB middle",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_upper"}},
+                {"op": "rising", "col": "bb_width", "n": 3},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_lower"}},
+                {"op": "rising", "col": "bb_width", "n": 3},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["close", "bb_upper", "bb_lower", "bb_middle", "bb_width", "atr_14"],
@@ -800,10 +1284,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Bollinger squeeze identifies low-volatility consolidation; breakout signals expansion.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "BB width in squeeze (bottom 60th percentile) AND close > upper BB",
-            "entry_short": "BB width in squeeze (bottom 60th percentile) AND close < lower BB",
-            "exit_long": "Close < BB middle",
-            "exit_short": "Close > BB middle",
+            "entry_long": [
+                {"op": "squeeze", "width_col": "bb_width", "lookback": 60},
+                {"op": "above", "col": "close", "ref": {"col": "bb_upper"}},
+            ],
+            "entry_short": [
+                {"op": "squeeze", "width_col": "bb_width", "lookback": 60},
+                {"op": "below", "col": "close", "ref": {"col": "bb_lower"}},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["close", "bb_upper", "bb_lower", "bb_middle", "bb_width", "atr_14"],
@@ -815,10 +1309,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Price breaking beyond ATR-scaled SMA channel signals strong directional momentum.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close breaks above SMA20 + 2x ATR channel",
-            "entry_short": "Close breaks below SMA20 - 2x ATR channel",
-            "exit_long": "Close < SMA20",
-            "exit_short": "Close > SMA20",
+            "entry_long": [
+                {"op": "breaks_above_sma_envelope", "col": "sma_20", "multiplier": 2.0},
+            ],
+            "entry_short": [
+                {"op": "breaks_below_sma_envelope", "col": "sma_20", "multiplier": 2.0},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "sma_20"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "sma_20"}},
+            ],
             "atr_stop_mult": 2.5,
             "atr_target_mult": 4.0,
             "required_features": ["sma_20", "atr_14"],
@@ -830,8 +1332,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Extreme range expansion with directional close signals institutional activity.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Bar range > 1.8x ATR AND close in top 20% of bar range",
-            "entry_short": "Bar range > 1.8x ATR AND close in bottom 20% of bar range",
+            "entry_long": [
+                {"op": "range_exceeds_atr", "multiplier": 1.8},
+                {"op": "in_top_pct_of_range", "pct": 0.20},
+            ],
+            "entry_short": [
+                {"op": "range_exceeds_atr", "multiplier": 1.8},
+                {"op": "in_bottom_pct_of_range", "pct": 0.20},
+            ],
             "atr_stop_mult": 1.5,
             "trailing_atr_mult": 1.5,
             "time_stop_bars": 10,
@@ -844,8 +1352,12 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Proxy of opening range using Donchian channels captures early-session momentum.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close breaks above Donchian high(5)",
-            "entry_short": "Close breaks below Donchian low(5)",
+            "entry_long": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_5"},
+            ],
+            "entry_short": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_5"},
+            ],
             "atr_stop_mult": 1.5,
             "trailing_atr_mult": 1.5,
             "time_stop_bars": 15,
@@ -858,8 +1370,16 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Rising ATR with expanding bands confirms genuine volatility step-up for breakout.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "ATR rising over 5 bars AND BB width rising over 5 bars AND close breaks above Donchian high(10)",
-            "entry_short": "ATR rising over 5 bars AND BB width rising over 5 bars AND close breaks below Donchian low(10)",
+            "entry_long": [
+                {"op": "rising", "col": "atr_14", "n": 5},
+                {"op": "rising", "col": "bb_width", "n": 5},
+                {"op": "breaks_above_level", "level_col": "donchian_high_10"},
+            ],
+            "entry_short": [
+                {"op": "rising", "col": "atr_14", "n": 5},
+                {"op": "rising", "col": "bb_width", "n": 5},
+                {"op": "breaks_below_level", "level_col": "donchian_low_10"},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["atr_14", "bb_width", "donchian_high_10", "donchian_low_10"],
@@ -871,10 +1391,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Keltner channel (EMA + ATR) breakout normalizes for volatility, reducing false signals.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close breaks above EMA20 + 1.5x ATR channel",
-            "entry_short": "Close breaks below EMA20 - 1.5x ATR channel",
-            "exit_long": "Close < EMA20",
-            "exit_short": "Close > EMA20",
+            "entry_long": [
+                {"op": "close_above_upper_channel", "col": "ema_20", "multiplier": 1.5},
+            ],
+            "entry_short": [
+                {"op": "close_below_lower_channel", "col": "ema_20", "multiplier": 1.5},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_20"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["ema_20", "atr_14"],
@@ -886,8 +1414,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "ADX rising from low levels signals new trend ignition; breakout confirms direction.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "ADX crosses above 20 AND close breaks above Donchian high(20)",
-            "entry_short": "ADX crosses above 20 AND close breaks below Donchian low(20)",
+            "entry_long": [
+                {"op": "crosses_above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+            ],
+            "entry_short": [
+                {"op": "crosses_above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["adx_14", "donchian_high_20", "donchian_low_20", "atr_14"],
@@ -899,10 +1433,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "RSI crossing key levels with price breakout confirms momentum ignition.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "RSI crosses above 60 AND close breaks above Donchian high(10)",
-            "entry_short": "RSI crosses below 40 AND close breaks below Donchian low(10)",
-            "exit_long": "RSI crosses below 50",
-            "exit_short": "RSI crosses above 50",
+            "entry_long": [
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 60}},
+                {"op": "breaks_above_level", "level_col": "donchian_high_10"},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 40}},
+                {"op": "breaks_below_level", "level_col": "donchian_low_10"},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 25,
             "required_features": ["rsi_14", "donchian_high_10", "donchian_low_10", "atr_14"],
@@ -914,10 +1458,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Price breakout confirmed by MACD alignment reduces false breakout risk.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close breaks above Donchian high(20) AND MACD > 0",
-            "entry_short": "Close breaks below Donchian low(20) AND MACD < 0",
-            "exit_long": "MACD crosses below 0",
-            "exit_short": "MACD crosses above 0",
+            "entry_long": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+                {"op": "above", "col": "macd", "ref": {"value": 0}},
+            ],
+            "entry_short": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+                {"op": "below", "col": "macd", "ref": {"value": 0}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "macd", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "macd", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["donchian_high_20", "donchian_low_20", "macd", "atr_14"],
@@ -929,10 +1483,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Consecutive closes beyond Bollinger Band signal persistent trend momentum.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close > upper BB AND 3 consecutive higher closes",
-            "entry_short": "Close < lower BB AND 3 consecutive lower closes",
-            "exit_long": "Close < upper BB",
-            "exit_short": "Close > lower BB",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_upper"}},
+                {"op": "consecutive_higher_closes", "n": 3},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_lower"}},
+                {"op": "consecutive_lower_closes", "n": 3},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_upper"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_lower"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["close", "bb_upper", "bb_lower", "atr_14"],
@@ -944,8 +1508,12 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Pivot level breakout captures intraday directional momentum.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close breaks above typical price SMA(1) + 1x ATR channel",
-            "entry_short": "Close breaks below typical price SMA(1) - 1x ATR channel",
+            "entry_long": [
+                {"op": "close_above_upper_channel", "col": "typical_price_sma_1", "multiplier": 1.0},
+            ],
+            "entry_short": [
+                {"op": "close_below_lower_channel", "col": "typical_price_sma_1", "multiplier": 1.0},
+            ],
             "atr_stop_mult": 1.5,
             "time_stop_bars": 15,
             "required_features": ["typical_price_sma_1", "atr_14"],
@@ -957,7 +1525,10 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Decreasing ATR with higher lows signals coiling energy; breakout captures expansion.",
             "category": "breakout",
             "direction": "long_only",
-            "entry_long": "ATR falling over 10 bars AND close breaks above Donchian high(20)",
+            "entry_long": [
+                {"op": "falling", "col": "atr_14", "n": 10},
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["atr_14", "donchian_high_20"],
@@ -969,8 +1540,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Gaps backed by directional close signal continuation momentum.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Gap up > 1x ATR AND close > open",
-            "entry_short": "Gap down > 1x ATR AND close < open",
+            "entry_long": [
+                {"op": "gap_up", "atr_mult": 1.0},
+                {"op": "above", "col": "close", "ref": {"col": "open"}},
+            ],
+            "entry_short": [
+                {"op": "gap_down", "atr_mult": 1.0},
+                {"op": "below", "col": "close", "ref": {"col": "open"}},
+            ],
             "atr_stop_mult": 1.5,
             "trailing_atr_mult": 1.5,
             "time_stop_bars": 10,
@@ -983,8 +1560,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Narrowest range bar signals compression; breakout captures directional expansion.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Narrowest range in 7 bars AND close > prior high",
-            "entry_short": "Narrowest range in 7 bars AND close < prior low",
+            "entry_long": [
+                {"op": "narrowest_range", "lookback": 7},
+                {"op": "above", "col": "close", "ref": {"col": "high"}},
+            ],
+            "entry_short": [
+                {"op": "narrowest_range", "lookback": 7},
+                {"op": "below", "col": "close", "ref": {"col": "low"}},
+            ],
             "atr_stop_mult": 1.5,
             "atr_target_mult": 2.5,
             "time_stop_bars": 10,
@@ -997,7 +1580,10 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Swing low formation then break above pullback high signals trend continuation.",
             "category": "breakout",
             "direction": "long_only",
-            "entry_long": "Close rising over 2 bars AND close breaks above Donchian high(10)",
+            "entry_long": [
+                {"op": "rising", "col": "close", "n": 2},
+                {"op": "breaks_above_level", "level_col": "donchian_high_10"},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["donchian_high_10", "atr_14"],
@@ -1009,8 +1595,12 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Close exceeding prior close by full ATR signals strong momentum thrust.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "Close breaks above prior close + 1x ATR",
-            "entry_short": "Close breaks below prior close - 1x ATR",
+            "entry_long": [
+                {"op": "close_above_upper_channel", "col": "close", "multiplier": 1.0},
+            ],
+            "entry_short": [
+                {"op": "close_below_lower_channel", "col": "close", "multiplier": 1.0},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "time_stop_bars": 20,
@@ -1023,10 +1613,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Strong CMO reading with price breakout confirms momentum-driven move.",
             "category": "breakout",
             "direction": "long_short",
-            "entry_long": "CMO(14) > 40 AND close breaks above Donchian high(10)",
-            "entry_short": "CMO(14) < -40 AND close breaks below Donchian low(10)",
-            "exit_long": "CMO(14) < 10",
-            "exit_short": "CMO(14) > -10",
+            "entry_long": [
+                {"op": "above", "col": "cmo_14", "ref": {"value": 40}},
+                {"op": "breaks_above_level", "level_col": "donchian_high_10"},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "cmo_14", "ref": {"value": -40}},
+                {"op": "breaks_below_level", "level_col": "donchian_low_10"},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "cmo_14", "ref": {"value": 10}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "cmo_14", "ref": {"value": -10}},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["cmo_14", "donchian_high_10", "donchian_low_10", "atr_14"],
         },
@@ -1040,10 +1640,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Price breakouts confirmed by volume flow (OBV) breakouts have higher conviction.",
             "category": "volume_flow",
             "direction": "long_short",
-            "entry_long": "Close breaks above Donchian high(20) AND OBV breaks above OBV high(20)",
-            "entry_short": "Close breaks below Donchian low(20) AND OBV breaks below OBV low(20)",
-            "exit_long": "Close breaks below Donchian low(20)",
-            "exit_short": "Close breaks above Donchian high(20)",
+            "entry_long": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+                {"op": "breaks_above_level", "level_col": "obv_high_20"},
+            ],
+            "entry_short": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+                {"op": "breaks_below_level", "level_col": "obv_low_20"},
+            ],
+            "exit_long": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+            ],
+            "exit_short": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["donchian_high_20", "donchian_low_20", "obv", "obv_high_20", "obv_low_20", "atr_14"],
@@ -1055,8 +1665,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "OBV above its SMA confirms accumulation; pullback to EMA20 is a high-quality entry.",
             "category": "volume_flow",
             "direction": "long_only",
-            "entry_long": "OBV > OBV SMA(20) AND close > EMA50 AND price pulls back to EMA20",
-            "exit_long": "Close < EMA20",
+            "entry_long": [
+                {"op": "above", "col": "obv", "ref": {"col": "obv_sma_20"}},
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+                {"op": "pullback_to", "level_col": "ema_20", "tolerance_atr_mult": 0.5},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["obv", "obv_sma_20", "ema_20", "ema_50", "atr_14"],
@@ -1068,10 +1684,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Accumulation/Distribution oscillator zero-line cross confirms volume-backed momentum.",
             "category": "volume_flow",
             "direction": "long_short",
-            "entry_long": "ADOSC crosses above 0 AND close > EMA50",
-            "entry_short": "ADOSC crosses below 0 AND close < EMA50",
-            "exit_long": "ADOSC crosses below 0",
-            "exit_short": "ADOSC crosses above 0",
+            "entry_long": [
+                {"op": "crosses_above", "col": "adosc", "ref": {"value": 0}},
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "entry_short": [
+                {"op": "crosses_below", "col": "adosc", "ref": {"value": 0}},
+                {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "adosc", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "adosc", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "required_features": ["adosc", "ema_50", "atr_14"],
         },
@@ -1082,10 +1708,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Bollinger breakout confirmed by strong MFI validates volume participation.",
             "category": "volume_flow",
             "direction": "long_short",
-            "entry_long": "Close > upper BB AND MFI > 60",
-            "entry_short": "Close < lower BB AND MFI < 40",
-            "exit_long": "Close < BB middle",
-            "exit_short": "Close > BB middle",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_upper"}},
+                {"op": "above", "col": "mfi_14", "ref": {"value": 60}},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_lower"}},
+                {"op": "below", "col": "mfi_14", "ref": {"value": 40}},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["close", "bb_upper", "bb_lower", "bb_middle", "mfi_14", "atr_14"],
@@ -1097,7 +1733,11 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Volume spike with trend alignment signals institutional participation.",
             "category": "volume_flow",
             "direction": "long_only",
-            "entry_long": "Close > SMA50 AND volume > 2x volume SMA(20) AND close in top 25% of bar range",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "sma_50"}},
+                {"op": "above", "col": "volume", "ref": {"col": "volume_sma_20_2x"}},
+                {"op": "in_top_pct_of_range", "pct": 0.25},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "time_stop_bars": 20,
@@ -1110,8 +1750,12 @@ def get_predefined_strategies() -> list[dict]:
             "description": "OBV-price divergence reveals hidden accumulation/distribution before reversals.",
             "category": "volume_flow",
             "direction": "long_short",
-            "entry_long": "Bullish OBV divergence over 10 bars",
-            "entry_short": "Bearish OBV divergence over 10 bars",
+            "entry_long": [
+                {"op": "bullish_divergence", "indicator_col": "obv", "lookback": 10},
+            ],
+            "entry_short": [
+                {"op": "bearish_divergence", "indicator_col": "obv", "lookback": 10},
+            ],
             "atr_stop_mult": 2.5,
             "atr_target_mult": 3.0,
             "time_stop_bars": 25,
@@ -1124,10 +1768,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Persistent ADOSC direction confirms institutional flow aligned with price trend.",
             "category": "volume_flow",
             "direction": "long_short",
-            "entry_long": "ADOSC > 0 for 5 consecutive bars AND close > EMA50",
-            "entry_short": "ADOSC < 0 for 5 consecutive bars AND close < EMA50",
-            "exit_long": "ADOSC crosses below 0",
-            "exit_short": "ADOSC crosses above 0",
+            "entry_long": [
+                {"op": "held_above", "col": "adosc", "threshold": 0, "n": 5},
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "entry_short": [
+                {"op": "held_below", "col": "adosc", "threshold": 0, "n": 5},
+                {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "exit_long": [
+                {"op": "crosses_below", "col": "adosc", "ref": {"value": 0}},
+            ],
+            "exit_short": [
+                {"op": "crosses_above", "col": "adosc", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["adosc", "ema_50", "atr_14"],
@@ -1139,10 +1793,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "MFI extremes in low-ADX environments signal high-probability reversion.",
             "category": "volume_flow",
             "direction": "long_short",
-            "entry_long": "ADX < 15 AND MFI crosses above 20",
-            "entry_short": "ADX < 15 AND MFI crosses below 80",
-            "exit_long": "MFI > 50",
-            "exit_short": "MFI < 50",
+            "entry_long": [
+                {"op": "below", "col": "adx_14", "ref": {"value": 15}},
+                {"op": "crosses_above", "col": "mfi_14", "ref": {"value": 20}},
+            ],
+            "entry_short": [
+                {"op": "below", "col": "adx_14", "ref": {"value": 15}},
+                {"op": "crosses_below", "col": "mfi_14", "ref": {"value": 80}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "mfi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "mfi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["adx_14", "mfi_14", "atr_14"],
@@ -1154,7 +1818,10 @@ def get_predefined_strategies() -> list[dict]:
             "description": "OBV breakout followed by price pullback and recovery is high-conviction continuation.",
             "category": "volume_flow",
             "direction": "long_only",
-            "entry_long": "OBV > OBV high(20) AND price pulls back to EMA20",
+            "entry_long": [
+                {"op": "above", "col": "obv", "ref": {"col": "obv_high_20"}},
+                {"op": "pullback_to", "level_col": "ema_20", "tolerance_atr_mult": 1.0},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "time_stop_bars": 40,
@@ -1167,7 +1834,10 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Price breakout backed by rising ADOSC confirms institutional accumulation.",
             "category": "volume_flow",
             "direction": "long_only",
-            "entry_long": "Close breaks above Donchian high(20) AND ADOSC rising over 3 bars",
+            "entry_long": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+                {"op": "rising", "col": "adosc", "n": 3},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["donchian_high_20", "adosc", "atr_14"],
@@ -1182,8 +1852,13 @@ def get_predefined_strategies() -> list[dict]:
             "description": "A bullish engulfing pattern in an uptrend signals strong demand overwhelming recent supply.",
             "category": "pattern",
             "direction": "long_only",
-            "entry_long": "Bullish engulfing pattern AND close > EMA50",
-            "exit_long": "Close < EMA20",
+            "entry_long": [
+                {"op": "candle_bullish", "pattern_col": "cdl_engulfing"},
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["cdl_engulfing", "ema_20", "ema_50", "atr_14"],
@@ -1195,8 +1870,13 @@ def get_predefined_strategies() -> list[dict]:
             "description": "A bearish engulfing pattern in a downtrend signals strong supply overwhelming recent demand.",
             "category": "pattern",
             "direction": "short_only",
-            "entry_short": "Bearish engulfing pattern AND close < EMA50",
-            "exit_short": "Close > EMA20",
+            "entry_short": [
+                {"op": "candle_bearish", "pattern_col": "cdl_engulfing"},
+                {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["cdl_engulfing", "ema_20", "ema_50", "atr_14"],
@@ -1208,8 +1888,13 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Hammer candle at lower Bollinger Band signals rejection of lower prices.",
             "category": "pattern",
             "direction": "long_only",
-            "entry_long": "Hammer candle pattern AND low < lower BB",
-            "exit_long": "Close > BB middle",
+            "entry_long": [
+                {"op": "candle_bullish", "pattern_col": "cdl_hammer"},
+                {"op": "below", "col": "low", "ref": {"col": "bb_lower"}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["cdl_hammer", "low", "bb_lower", "bb_middle", "atr_14"],
@@ -1221,8 +1906,13 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Shooting star candle at upper Bollinger Band signals rejection of higher prices.",
             "category": "pattern",
             "direction": "short_only",
-            "entry_short": "Shooting star pattern AND high > upper BB",
-            "exit_short": "Close < BB middle",
+            "entry_short": [
+                {"op": "candle_bearish", "pattern_col": "cdl_shooting_star"},
+                {"op": "above", "col": "high", "ref": {"col": "bb_upper"}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 20,
             "required_features": ["cdl_shooting_star", "high", "bb_upper", "bb_middle", "atr_14"],
@@ -1234,7 +1924,9 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Three-candle morning star pattern signals bullish reversal at support.",
             "category": "pattern",
             "direction": "long_only",
-            "entry_long": "Morning star candle pattern detected",
+            "entry_long": [
+                {"op": "candle_bullish", "pattern_col": "cdl_morning_star"},
+            ],
             "atr_stop_mult": 2.5,
             "atr_target_mult": 3.0,
             "time_stop_bars": 30,
@@ -1247,7 +1939,9 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Three-candle evening star pattern signals bearish reversal at resistance.",
             "category": "pattern",
             "direction": "short_only",
-            "entry_short": "Evening star candle pattern detected",
+            "entry_short": [
+                {"op": "candle_bearish", "pattern_col": "cdl_evening_star"},
+            ],
             "atr_stop_mult": 2.5,
             "atr_target_mult": 3.0,
             "time_stop_bars": 30,
@@ -1260,8 +1954,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Doji with wide range and RSI non-extreme signals indecision after strong move.",
             "category": "pattern",
             "direction": "long_short",
-            "entry_long": "Bullish doji AND bar range > 1.8x ATR AND RSI < 45 AND bullish close",
-            "entry_short": "Bearish doji AND bar range > 1.8x ATR AND RSI > 55 AND bearish close",
+            "entry_long": [
+                {"op": "candle_bullish", "pattern_col": "cdl_doji"},
+                {"op": "range_exceeds_atr", "multiplier": 1.8},
+                {"op": "below", "col": "rsi_14", "ref": {"value": 45}},
+                {"op": "consecutive_higher_closes", "n": 1},
+            ],
+            "entry_short": [
+                {"op": "candle_bearish", "pattern_col": "cdl_doji"},
+                {"op": "range_exceeds_atr", "multiplier": 1.8},
+                {"op": "above", "col": "rsi_14", "ref": {"value": 55}},
+                {"op": "consecutive_lower_closes", "n": 1},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 2.5,
             "time_stop_bars": 20,
@@ -1274,8 +1978,12 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Three consecutive strong directional candles signal sustained momentum.",
             "category": "pattern",
             "direction": "long_short",
-            "entry_long": "Three white soldiers pattern detected",
-            "entry_short": "Three black crows pattern detected",
+            "entry_long": [
+                {"op": "candle_bullish", "pattern_col": "cdl_3white_soldiers"},
+            ],
+            "entry_short": [
+                {"op": "candle_bearish", "pattern_col": "cdl_3black_crows"},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["cdl_3white_soldiers", "cdl_3black_crows", "atr_14"],
@@ -1287,10 +1995,22 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Harami pattern with RSI confirmation signals high-quality reversal setup.",
             "category": "pattern",
             "direction": "long_short",
-            "entry_long": "Bullish harami AND RSI < 45 AND RSI rising over 2 bars",
-            "entry_short": "Bearish harami AND RSI > 55 AND RSI falling over 2 bars",
-            "exit_long": "RSI > 50",
-            "exit_short": "RSI < 50",
+            "entry_long": [
+                {"op": "candle_bullish", "pattern_col": "cdl_harami"},
+                {"op": "below", "col": "rsi_14", "ref": {"value": 45}},
+                {"op": "rising", "col": "rsi_14", "n": 2},
+            ],
+            "entry_short": [
+                {"op": "candle_bearish", "pattern_col": "cdl_harami"},
+                {"op": "above", "col": "rsi_14", "ref": {"value": 55}},
+                {"op": "falling", "col": "rsi_14", "n": 2},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "rsi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 25,
             "required_features": ["cdl_harami", "rsi_14", "atr_14"],
@@ -1302,8 +2022,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Marubozu (strong body, no wicks) with price breakout signals conviction momentum.",
             "category": "pattern",
             "direction": "long_short",
-            "entry_long": "Bullish marubozu AND close breaks above Donchian high(10)",
-            "entry_short": "Bearish marubozu AND close breaks below Donchian low(10)",
+            "entry_long": [
+                {"op": "candle_bullish", "pattern_col": "cdl_marubozu"},
+                {"op": "breaks_above_level", "level_col": "donchian_high_10"},
+            ],
+            "entry_short": [
+                {"op": "candle_bearish", "pattern_col": "cdl_marubozu"},
+                {"op": "breaks_below_level", "level_col": "donchian_low_10"},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "time_stop_bars": 20,
@@ -1319,10 +2045,42 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Adapting strategy to the current regime (trending vs ranging) avoids whipsaws.",
             "category": "regime",
             "direction": "long_short",
-            "entry_long": "Trend mode: ADX > 25 AND EMA20 crosses above EMA50; OR Range mode: ADX < 18 AND close crosses above lower BB",
-            "entry_short": "Trend mode: ADX > 25 AND EMA20 crosses below EMA50; OR Range mode: ADX < 18 AND close crosses below upper BB",
-            "exit_long": "EMA20 crosses below EMA50 OR close > BB middle",
-            "exit_short": "EMA20 crosses above EMA50 OR close < BB middle",
+            "entry_long": [
+                {"op": "any_of", "conditions": [
+                    {"op": "all_of", "conditions": [
+                        {"op": "above", "col": "adx_14", "ref": {"value": 25}},
+                        {"op": "crosses_above", "col": "ema_20", "ref": {"col": "ema_50"}},
+                    ]},
+                    {"op": "all_of", "conditions": [
+                        {"op": "below", "col": "adx_14", "ref": {"value": 18}},
+                        {"op": "crosses_above", "col": "close", "ref": {"col": "bb_lower"}},
+                    ]},
+                ]},
+            ],
+            "entry_short": [
+                {"op": "any_of", "conditions": [
+                    {"op": "all_of", "conditions": [
+                        {"op": "above", "col": "adx_14", "ref": {"value": 25}},
+                        {"op": "crosses_below", "col": "ema_20", "ref": {"col": "ema_50"}},
+                    ]},
+                    {"op": "all_of", "conditions": [
+                        {"op": "below", "col": "adx_14", "ref": {"value": 18}},
+                        {"op": "crosses_below", "col": "close", "ref": {"col": "bb_upper"}},
+                    ]},
+                ]},
+            ],
+            "exit_long": [
+                {"op": "any_of", "conditions": [
+                    {"op": "crosses_below", "col": "ema_20", "ref": {"col": "ema_50"}},
+                    {"op": "above", "col": "close", "ref": {"col": "bb_middle"}},
+                ]},
+            ],
+            "exit_short": [
+                {"op": "any_of", "conditions": [
+                    {"op": "crosses_above", "col": "ema_20", "ref": {"col": "ema_50"}},
+                    {"op": "below", "col": "close", "ref": {"col": "bb_middle"}},
+                ]},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["adx_14", "ema_20", "ema_50", "bb_upper", "bb_lower", "bb_middle", "atr_14"],
@@ -1334,8 +2092,30 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Switching between breakout and mean reversion based on volatility regime aligns strategy with market conditions.",
             "category": "regime",
             "direction": "long_short",
-            "entry_long": "Expansion: ATR > ATR SMA(50) AND close breaks above Donchian high(20); OR Contraction: ATR < 85% ATR SMA(50) AND mean reversion long signal",
-            "entry_short": "Expansion: ATR > ATR SMA(50) AND close breaks below Donchian low(20); OR Contraction: ATR < 85% ATR SMA(50) AND mean reversion short signal",
+            "entry_long": [
+                {"op": "any_of", "conditions": [
+                    {"op": "all_of", "conditions": [
+                        {"op": "above", "col": "atr_14", "ref": {"col": "atr_sma_50"}},
+                        {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+                    ]},
+                    {"op": "all_of", "conditions": [
+                        {"op": "atr_below_contracted_sma", "factor": 0.85},
+                        {"op": "mean_rev_long", "ref_col": "typical_price_sma_20", "multiplier": 1.5},
+                    ]},
+                ]},
+            ],
+            "entry_short": [
+                {"op": "any_of", "conditions": [
+                    {"op": "all_of", "conditions": [
+                        {"op": "above", "col": "atr_14", "ref": {"col": "atr_sma_50"}},
+                        {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+                    ]},
+                    {"op": "all_of", "conditions": [
+                        {"op": "atr_below_contracted_sma", "factor": 0.85},
+                        {"op": "mean_rev_short", "ref_col": "typical_price_sma_20", "multiplier": 1.5},
+                    ]},
+                ]},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["atr_14", "atr_sma_50", "donchian_high_20", "donchian_low_20", "typical_price_sma_20"],
@@ -1347,8 +2127,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Combining trend strength (ADX), expanding volatility (BB width), and pullback timing produces higher quality trend entries.",
             "category": "regime",
             "direction": "long_only",
-            "entry_long": "ADX > 20 AND BB width rising over 3 bars AND price pulls back to EMA20",
-            "exit_long": "Close < EMA20",
+            "entry_long": [
+                {"op": "above", "col": "adx_14", "ref": {"value": 20}},
+                {"op": "rising", "col": "bb_width", "n": 3},
+                {"op": "pullback_to", "level_col": "ema_20", "tolerance_atr_mult": 0.5},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["adx_14", "bb_width", "ema_20", "atr_14"],
@@ -1360,8 +2146,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Filtering out unfavorable conditions before entering improves overall strategy quality.",
             "category": "regime",
             "direction": "long_short",
-            "entry_long": "ADX between 18-35 AND ATR not in bottom 20th percentile (200 bars) AND ROC(10) crosses above 0 AND close > SMA200",
-            "entry_short": "ADX between 18-35 AND ATR not in bottom 20th percentile (200 bars) AND ROC(10) crosses below 0 AND close < SMA200",
+            "entry_long": [
+                {"op": "adx_in_range", "low": 18, "high": 35},
+                {"op": "atr_not_bottom_pct", "pct": 20, "lookback": 200},
+                {"op": "crosses_above", "col": "roc_10", "ref": {"value": 0}},
+                {"op": "above", "col": "close", "ref": {"col": "sma_200"}},
+            ],
+            "entry_short": [
+                {"op": "adx_in_range", "low": 18, "high": 35},
+                {"op": "atr_not_bottom_pct", "pct": 20, "lookback": 200},
+                {"op": "crosses_below", "col": "roc_10", "ref": {"value": 0}},
+                {"op": "below", "col": "close", "ref": {"col": "sma_200"}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 15,
             "required_features": ["adx_14", "atr_14", "roc_10", "sma_200"],
@@ -1373,8 +2169,14 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Using a slow MA as a higher-timeframe proxy ensures entries align with the broader trend.",
             "category": "regime",
             "direction": "long_only",
-            "entry_long": "Close > SMA200 AND RSI was below 50 then crosses above within 10 bars AND close > EMA20",
-            "exit_long": "Close < EMA20",
+            "entry_long": [
+                {"op": "above", "col": "close", "ref": {"col": "sma_200"}},
+                {"op": "was_below_then_crosses_above", "col": "rsi_14", "threshold": 50, "lookback": 10},
+                {"op": "above", "col": "close", "ref": {"col": "ema_20"}},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_20"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["sma_200", "rsi_14", "ema_20", "atr_14"],
@@ -1386,10 +2188,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Mean reversion strategies work best when there is no underlying trend; filtering by slope near zero avoids fighting momentum.",
             "category": "regime",
             "direction": "long_short",
-            "entry_long": "Linear regression slope(20) near zero (< 0.001) AND RSI crosses above 30",
-            "entry_short": "Linear regression slope(20) near zero (< 0.001) AND RSI crosses below 70",
-            "exit_long": "RSI > 50",
-            "exit_short": "RSI < 50",
+            "entry_long": [
+                {"op": "flat_slope", "col": "linearreg_slope_20", "epsilon": 0.001},
+                {"op": "crosses_above", "col": "rsi_14", "ref": {"value": 30}},
+            ],
+            "entry_short": [
+                {"op": "flat_slope", "col": "linearreg_slope_20", "epsilon": 0.001},
+                {"op": "crosses_below", "col": "rsi_14", "ref": {"value": 70}},
+            ],
+            "exit_long": [
+                {"op": "above", "col": "rsi_14", "ref": {"value": 50}},
+            ],
+            "exit_short": [
+                {"op": "below", "col": "rsi_14", "ref": {"value": 50}},
+            ],
             "atr_stop_mult": 2.0,
             "time_stop_bars": 25,
             "required_features": ["linearreg_slope_20", "rsi_14", "atr_14"],
@@ -1401,8 +2213,16 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Requiring multiple volume/flow confirmations filters out false breakouts.",
             "category": "regime",
             "direction": "long_short",
-            "entry_long": "Close breaks above Donchian high(20) AND OBV breaks above OBV high(20) AND ADOSC > 0",
-            "entry_short": "Close breaks below Donchian low(20) AND OBV breaks below OBV low(20) AND ADOSC < 0",
+            "entry_long": [
+                {"op": "breaks_above_level", "level_col": "donchian_high_20"},
+                {"op": "breaks_above_level", "level_col": "obv_high_20"},
+                {"op": "above", "col": "adosc", "ref": {"value": 0}},
+            ],
+            "entry_short": [
+                {"op": "breaks_below_level", "level_col": "donchian_low_20"},
+                {"op": "breaks_below_level", "level_col": "obv_low_20"},
+                {"op": "below", "col": "adosc", "ref": {"value": 0}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["donchian_high_20", "donchian_low_20", "obv", "obv_high_20", "obv_low_20", "adosc", "atr_14"],
@@ -1414,8 +2234,13 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Entering on a trend signal combined with mean reversion timing improves entry quality.",
             "category": "regime",
             "direction": "long_only",
-            "entry_long": "EMA20 crosses above EMA50 AND close > EMA50",
-            "exit_long": "Close < EMA50",
+            "entry_long": [
+                {"op": "crosses_above", "col": "ema_20", "ref": {"col": "ema_50"}},
+                {"op": "above", "col": "close", "ref": {"col": "ema_50"}},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "ema_50"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["ema_20", "ema_50", "atr_14"],
@@ -1427,10 +2252,20 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Adding a failure exit to the classic squeeze breakout cuts losses quickly when the breakout does not follow through.",
             "category": "regime",
             "direction": "long_short",
-            "entry_long": "BB width in squeeze (bottom 60th percentile) AND close > upper BB",
-            "entry_short": "BB width in squeeze (bottom 60th percentile) AND close < lower BB",
-            "exit_long": "Close < upper BB (failure exit)",
-            "exit_short": "Close > lower BB (failure exit)",
+            "entry_long": [
+                {"op": "squeeze", "width_col": "bb_width", "lookback": 60},
+                {"op": "above", "col": "close", "ref": {"col": "bb_upper"}},
+            ],
+            "entry_short": [
+                {"op": "squeeze", "width_col": "bb_width", "lookback": 60},
+                {"op": "below", "col": "close", "ref": {"col": "bb_lower"}},
+            ],
+            "exit_long": [
+                {"op": "below", "col": "close", "ref": {"col": "bb_upper"}},
+            ],
+            "exit_short": [
+                {"op": "above", "col": "close", "ref": {"col": "bb_lower"}},
+            ],
             "atr_stop_mult": 2.0,
             "trailing_atr_mult": 2.0,
             "required_features": ["bb_upper", "bb_lower", "bb_width", "atr_14"],
@@ -1442,10 +2277,18 @@ def get_predefined_strategies() -> list[dict]:
             "description": "Combining multiple independent signals via majority vote reduces false signals and increases conviction.",
             "category": "regime",
             "direction": "long_short",
-            "entry_long": "Majority (2 of 3) bullish: EMA20 > EMA50, RSI > 50, MACD histogram > 0",
-            "entry_short": "Majority (2 of 3) bearish: EMA20 < EMA50, RSI < 50, MACD histogram < 0",
-            "exit_long": "Majority (2 of 3) bearish signals",
-            "exit_short": "Majority (2 of 3) bullish signals",
+            "entry_long": [
+                {"op": "majority_bull"},
+            ],
+            "entry_short": [
+                {"op": "majority_bear"},
+            ],
+            "exit_long": [
+                {"op": "majority_bear"},
+            ],
+            "exit_short": [
+                {"op": "majority_bull"},
+            ],
             "atr_stop_mult": 2.0,
             "atr_target_mult": 3.0,
             "required_features": ["ema_20", "ema_50", "rsi_14", "macd_hist", "atr_14"],
