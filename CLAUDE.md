@@ -10,7 +10,6 @@
 4. **YOU MUST use filters for tool calls to optimize data fetch.**
 5. **IMPORTANT: You must continue polling after active work items are complete.**
 
-
 ## Skills
 
 See @.claude/skills/coding-best-practices/SKILLS.md for coding best practices and design patterns.
