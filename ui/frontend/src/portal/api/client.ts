@@ -292,6 +292,8 @@ export interface OHLCVData {
   low: number[];
   close: number[];
   volume: number[];
+  oldest_available?: string;
+  newest_available?: string;
 }
 
 export interface FeatureData {
@@ -328,11 +330,13 @@ export async function fetchOHLCVData(
   timeframe?: string,
   startDate?: string,
   endDate?: string,
+  limit?: number,
 ): Promise<OHLCVData> {
   const params = new URLSearchParams();
   if (timeframe) params.set('timeframe', timeframe);
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
+  if (limit != null) params.set('limit', String(limit));
   const qs = params.toString();
   return get<OHLCVData>(`/api/ohlcv/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`);
 }
@@ -346,11 +350,13 @@ export async function fetchFeatures(
   timeframe?: string,
   startDate?: string,
   endDate?: string,
+  limit?: number,
 ): Promise<FeatureData> {
   const params = new URLSearchParams();
   if (timeframe) params.set('timeframe', timeframe);
   if (startDate) params.set('start_date', startDate);
   if (endDate) params.set('end_date', endDate);
+  if (limit != null) params.set('limit', String(limit));
   const qs = params.toString();
   return get<FeatureData>(`/api/features/${encodeURIComponent(symbol)}${qs ? `?${qs}` : ''}`);
 }

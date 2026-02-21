@@ -51,6 +51,8 @@ class OHLCVResponse(BaseModel):
     low: list[float]
     close: list[float]
     volume: list[float]
+    oldest_available: Optional[str] = None
+    newest_available: Optional[str] = None
 
 
 class TickerInfo(BaseModel):
@@ -111,6 +113,7 @@ async def get_ohlcv_data(
     timeframe: str = Query("1Min", description="Bar timeframe (1Min, 15Min, 1Hour, 1Day)"),
     start_date: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
+    limit: Optional[int] = Query(None, description="Max bars to return (newest N)"),
     _user_id: int = Depends(get_current_user),
 ):
     """Load OHLCV data for a ticker symbol.
@@ -118,20 +121,22 @@ async def get_ohlcv_data(
     Data is loaded from the PostgreSQL database. If data is not available for the
     requested range, it will be automatically fetched from Alpaca API (if configured)
     and stored in the database before returning.
+
+    Use ``limit`` to cap the number of bars returned (keeps the newest N).
     """
     logger.info(
-        "OHLCV request received: symbol=%s, timeframe=%s, start=%s, end=%s",
-        symbol, timeframe, start_date, end_date,
+        "OHLCV request received: symbol=%s, timeframe=%s, start=%s, end=%s, limit=%s",
+        symbol, timeframe, start_date, end_date, limit,
     )
 
-    cache_key = f"ohlcv_{symbol}_{timeframe}_{start_date}_{end_date}"
+    cache_key = f"ohlcv_{symbol}_{timeframe}_{start_date}_{end_date}_{limit}"
     cached = get_cached_data(cache_key)
     if cached is not None:
         logger.info("OHLCV cache hit for %s/%s", symbol, timeframe)
         return cached
 
     try:
-        response = await load_ohlcv_internal(symbol, timeframe, start_date, end_date)
+        response = await load_ohlcv_internal(symbol, timeframe, start_date, end_date, limit=limit)
         set_cached_data(cache_key, response)
         return response
     except HTTPException:

@@ -31,11 +31,12 @@ async def get_features(
     timeframe: str = Query("1Min", description="Bar timeframe"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None, description="Max feature rows to return (newest N)"),
     _user_id: int = Depends(get_current_user),
 ):
     """Compute and return features for the data."""
     try:
-        return await get_features_internal(symbol, timeframe, start_date, end_date)
+        return await get_features_internal(symbol, timeframe, start_date, end_date, limit=limit)
     except HTTPException:
         raise
     except Exception as e:

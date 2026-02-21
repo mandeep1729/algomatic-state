@@ -76,12 +76,13 @@ export default function Overview() {
     setChartActive(true);
 
     const STALE_MS = 15 * 60 * 1000; // 15 minutes
+    const CHART_LIMIT = 7200;
 
-    // Helper: fetch OHLCV + features from backend
+    // Helper: fetch OHLCV + features from backend (limited to CHART_LIMIT bars)
     async function fetchChartData() {
       const [ohlcv, features] = await Promise.all([
-        fetchOHLCVData(symbol, timeframe),
-        fetchFeatures(symbol, timeframe),
+        fetchOHLCVData(symbol, timeframe, undefined, undefined, CHART_LIMIT),
+        fetchFeatures(symbol, timeframe, undefined, undefined, CHART_LIMIT),
       ]);
       return { ohlcv, features };
     }

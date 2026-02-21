@@ -12,12 +12,14 @@ export async function fetchOHLCVData(
   symbol: string,
   timeframe: string = '1Min',
   startDate?: string,
-  endDate?: string
+  endDate?: string,
+  limit?: number
 ): Promise<OHLCVData> {
   const params = new URLSearchParams();
   params.append('timeframe', timeframe);
   if (startDate) params.append('start_date', startDate);
   if (endDate) params.append('end_date', endDate);
+  if (limit != null) params.append('limit', String(limit));
 
   const response = await axios.get<OHLCVData>(
     `${API_BASE}/ohlcv/${symbol}?${params.toString()}`

@@ -111,10 +111,15 @@ async def load_ohlcv_internal(
     timeframe: str = "1Min",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    limit: Optional[int] = None,
 ) -> dict:
     """Load OHLCV data from database (auto-fetching from Alpaca if needed).
 
     Shared helper used by OHLCV, features, regimes, and analysis routers.
+
+    Args:
+        limit: If set, return only the newest N bars. Full data is still
+               cached under ``df_{symbol}`` for statistics/features.
     """
     if timeframe not in VALID_TIMEFRAMES:
         raise HTTPException(
@@ -146,6 +151,18 @@ async def load_ohlcv_internal(
             detail=f"No data found for {symbol}. Ensure Alpaca API is configured or import data manually."
         )
 
+    # Capture full-range timestamps before any truncation
+    oldest_available = df.index.min().strftime("%Y-%m-%dT%H:%M:%SZ")
+    newest_available = df.index.max().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Cache full df for statistics/features (always pre-truncation)
+    set_cached_data(f"df_{symbol.upper()}", df)
+
+    # Truncate to newest `limit` bars for the response
+    if limit and len(df) > limit:
+        logger.info("Truncating %d bars to newest %d for %s", len(df), limit, symbol)
+        df = df.iloc[-limit:]
+
     response = {
         "timestamps": df.index.strftime("%Y-%m-%dT%H:%M:%SZ").tolist(),
         "open": df["open"].tolist(),
@@ -153,9 +170,10 @@ async def load_ohlcv_internal(
         "low": df["low"].tolist(),
         "close": df["close"].tolist(),
         "volume": df["volume"].tolist(),
+        "oldest_available": oldest_available,
+        "newest_available": newest_available,
     }
 
-    set_cached_data(f"df_{symbol}", df)
     return response
 
 
@@ -164,14 +182,20 @@ async def get_features_internal(
     timeframe: str = "1Min",
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    limit: Optional[int] = None,
 ) -> dict:
     """Compute and return features for a symbol.
 
     Shared helper used by features and regimes routers.
+
+    The features pipeline needs full OHLCV history for lookback windows, so
+    ``load_ohlcv_internal`` is always called **without** a limit. Truncation
+    is applied to the resulting features_df only.
     """
+    # Always load full OHLCV (no limit) — features need lookback
     await load_ohlcv_internal(symbol, timeframe, start_date, end_date)
 
-    cache_key = f"features_{symbol}_{timeframe}_{start_date}_{end_date}"
+    cache_key = f"features_{symbol}_{timeframe}_{start_date}_{end_date}_{limit}"
     cached = get_cached_data(cache_key)
     if cached is not None:
         return cached
@@ -184,6 +208,11 @@ async def get_features_internal(
     features_df = pipeline.compute(df)
 
     set_cached_data(f"features_df_{symbol.upper()}", features_df)
+
+    # Truncate to newest `limit` rows for the response
+    if limit and len(features_df) > limit:
+        logger.info("Truncating %d feature rows to newest %d for %s", len(features_df), limit, symbol)
+        features_df = features_df.iloc[-limit:]
 
     response = {
         "timestamps": features_df.index.strftime("%Y-%m-%dT%H:%M:%SZ").tolist(),
