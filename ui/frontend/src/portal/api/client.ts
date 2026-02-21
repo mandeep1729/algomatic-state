@@ -76,8 +76,6 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
   const isGet = method === 'GET';
   const maxAttempts = isGet ? MAX_RETRIES : 1;
-  let lastError: unknown;
-
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -139,7 +137,6 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
         throw err;
       }
 
-      lastError = err;
       const delay = INITIAL_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
       log.warn(
         `${method} ${url} -> network error, retrying in ${delay}ms (attempt ${attempt}/${maxAttempts})`,
@@ -148,23 +145,8 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
     }
   }
 
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    log.error(`${method} ${url} -> ${res.status}`, body || res.statusText);
-    throw new Error(`API error ${res.status}: ${body || res.statusText}`);
-  }
-
-  log.debug(`${method} ${url} -> ${res.status} OK`);
-
-  // Handle 204 No Content or empty body (e.g., DELETE endpoints)
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  const text = await res.text();
-  if (!text) {
-    return undefined as T;
-  }
-  return JSON.parse(text) as T;
+  // All retries exhausted (only reachable for GET with repeated network errors)
+  throw new Error(`Request failed after ${maxAttempts} attempts: ${method} ${url}`);
 }
 
 function get<T>(path: string): Promise<T> {
