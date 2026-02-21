@@ -58,23 +58,21 @@ The project has the following major subsystems:
 
 2. **Trading Buddy** (`src/evaluators/`, `src/orchestrator.py`, `src/trade/`, `src/rules/`, `src/api/trading_buddy.py`) -- Modular trade evaluation system. Pluggable evaluators check risk/reward, exit plans, regime fit, and multi-timeframe alignment. Guardrails enforce the no-prediction policy.
 
-3. **Standalone Momentum Agent** (`src/agent/`) -- Dockerised agent with a scheduler loop that fetches data (Alpaca or Finnhub via `src/marketdata/`), computes features, generates signals, and submits orders through the execution layer (`src/execution/`).
+3. **Messaging & Market Data Service** (`src/messaging/`, `src/marketdata/`) -- In-memory pub/sub message bus decoupling market data fetching from consumers. `MarketDataOrchestrator` coordinates between the bus and `MarketDataService`.
 
-4. **Messaging & Market Data Service** (`src/messaging/`, `src/marketdata/`) -- In-memory pub/sub message bus decoupling market data fetching from consumers. `MarketDataOrchestrator` coordinates between the bus and `MarketDataService`.
+4. **Trade Lifecycle & Campaigns** (`src/api/campaigns.py`, `src/data/database/trade_lifecycle_models.py`) -- Tracks trade journeys from flat-to-flat using fills as the atomic unit. Decision contexts capture trader reasoning per fill, campaign_fills provides derived FIFO zero-crossing groupings. Behavioral checks (`src/checks/`, `src/reviewer/`) run against decision contexts.
 
-5. **Trade Lifecycle & Campaigns** (`src/api/campaigns.py`, `src/data/database/trade_lifecycle_models.py`) -- Tracks trade journeys from flat-to-flat using fills as the atomic unit. Decision contexts capture trader reasoning per fill, campaign_fills provides derived FIFO zero-crossing groupings. Behavioral checks (`src/checks/`, `src/reviewer/`) run against decision contexts.
+5. **Reviewer Service** (`src/reviewer/`) -- Event-driven service that subscribes to review events on the Redis message bus and runs behavioral checks against trade fills and decision contexts.
 
-6. **Reviewer Service** (`src/reviewer/`) -- Event-driven service that subscribes to review events on the Redis message bus and runs behavioral checks against trade fills and decision contexts.
+6. **Go Data Service** (`data-service/`, `proto/`) -- gRPC service (Go) that owns all market data tables (`tickers`, `ohlcv_bars`, `computed_features`, `data_sync_log`, probe tables). All Python market data access flows through `MarketDataGrpcClient` (`src/data/grpc_client.py`) via gRPC. Trading tables remain in Python via SQLAlchemy repositories.
 
-7. **Go Data Service** (`data-service/`, `proto/`) -- gRPC service (Go) that owns all market data tables (`tickers`, `ohlcv_bars`, `computed_features`, `data_sync_log`, probe tables). All Python market data access flows through `MarketDataGrpcClient` (`src/data/grpc_client.py`) via gRPC. Trading tables remain in Python via SQLAlchemy repositories.
+7. **Go Market Data Service** (`marketdata-service/`) -- Go service that fetches market data from Alpaca, aggregates timeframes, and writes to the data-service via gRPC.
 
-8. **Go Market Data Service** (`marketdata-service/`) -- Go service that fetches market data from Alpaca, aggregates timeframes, and writes to the data-service via gRPC.
+8. **Go Agent Service** (`agent-service/`) -- Go service that manages trading agent lifecycle. Polls for active agents, resolves their strategy definitions, runs agent loops (fetch data, compute signals, submit orders via Alpaca), and tracks orders and activity. Repositories: `agent_repo`, `order_repo`, `activity_repo`, `strategy_repo`.
 
-9. **Go Agent Service** (`agent-service/`) -- Go service that manages trading agent lifecycle. Polls for active agents, resolves their strategy definitions, runs agent loops (fetch data, compute signals, submit orders via Alpaca), and tracks orders and activity. Repositories: `agent_repo`, `order_repo`, `activity_repo`, `strategy_repo`.
+9. **Trading Agents Management** (`src/trading_agents/`, `src/api/trading_agents.py`) -- Python models, repository, and API for managing trading agent configurations. Predefined strategy catalog (`predefined.py`), agent CRUD, lifecycle control (start/pause/stop), and order/activity endpoints.
 
-10. **Trading Agents Management** (`src/trading_agents/`, `src/api/trading_agents.py`) -- Python models, repository, and API for managing trading agent configurations. Predefined strategy catalog (`predefined.py`), agent CRUD, lifecycle control (start/pause/stop), and order/activity endpoints.
-
-11. **Portal UI** (`ui/frontend/src/portal/`) -- Full SPA built with React + TypeScript. Public pages (landing, FAQ, how-it-works), Google OAuth login, app pages (dashboard, campaigns, investigate/insights, journal, agents, strategy probe, evaluate), settings (profile, risk, strategies, brokers), and help section.
+10. **Portal UI** (`ui/frontend/src/portal/`) -- Full SPA built with React + TypeScript. Public pages (landing, FAQ, how-it-works), Google OAuth login, app pages (dashboard, campaigns, investigate/insights, journal, agents, strategy probe, evaluate), settings (profile, risk, strategies, brokers), and help section.
 
 Supporting infrastructure: data loaders (`src/data/`), database models and repositories (`src/data/database/`), repository layer (`BrokerRepository`, `JournalRepository`, `ProbeRepository`, `TradingBuddyRepository`), unified dependency injection (`src/data/database/dependencies.py`), broker integration (`src/api/broker.py`, `src/api/alpaca.py`, `src/execution/snaptrade_client.py`), backtesting (`src/backtest/`), configuration (`config/settings.py`), authentication (`src/api/auth.py`, `src/api/auth_middleware.py`).
 

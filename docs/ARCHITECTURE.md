@@ -156,22 +156,6 @@ algomatic-state/
 ├── src/                        # Python source code
 │   ├── __init__.py
 │   │
-│   ├── agent/                  # Standalone trading agents
-│   │   ├── main.py             # Momentum agent entry point (FastAPI + scheduler)
-│   │   ├── config.py           # AgentConfig (AGENT_ env prefix)
-│   │   ├── strategy.py         # MomentumStrategy
-│   │   ├── scheduler.py        # Async fetch-compute-trade loop
-│   │   ├── api.py              # Internal /market-data endpoint
-│   │   ├── breakout_main.py    # Breakout agent entry point
-│   │   ├── breakout_config.py  # Breakout agent configuration
-│   │   ├── breakout_strategy.py # Breakout trading strategy
-│   │   ├── contrarian_main.py  # Contrarian agent entry point
-│   │   ├── contrarian_config.py # Contrarian agent configuration
-│   │   ├── contrarian_strategy.py # Contrarian trading strategy
-│   │   ├── vwap_main.py        # VWAP agent entry point
-│   │   ├── vwap_config.py      # VWAP agent configuration
-│   │   └── vwap_strategy.py    # VWAP trading strategy
-│   │
 │   ├── api/                    # Public API routers
 │   │   ├── trading_buddy.py    # Trading Buddy REST endpoints
 │   │   ├── broker.py           # SnapTrade broker integration routes
@@ -420,8 +404,7 @@ algomatic-state/
 │               └── feature_spec.yaml
 │
 ├── Dockerfile                  # Docker image for Python backend + reviewer service
-├── docker-compose.yml          # Full stack: postgres, redis, data-service, indicator-engine, marketdata-service, reviewer-service
-├── docker-compose.agents.yml   # Trading agent services (momentum, breakout, contrarian, vwap)
+├── docker-compose.yml          # Full stack: postgres, redis, data-service, indicator-engine, marketdata-service, reviewer-service, agent-service
 │
 └── docs/                       # Documentation
     ├── ARCHITECTURE.md         # System design and data flow
@@ -767,54 +750,7 @@ EvaluationResult (score, items, summary)
 - **Registry** (`src/evaluators/registry.py`): `@register_evaluator` decorator for plug-in discovery
 - **Guardrails** (`src/rules/guardrails.py`): No-prediction policy enforcement
 
-### 9. Standalone Momentum Agent
-
-**Purpose**: Dockerised trading agent that runs a fetch-compute-trade loop on a timer.
-
-**Location**: `src/agent/`
-
-#### Agent Architecture
-```
-┌─────────────────────────────────────────────────┐
-│                  Agent Process                    │
-│                                                   │
-│  ┌───────────────────┐  ┌─────────────────────┐  │
-│  │  FastAPI Thread    │  │  Scheduler Loop     │  │
-│  │  (internal API)    │  │  (async main loop)  │  │
-│  │  /health           │  │                     │  │
-│  │  /market-data      │  │  1. Market open?    │  │
-│  └───────────────────┘  │  2. Fetch OHLCV     │  │
-│                          │  3. Compute features │  │
-│                          │  4. Generate signals │  │
-│                          │  5. Risk check       │  │
-│                          │  6. Submit orders    │  │
-│                          └─────────────────────┘  │
-└─────────────────────────────────────────────────┘
-```
-
-- Configurable via `AGENT_*` environment variables
-- Data provider switchable: Alpaca or Finnhub
-- Uses `MomentumStrategy` with configurable thresholds
-- Docker Compose service with PostgreSQL dependency
-
-### 10. Additional Trading Strategies
-
-**Purpose**: Alternative trading strategies beyond basic momentum, each with its own entry/exit logic.
-
-**Location**: `src/agent/` (strategy-specific files)
-
-#### Available Strategies
-
-| Strategy | Entry Point | Feature | Logic |
-|----------|-------------|---------|-------|
-| Momentum | `main.py` | `r5` | Long when momentum > threshold, short when < negative threshold |
-| Contrarian | `contrarian_main.py` | `r5` | Opposite of momentum: long on negative momentum, short on positive |
-| Breakout | `breakout_main.py` | `breakout_20` | Long on breakouts above 20-bar high, short on breakdowns |
-| VWAP | `vwap_main.py` | `dist_vwap_60` | Mean reversion: long below VWAP, short above VWAP |
-
-Each strategy follows the same architecture as the momentum agent (FastAPI + scheduler loop) but uses different signal generation logic. All strategies are configured via environment variables with strategy-specific prefixes.
-
-### 11. Authentication Layer
+### 9. Authentication Layer
 
 **Purpose**: Secure API access with Google OAuth and JWT tokens.
 
@@ -845,7 +781,7 @@ get_current_user() Middleware (validates JWT)
 - JWT expiration configurable via `AUTH_JWT_EXPIRY_HOURS`
 - Google OAuth client ID via `AUTH_GOOGLE_CLIENT_ID`
 
-### 12. Behavioral Checks Engine
+### 10. Behavioral Checks Engine
 
 **Purpose**: Run behavioral checks against trades at the point of execution. Produces pass/fail results with nudge text that persist to `campaign_checks`.
 
@@ -855,7 +791,7 @@ get_current_user() Middleware (validates JWT)
 - `risk_sanity.py`: Risk sanity checks (position sizing, stop distance, overtrading)
 - `runner.py`: CheckRunner that executes all registered checks against a decision context
 
-### 13. Reviewer Service
+### 11. Reviewer Service
 
 **Purpose**: Event-driven service that subscribes to review events on the message bus and runs behavioral checks against position campaigns.
 
@@ -872,7 +808,7 @@ get_current_user() Middleware (validates JWT)
 
 Events handled: `REVIEW_LEG_CREATED`, `REVIEW_CAMPAIGNS_POPULATED`, `REVIEW_CONTEXT_UPDATED`, `REVIEW_RISK_PREFS_UPDATED`.
 
-### 14. Go Agent Service
+### 12. Go Agent Service
 
 **Purpose**: Manages trading agent lifecycle -- polls for active agents, resolves strategy definitions, runs agent loops, and tracks orders and activity.
 
@@ -903,7 +839,7 @@ Events handled: `REVIEW_LEG_CREATED`, `REVIEW_CAMPAIGNS_POPULATED`, `REVIEW_CONT
 - Uses `version` column on `agent_strategies` for cache invalidation
 - Docker Compose service with PostgreSQL dependency
 
-### 15. Trading Agents Management
+### 13. Trading Agents Management
 
 **Purpose**: Python-side management of trading agent configurations, predefined strategy catalog, and API endpoints.
 
@@ -914,7 +850,7 @@ Events handled: `REVIEW_LEG_CREATED`, `REVIEW_CAMPAIGNS_POPULATED`, `REVIEW_CONT
 - **Predefined Strategies** (`predefined.py`): Catalog of predefined strategy definitions with entry/exit conditions
 - **API Router** (`trading_agents.py`): REST endpoints for strategy CRUD, agent lifecycle (start/pause/stop), and order/activity queries
 
-### 16. Portal UI
+### 14. Portal UI
 
 **Purpose**: Full single-page application for the trading copilot platform.
 
