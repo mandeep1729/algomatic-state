@@ -44,8 +44,14 @@ func extractFromNode(node ConditionNode, seen map[string]bool) {
 
 	// Operators that implicitly require ATR
 	switch node.Op {
-	case "pullback_to", "range_exceeds_atr", "gap_up", "gap_down",
-		"deviation_below", "deviation_above":
+	case "pullback_to", "pullback_below", "range_exceeds_atr", "gap_up", "gap_down",
+		"deviation_below", "deviation_above",
+		"close_above_upper_channel", "close_below_lower_channel",
+		"ribbon_break_long", "ribbon_break_short", "ribbon_exit_long", "ribbon_exit_short",
+		"breaks_above_sma_envelope", "breaks_below_sma_envelope",
+		"atr_not_bottom_pct", "atr_below_contracted_sma",
+		"mean_rev_long", "mean_rev_short",
+		"in_top_pct_of_range", "in_bottom_pct_of_range", "narrowest_range":
 		seen["atr_14"] = true
 	}
 
@@ -57,6 +63,39 @@ func extractFromNode(node ConditionNode, seen map[string]bool) {
 	// BB width increasing implicitly requires bb_width
 	if node.Op == "bb_width_increasing" {
 		seen["bb_width"] = true
+	}
+
+	// TRIX operators implicitly require trix_15
+	if node.Op == "trix_crosses_above_sma" || node.Op == "trix_crosses_below_sma" {
+		seen["trix_15"] = true
+	}
+
+	// Double tap BB operators implicitly require bb_lower/bb_upper
+	if node.Op == "double_tap_below_bb" {
+		seen["bb_lower"] = true
+	}
+	if node.Op == "double_tap_above_bb" {
+		seen["bb_upper"] = true
+	}
+
+	// ATR below contracted SMA implicitly requires atr_sma_50
+	if node.Op == "atr_below_contracted_sma" {
+		seen["atr_sma_50"] = true
+	}
+
+	// Ribbon operators implicitly require ema_20 and ema_50
+	switch node.Op {
+	case "ribbon_break_long", "ribbon_break_short", "ribbon_exit_long", "ribbon_exit_short":
+		seen["ema_20"] = true
+		seen["ema_50"] = true
+	}
+
+	// Majority operators implicitly require ema_20, ema_50, rsi_14, macd_hist
+	if node.Op == "majority_bull" || node.Op == "majority_bear" {
+		seen["ema_20"] = true
+		seen["ema_50"] = true
+		seen["rsi_14"] = true
+		seen["macd_hist"] = true
 	}
 
 	// Recurse into composite children

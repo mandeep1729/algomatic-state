@@ -251,6 +251,165 @@ func compileNode(node ConditionNode) (types.ConditionFn, error) {
 		}
 		return conditions.DeviationAbove(node.Col, node.RefCol, node.ATRMult), nil
 
+	// --- Pullback below ---
+
+	case "pullback_below":
+		if node.LevelCol == "" {
+			return nil, fmt.Errorf("pullback_below: missing level_col")
+		}
+		return conditions.PullbackBelow(node.LevelCol, node.ToleranceATRMult), nil
+
+	// --- Consecutive close operators ---
+
+	case "consecutive_higher_closes":
+		if node.N <= 0 {
+			return nil, fmt.Errorf("consecutive_higher_closes: n must be > 0")
+		}
+		return conditions.ConsecutiveHigherCloses(node.N), nil
+
+	case "consecutive_lower_closes":
+		if node.N <= 0 {
+			return nil, fmt.Errorf("consecutive_lower_closes: n must be > 0")
+		}
+		return conditions.ConsecutiveLowerCloses(node.N), nil
+
+	// --- Range operators ---
+
+	case "narrowest_range":
+		if node.Lookback <= 0 {
+			return nil, fmt.Errorf("narrowest_range: lookback must be > 0")
+		}
+		return conditions.NarrowestRange(node.Lookback), nil
+
+	case "in_top_pct_of_range":
+		if node.Pct <= 0 {
+			return nil, fmt.Errorf("in_top_pct_of_range: pct must be > 0")
+		}
+		return conditions.InTopPctOfRange(node.Pct), nil
+
+	case "in_bottom_pct_of_range":
+		if node.Pct <= 0 {
+			return nil, fmt.Errorf("in_bottom_pct_of_range: pct must be > 0")
+		}
+		return conditions.InBottomPctOfRange(node.Pct), nil
+
+	// --- Channel operators ---
+
+	case "close_above_upper_channel":
+		if node.Col == "" {
+			return nil, fmt.Errorf("close_above_upper_channel: missing col")
+		}
+		return conditions.CloseAboveUpperChannel(node.Col, node.Multiplier), nil
+
+	case "close_below_lower_channel":
+		if node.Col == "" {
+			return nil, fmt.Errorf("close_below_lower_channel: missing col")
+		}
+		return conditions.CloseBelowLowerChannel(node.Col, node.Multiplier), nil
+
+	// --- EMA ribbon operators ---
+
+	case "ribbon_break_long":
+		if node.Lookback <= 0 {
+			return nil, fmt.Errorf("ribbon_break_long: lookback must be > 0")
+		}
+		return conditions.RibbonBreakLong(node.Lookback, node.Multiplier), nil
+
+	case "ribbon_break_short":
+		if node.Lookback <= 0 {
+			return nil, fmt.Errorf("ribbon_break_short: lookback must be > 0")
+		}
+		return conditions.RibbonBreakShort(node.Lookback, node.Multiplier), nil
+
+	case "ribbon_exit_long":
+		return conditions.RibbonExitLong(node.Multiplier), nil
+
+	case "ribbon_exit_short":
+		return conditions.RibbonExitShort(node.Multiplier), nil
+
+	// --- TRIX operators ---
+
+	case "trix_crosses_above_sma":
+		return conditions.TRIXCrossesAboveSMA(), nil
+
+	case "trix_crosses_below_sma":
+		return conditions.TRIXCrossesBelowSMA(), nil
+
+	// --- SMA envelope operators ---
+
+	case "breaks_above_sma_envelope":
+		if node.Col == "" {
+			return nil, fmt.Errorf("breaks_above_sma_envelope: missing col")
+		}
+		return conditions.BreaksAboveSMAEnvelope(node.Col, node.Multiplier), nil
+
+	case "breaks_below_sma_envelope":
+		if node.Col == "" {
+			return nil, fmt.Errorf("breaks_below_sma_envelope: missing col")
+		}
+		return conditions.BreaksBelowSMAEnvelope(node.Col, node.Multiplier), nil
+
+	// --- Double tap operators ---
+
+	case "double_tap_below_bb":
+		if node.Lookback <= 0 {
+			return nil, fmt.Errorf("double_tap_below_bb: lookback must be > 0")
+		}
+		return conditions.DoubleTapBelowBB(node.Lookback), nil
+
+	case "double_tap_above_bb":
+		if node.Lookback <= 0 {
+			return nil, fmt.Errorf("double_tap_above_bb: lookback must be > 0")
+		}
+		return conditions.DoubleTapAboveBB(node.Lookback), nil
+
+	// --- ATR / volatility operators ---
+
+	case "atr_not_bottom_pct":
+		if node.Pct <= 0 {
+			return nil, fmt.Errorf("atr_not_bottom_pct: pct must be > 0")
+		}
+		if node.Lookback <= 0 {
+			return nil, fmt.Errorf("atr_not_bottom_pct: lookback must be > 0")
+		}
+		return conditions.ATRNotBottomPct(node.Pct, node.Lookback), nil
+
+	case "atr_below_contracted_sma":
+		if node.Factor <= 0 {
+			return nil, fmt.Errorf("atr_below_contracted_sma: factor must be > 0")
+		}
+		return conditions.ATRBelowContractedSMA(node.Factor), nil
+
+	// --- Slope operators ---
+
+	case "flat_slope":
+		if node.Col == "" {
+			return nil, fmt.Errorf("flat_slope: missing col")
+		}
+		return conditions.FlatSlope(node.Col, node.Epsilon), nil
+
+	// --- Mean reversion operators ---
+
+	case "mean_rev_long":
+		if node.RefCol == "" {
+			return nil, fmt.Errorf("mean_rev_long: missing ref_col")
+		}
+		return conditions.MeanRevLong(node.RefCol, node.Multiplier), nil
+
+	case "mean_rev_short":
+		if node.RefCol == "" {
+			return nil, fmt.Errorf("mean_rev_short: missing ref_col")
+		}
+		return conditions.MeanRevShort(node.RefCol, node.Multiplier), nil
+
+	// --- Ensemble / majority operators ---
+
+	case "majority_bull":
+		return conditions.MajorityBull(), nil
+
+	case "majority_bear":
+		return conditions.MajorityBear(), nil
+
 	default:
 		return nil, fmt.Errorf("unknown operator: %q", node.Op)
 	}
