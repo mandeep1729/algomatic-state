@@ -252,6 +252,33 @@ export default function CampaignDetail() {
     if (idx >= 0) setActiveLegIndex(idx);
   }, [detail]);
 
+  // Derive the initial context for the ContextPanel.
+  // For a leg tab, use that leg's context directly.
+  // For the campaign tab, populate from the first leg that has context data
+  // (campaign-level saves write to all legs, so the first leg's context reflects
+  // the campaign-level values). Fall back to the in-memory 'campaign' key that
+  // gets set after an autosave but before a page reload.
+  const contextInitial: DecisionContext | undefined = useMemo(() => {
+    if (!isCampaignTab) {
+      return selectedLeg ? contextsByLeg[selectedLeg.legId] : undefined;
+    }
+
+    // Check in-memory campaign key first (set during current session saves)
+    if (contextsByLeg['campaign']) return contextsByLeg['campaign'];
+
+    // Derive from first leg that has context data
+    if (detail) {
+      for (const leg of detail.legs) {
+        const ctx = contextsByLeg[leg.legId];
+        if (ctx) {
+          return { ...ctx, scope: 'campaign' as const };
+        }
+      }
+    }
+
+    return undefined;
+  }, [isCampaignTab, selectedLeg, contextsByLeg, detail]);
+
   // Autosave handler for context panel
   const handleAutosave = useCallback(async (ctx: DecisionContext) => {
     // Campaign-level context: apply to every leg in the campaign
@@ -343,33 +370,6 @@ export default function CampaignDetail() {
       </div>
     );
   }
-
-  // Derive the initial context for the ContextPanel.
-  // For a leg tab, use that leg's context directly.
-  // For the campaign tab, populate from the first leg that has context data
-  // (campaign-level saves write to all legs, so the first leg's context reflects
-  // the campaign-level values). Fall back to the in-memory 'campaign' key that
-  // gets set after an autosave but before a page reload.
-  const contextInitial: DecisionContext | undefined = useMemo(() => {
-    if (!isCampaignTab) {
-      return selectedLeg ? contextsByLeg[selectedLeg.legId] : undefined;
-    }
-
-    // Check in-memory campaign key first (set during current session saves)
-    if (contextsByLeg['campaign']) return contextsByLeg['campaign'];
-
-    // Derive from first leg that has context data
-    if (detail) {
-      for (const leg of detail.legs) {
-        const ctx = contextsByLeg[leg.legId];
-        if (ctx) {
-          return { ...ctx, scope: 'campaign' as const };
-        }
-      }
-    }
-
-    return undefined;
-  }, [isCampaignTab, selectedLeg, contextsByLeg, detail]);
 
   return (
     <div className="p-6">
