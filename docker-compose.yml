@@ -2,7 +2,7 @@ services:
   postgres:
     image: timescale/timescaledb:latest-pg16
     container_name: algomatic-postgres
-    command: postgres -c jit=off  # Disable JIT - not beneficial for bulk inserts, saves memory
+    command: postgres -c jit=off -c shared_preload_libraries=timescaledb
     environment:
       POSTGRES_DB: ${DB_NAME:-algomatic}
       POSTGRES_USER: ${DB_USER:-algomatic}
