@@ -117,7 +117,7 @@ services:
       - ALPACA_API_KEY=${ALPACA_API_KEY}
       - ALPACA_SECRET_KEY=${ALPACA_SECRET_KEY}
       - SERVICE_MODE=${MARKETDATA_MODE:-both}
-      - SERVICE_INTERVAL_MINUTES=${MARKETDATA_INTERVAL_MINUTES:-60}
+      - SERVICE_INTERVAL_MINUTES=${MARKETDATA_INTERVAL_MINUTES:-720}
       - SERVICE_LOG_FILE=/var/log/marketdata-service/service.log
       - BACKEND_URL=http://host.docker.internal:${SERVER_PORT:-8729}
     extra_hosts:

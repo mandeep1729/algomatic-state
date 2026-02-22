@@ -13,6 +13,8 @@ Endpoints:
 - GET  /api/internal/accounts                             -- list active accounts
 - GET  /api/internal/position-symbols                     -- symbols with open positions
 - GET  /api/internal/agent-symbols                        -- symbols from active trading agents
+- GET  /api/internal/favorite-symbols                     -- symbols from user favorites
+- GET  /api/internal/recent-trade-symbols                 -- symbols traded in last N days
 """
 
 import logging
@@ -330,4 +332,76 @@ async def get_agent_symbols(
 
     except Exception:
         logger.exception("Failed to fetch agent symbols")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class FavoriteSymbolsResponse(BaseModel):
+    symbols: list[str]
+
+
+@router.get("/favorite-symbols", response_model=FavoriteSymbolsResponse)
+async def get_favorite_symbols(
+    db: Session = Depends(get_db),
+):
+    """Return symbols from all users' favorite tickers lists.
+
+    Reads the favorite_tickers array from user_profiles.profile JSONB,
+    flattens across all users, and returns deduplicated symbols.
+    Used by marketdata-service to scope periodic scans.
+    """
+    try:
+        rows = db.query(UserProfile.profile).all()
+
+        seen: set[str] = set()
+        for (profile,) in rows:
+            if profile and isinstance(profile, dict):
+                favs = profile.get("favorite_tickers", [])
+                if isinstance(favs, list):
+                    for s in favs:
+                        if isinstance(s, str) and s.strip():
+                            seen.add(s.strip().upper())
+
+        symbols = sorted(seen)
+        logger.info("Favorite symbols: %d symbols across all users", len(symbols))
+        return FavoriteSymbolsResponse(symbols=symbols)
+
+    except Exception:
+        logger.exception("Failed to fetch favorite symbols")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class RecentTradeSymbolsResponse(BaseModel):
+    symbols: list[str]
+
+
+@router.get("/recent-trade-symbols", response_model=RecentTradeSymbolsResponse)
+async def get_recent_trade_symbols(
+    days: int = Query(default=7, ge=1, le=90),
+    db: Session = Depends(get_db),
+):
+    """Return symbols that had trades in the last N days.
+
+    Queries trade_fills for distinct symbols with executed_at >= cutoff.
+    Used by marketdata-service to keep recently-traded symbols updated.
+    """
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+        rows = (
+            db.query(TradeFill.symbol)
+            .filter(TradeFill.executed_at >= cutoff)
+            .distinct()
+            .all()
+        )
+
+        symbols = sorted(row[0] for row in rows)
+        logger.info(
+            "Recent trade symbols: %d symbols traded in last %d days",
+            len(symbols),
+            days,
+        )
+        return RecentTradeSymbolsResponse(symbols=symbols)
+
+    except Exception:
+        logger.exception("Failed to fetch recent trade symbols")
         raise HTTPException(status_code=500, detail="Internal server error")

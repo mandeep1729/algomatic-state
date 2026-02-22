@@ -103,28 +103,36 @@ func runScan(ctx context.Context, svc *Service, backendURL string, logger *slog.
 	)
 }
 
-// mergeSymbols fetches position symbols and agent symbols, deduplicates and returns sorted.
-func mergeSymbols(ctx context.Context, backendURL string, logger *slog.Logger) []string {
-	seen := make(map[string]bool)
+// symbolSource defines a named symbol fetcher for the periodic scan.
+type symbolSource struct {
+	name  string
+	fetch func(ctx context.Context, backendURL string) ([]string, error)
+}
 
-	posSymbols, err := FetchPositionSymbols(ctx, backendURL)
-	if err != nil {
-		logger.Warn("Failed to fetch position symbols", "error", err)
-	} else {
-		for _, s := range posSymbols {
-			seen[s] = true
-		}
-		logger.Info("Fetched position symbols", "count", len(posSymbols))
+// mergeSymbols fetches symbols from all sources, deduplicates and returns sorted.
+// Sources: open positions, active agents, user favorites, recent trades (7 days).
+func mergeSymbols(ctx context.Context, backendURL string, logger *slog.Logger) []string {
+	sources := []symbolSource{
+		{"positions", FetchPositionSymbols},
+		{"agents", FetchAgentSymbols},
+		{"favorites", FetchFavoriteSymbols},
+		{"recent_trades", FetchRecentTradeSymbols},
 	}
 
-	agentSymbols, err := FetchAgentSymbols(ctx, backendURL)
-	if err != nil {
-		logger.Warn("Failed to fetch agent symbols", "error", err)
-	} else {
-		for _, s := range agentSymbols {
+	seen := make(map[string]bool)
+	counts := make(map[string]int, len(sources))
+
+	for _, src := range sources {
+		syms, err := src.fetch(ctx, backendURL)
+		if err != nil {
+			logger.Warn("Failed to fetch symbols", "source", src.name, "error", err)
+			continue
+		}
+		for _, s := range syms {
 			seen[s] = true
 		}
-		logger.Info("Fetched agent symbols", "count", len(agentSymbols))
+		counts[src.name] = len(syms)
+		logger.Info("Fetched symbols", "source", src.name, "count", len(syms))
 	}
 
 	symbols := make([]string, 0, len(seen))
@@ -135,8 +143,10 @@ func mergeSymbols(ctx context.Context, backendURL string, logger *slog.Logger) [
 	sort.Strings(symbols)
 
 	logger.Info("Merged symbols for periodic scan",
-		"position_count", len(posSymbols),
-		"agent_count", len(agentSymbols),
+		"position_count", counts["positions"],
+		"agent_count", counts["agents"],
+		"favorite_count", counts["favorites"],
+		"recent_trade_count", counts["recent_trades"],
 		"merged_count", len(symbols),
 	)
 	return symbols
