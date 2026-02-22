@@ -35,6 +35,13 @@ var ValidTimeframes = map[string]bool{
 	"1Day":  true,
 }
 
+// continuousAggViews maps timeframes served by continuous aggregates to their view names.
+var continuousAggViews = map[string]string{
+	"5Min":  "ohlcv_bars_5min",
+	"15Min": "ohlcv_bars_15min",
+	"1Hour": "ohlcv_bars_1hour",
+}
+
 // BarRepo handles ohlcv_bars table operations.
 type BarRepo struct {
 	pool   *pgxpool.Pool
@@ -47,6 +54,15 @@ func NewBarRepo(pool *pgxpool.Pool, logger *slog.Logger) *BarRepo {
 }
 
 const barColumns = `id, ticker_id, timeframe, timestamp, open, high, low, close, volume, trade_count, COALESCE(source, 'alpaca'), created_at`
+
+// aggBarColumns returns a SELECT list that maps continuous aggregate view columns
+// to the same shape as barColumns, so scanBars works unchanged.
+func aggBarColumns(timeframe string) string {
+	return fmt.Sprintf(
+		`0 AS id, ticker_id, '%s' AS timeframe, bucket AS timestamp, open, high, low, close, volume, trade_count, 'continuous_aggregate' AS source, bucket AS created_at`,
+		timeframe,
+	)
+}
 
 func scanBar(row pgx.Row) (OHLCVBar, error) {
 	var b OHLCVBar
@@ -70,6 +86,7 @@ func scanBars(rows pgx.Rows) ([]OHLCVBar, error) {
 
 // GetBars returns bars for a ticker/timeframe with optional time range and pagination.
 // Returns bars ordered by timestamp ASC. pageToken is the last timestamp from previous page.
+// For 5Min/15Min/1Hour, reads from continuous aggregate views instead of ohlcv_bars.
 func (r *BarRepo) GetBars(ctx context.Context, tickerID int32, timeframe string, start, end *time.Time, pageSize int32, pageToken *time.Time) ([]OHLCVBar, error) {
 	if !ValidTimeframes[timeframe] {
 		return nil, fmt.Errorf("invalid timeframe %q", timeframe)
@@ -78,27 +95,53 @@ func (r *BarRepo) GetBars(ctx context.Context, tickerID int32, timeframe string,
 		pageSize = 2000
 	}
 
-	query := fmt.Sprintf(`SELECT %s FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`, barColumns)
-	args := []any{tickerID, timeframe}
-	argIdx := 3
+	var query string
+	var args []any
+	var argIdx int
+
+	if view, ok := continuousAggViews[timeframe]; ok {
+		query = fmt.Sprintf(`SELECT %s FROM %s WHERE ticker_id = $1`, aggBarColumns(timeframe), view)
+		args = []any{tickerID}
+		argIdx = 2
+	} else {
+		query = fmt.Sprintf(`SELECT %s FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`, barColumns)
+		args = []any{tickerID, timeframe}
+		argIdx = 3
+	}
 
 	if start != nil {
-		query += fmt.Sprintf(` AND timestamp >= $%d`, argIdx)
+		tsCol := "timestamp"
+		if _, ok := continuousAggViews[timeframe]; ok {
+			tsCol = "bucket"
+		}
+		query += fmt.Sprintf(` AND %s >= $%d`, tsCol, argIdx)
 		args = append(args, *start)
 		argIdx++
 	}
 	if end != nil {
-		query += fmt.Sprintf(` AND timestamp <= $%d`, argIdx)
+		tsCol := "timestamp"
+		if _, ok := continuousAggViews[timeframe]; ok {
+			tsCol = "bucket"
+		}
+		query += fmt.Sprintf(` AND %s <= $%d`, tsCol, argIdx)
 		args = append(args, *end)
 		argIdx++
 	}
 	if pageToken != nil {
-		query += fmt.Sprintf(` AND timestamp > $%d`, argIdx)
+		tsCol := "timestamp"
+		if _, ok := continuousAggViews[timeframe]; ok {
+			tsCol = "bucket"
+		}
+		query += fmt.Sprintf(` AND %s > $%d`, tsCol, argIdx)
 		args = append(args, *pageToken)
 		argIdx++
 	}
 
-	query += fmt.Sprintf(` ORDER BY timestamp ASC LIMIT $%d`, argIdx)
+	orderCol := "timestamp"
+	if _, ok := continuousAggViews[timeframe]; ok {
+		orderCol = "bucket"
+	}
+	query += fmt.Sprintf(` ORDER BY %s ASC LIMIT $%d`, orderCol, argIdx)
 	args = append(args, pageSize)
 
 	rows, err := r.pool.Query(ctx, query, args...)
@@ -111,25 +154,39 @@ func (r *BarRepo) GetBars(ctx context.Context, tickerID int32, timeframe string,
 }
 
 // StreamBars returns all bars for a ticker/timeframe in order. Used for large reads.
+// For 5Min/15Min/1Hour, reads from continuous aggregate views.
 func (r *BarRepo) StreamBars(ctx context.Context, tickerID int32, timeframe string, start, end *time.Time) ([]OHLCVBar, error) {
 	if !ValidTimeframes[timeframe] {
 		return nil, fmt.Errorf("invalid timeframe %q", timeframe)
 	}
 
-	query := fmt.Sprintf(`SELECT %s FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`, barColumns)
-	args := []any{tickerID, timeframe}
-	argIdx := 3
+	var query string
+	var args []any
+	var argIdx int
+	var tsCol string
+
+	if view, ok := continuousAggViews[timeframe]; ok {
+		query = fmt.Sprintf(`SELECT %s FROM %s WHERE ticker_id = $1`, aggBarColumns(timeframe), view)
+		args = []any{tickerID}
+		argIdx = 2
+		tsCol = "bucket"
+	} else {
+		query = fmt.Sprintf(`SELECT %s FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`, barColumns)
+		args = []any{tickerID, timeframe}
+		argIdx = 3
+		tsCol = "timestamp"
+	}
 
 	if start != nil {
-		query += fmt.Sprintf(` AND timestamp >= $%d`, argIdx)
+		query += fmt.Sprintf(` AND %s >= $%d`, tsCol, argIdx)
 		args = append(args, *start)
 		argIdx++
 	}
 	if end != nil {
-		query += fmt.Sprintf(` AND timestamp <= $%d`, argIdx)
+		query += fmt.Sprintf(` AND %s <= $%d`, tsCol, argIdx)
 		args = append(args, *end)
 	}
-	query += ` ORDER BY timestamp ASC`
+	query += fmt.Sprintf(` ORDER BY %s ASC`, tsCol)
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -141,6 +198,7 @@ func (r *BarRepo) StreamBars(ctx context.Context, tickerID int32, timeframe stri
 }
 
 // BulkInsertBars inserts bars using pgx.Batch. Conflicts are silently skipped.
+// For continuous aggregate timeframes (5Min/15Min/1Hour), returns 0 — data is auto-computed.
 func (r *BarRepo) BulkInsertBars(ctx context.Context, tickerID int32, timeframe, source string, bars []OHLCVBar) (int, error) {
 	if len(bars) == 0 {
 		return 0, nil
@@ -148,6 +206,17 @@ func (r *BarRepo) BulkInsertBars(ctx context.Context, tickerID int32, timeframe,
 	if !ValidTimeframes[timeframe] {
 		return 0, fmt.Errorf("invalid timeframe %q", timeframe)
 	}
+
+	// Continuous aggregate timeframes are auto-computed — skip inserts.
+	if _, ok := continuousAggViews[timeframe]; ok {
+		r.logger.Debug("Skipping insert for continuous aggregate timeframe",
+			"ticker_id", tickerID,
+			"timeframe", timeframe,
+			"bars", len(bars),
+		)
+		return 0, nil
+	}
+
 	if source == "" {
 		source = "alpaca"
 	}
@@ -199,9 +268,14 @@ func (r *BarRepo) BulkInsertBars(ctx context.Context, tickerID int32, timeframe,
 }
 
 // DeleteBars deletes bars for a ticker/timeframe within an optional time range.
+// Returns an error for continuous aggregate timeframes — those are managed by TimescaleDB.
 func (r *BarRepo) DeleteBars(ctx context.Context, tickerID int32, timeframe string, start, end *time.Time) (int, error) {
 	if !ValidTimeframes[timeframe] {
 		return 0, fmt.Errorf("invalid timeframe %q", timeframe)
+	}
+
+	if _, ok := continuousAggViews[timeframe]; ok {
+		return 0, fmt.Errorf("cannot delete from continuous aggregate timeframe %q — data is auto-computed from 1Min bars", timeframe)
 	}
 
 	query := `DELETE FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`
@@ -226,16 +300,25 @@ func (r *BarRepo) DeleteBars(ctx context.Context, tickerID int32, timeframe stri
 }
 
 // GetLatestTimestamp returns the most recent bar timestamp for a ticker/timeframe.
+// For continuous aggregate timeframes, queries the appropriate view.
 func (r *BarRepo) GetLatestTimestamp(ctx context.Context, tickerID int32, timeframe string) (*time.Time, error) {
 	if !ValidTimeframes[timeframe] {
 		return nil, fmt.Errorf("invalid timeframe %q", timeframe)
 	}
 
+	var query string
+	var args []any
+
+	if view, ok := continuousAggViews[timeframe]; ok {
+		query = fmt.Sprintf(`SELECT MAX(bucket) FROM %s WHERE ticker_id = $1`, view)
+		args = []any{tickerID}
+	} else {
+		query = `SELECT MAX(timestamp) FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`
+		args = []any{tickerID, timeframe}
+	}
+
 	var ts *time.Time
-	err := r.pool.QueryRow(ctx,
-		`SELECT MAX(timestamp) FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`,
-		tickerID, timeframe,
-	).Scan(&ts)
+	err := r.pool.QueryRow(ctx, query, args...).Scan(&ts)
 	if err != nil {
 		return nil, fmt.Errorf("getting latest timestamp: %w", err)
 	}
@@ -243,16 +326,25 @@ func (r *BarRepo) GetLatestTimestamp(ctx context.Context, tickerID int32, timefr
 }
 
 // GetEarliestTimestamp returns the earliest bar timestamp for a ticker/timeframe.
+// For continuous aggregate timeframes, queries the appropriate view.
 func (r *BarRepo) GetEarliestTimestamp(ctx context.Context, tickerID int32, timeframe string) (*time.Time, error) {
 	if !ValidTimeframes[timeframe] {
 		return nil, fmt.Errorf("invalid timeframe %q", timeframe)
 	}
 
+	var query string
+	var args []any
+
+	if view, ok := continuousAggViews[timeframe]; ok {
+		query = fmt.Sprintf(`SELECT MIN(bucket) FROM %s WHERE ticker_id = $1`, view)
+		args = []any{tickerID}
+	} else {
+		query = `SELECT MIN(timestamp) FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`
+		args = []any{tickerID, timeframe}
+	}
+
 	var ts *time.Time
-	err := r.pool.QueryRow(ctx,
-		`SELECT MIN(timestamp) FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`,
-		tickerID, timeframe,
-	).Scan(&ts)
+	err := r.pool.QueryRow(ctx, query, args...).Scan(&ts)
 	if err != nil {
 		return nil, fmt.Errorf("getting earliest timestamp: %w", err)
 	}
@@ -260,22 +352,36 @@ func (r *BarRepo) GetEarliestTimestamp(ctx context.Context, tickerID int32, time
 }
 
 // GetBarCount returns the number of bars for a ticker/timeframe within an optional time range.
+// For continuous aggregate timeframes, queries the appropriate view.
 func (r *BarRepo) GetBarCount(ctx context.Context, tickerID int32, timeframe string, start, end *time.Time) (int64, error) {
 	if !ValidTimeframes[timeframe] {
 		return 0, fmt.Errorf("invalid timeframe %q", timeframe)
 	}
 
-	query := `SELECT COUNT(*) FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`
-	args := []any{tickerID, timeframe}
-	argIdx := 3
+	var query string
+	var args []any
+	var argIdx int
+	var tsCol string
+
+	if view, ok := continuousAggViews[timeframe]; ok {
+		query = fmt.Sprintf(`SELECT COUNT(*) FROM %s WHERE ticker_id = $1`, view)
+		args = []any{tickerID}
+		argIdx = 2
+		tsCol = "bucket"
+	} else {
+		query = `SELECT COUNT(*) FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`
+		args = []any{tickerID, timeframe}
+		argIdx = 3
+		tsCol = "timestamp"
+	}
 
 	if start != nil {
-		query += fmt.Sprintf(` AND timestamp >= $%d`, argIdx)
+		query += fmt.Sprintf(` AND %s >= $%d`, tsCol, argIdx)
 		args = append(args, *start)
 		argIdx++
 	}
 	if end != nil {
-		query += fmt.Sprintf(` AND timestamp <= $%d`, argIdx)
+		query += fmt.Sprintf(` AND %s <= $%d`, tsCol, argIdx)
 		args = append(args, *end)
 	}
 
@@ -288,6 +394,7 @@ func (r *BarRepo) GetBarCount(ctx context.Context, tickerID int32, timeframe str
 }
 
 // GetBarIdsForTimestamps returns a map of timestamp -> bar ID.
+// Only works for non-aggregate timeframes (1Min, 1Day) that have actual row IDs.
 func (r *BarRepo) GetBarIdsForTimestamps(ctx context.Context, tickerID int32, timeframe string, timestamps []time.Time) (map[time.Time]int64, error) {
 	if !ValidTimeframes[timeframe] {
 		return nil, fmt.Errorf("invalid timeframe %q", timeframe)

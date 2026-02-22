@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/algomatic/marketdata-service/internal/aggregator"
 	"github.com/algomatic/marketdata-service/internal/alpaca"
 	"github.com/algomatic/marketdata-service/internal/db"
 )
@@ -18,7 +17,6 @@ type DBClient interface {
 	GetOrCreateTicker(ctx context.Context, symbol string) (int, error)
 	GetActiveTickers(ctx context.Context) ([]string, error)
 	GetLatestTimestamp(ctx context.Context, tickerID int, timeframe string) (*time.Time, error)
-	GetBars1Min(ctx context.Context, tickerID int, after time.Time) ([]db.OHLCVBar, error)
 	BulkInsertBars(ctx context.Context, tickerID int, timeframe, source string, bars []db.OHLCVBar) (int, error)
 	UpdateSyncLog(ctx context.Context, entry db.SyncLogEntry) error
 	DeactivateTicker(ctx context.Context, symbol string) error
@@ -98,7 +96,6 @@ func (s *Service) doEnsureData(ctx context.Context, symbol string, timeframes []
 	// Determine what needs to be fetched.
 	needs1Min := false
 	needs1Day := false
-	var needsAgg []string
 
 	for _, tf := range timeframes {
 		switch tf {
@@ -107,14 +104,15 @@ func (s *Service) doEnsureData(ctx context.Context, symbol string, timeframes []
 		case "1Day":
 			needs1Day = true
 		case "5Min", "15Min", "1Hour":
-			needs1Min = true // Aggregation requires 1Min.
-			needsAgg = append(needsAgg, tf)
+			// Continuous aggregates auto-compute these from 1Min data.
+			// Just ensure 1Min source data exists.
+			needs1Min = true
 		default:
 			s.logger.Warn("Ignoring unsupported timeframe", "timeframe", tf, "symbol", symbol)
 		}
 	}
 
-	// Step 1: Ensure 1Min bars (prerequisite for aggregation).
+	// Step 1: Ensure 1Min bars (source for continuous aggregates).
 	if needs1Min {
 		n, err := s.ensure1Min(ctx, tickerID, symbol, start, end)
 		if err != nil {
@@ -124,20 +122,10 @@ func (s *Service) doEnsureData(ctx context.Context, symbol string, timeframes []
 		result["1Min"] = n
 	}
 
-	// Step 2: Aggregate 1Min -> higher timeframes.
-	for _, tf := range needsAgg {
-		n, err := s.aggregateTimeframe(ctx, tickerID, symbol, tf, start, end)
-		if err != nil {
-			s.logger.Error("Aggregation failed",
-				"symbol", symbol, "timeframe", tf, "error", err,
-			)
-			// Continue with other timeframes — partial success is better than nothing.
-			continue
-		}
-		result[tf] = n
-	}
+	// Step 2: 5Min/15Min/1Hour are handled by TimescaleDB continuous aggregates.
+	// No manual aggregation needed.
 
-	// Step 3: Ensure 1Day (fetched directly, not aggregated).
+	// Step 3: Ensure 1Day (fetched directly from Alpaca, not aggregated).
 	if needs1Day {
 		n, err := s.ensure1Day(ctx, tickerID, symbol, start, end)
 		if err != nil {
@@ -248,74 +236,6 @@ func (s *Service) ensureFromAlpaca(ctx context.Context, tickerID int, symbol, ti
 		"symbol", symbol,
 		"timeframe", timeframe,
 		"fetched", len(bars),
-		"inserted", inserted,
-	)
-	return inserted, nil
-}
-
-// aggregateTimeframe reads 1Min bars and aggregates them to the target timeframe.
-func (s *Service) aggregateTimeframe(ctx context.Context, tickerID int, symbol, targetTF string, start, end time.Time) (int, error) {
-	// Find where we left off for the target timeframe.
-	latest, err := s.db.GetLatestTimestamp(ctx, tickerID, targetTF)
-	if err != nil {
-		return 0, fmt.Errorf("getting latest %s timestamp: %w", targetTF, err)
-	}
-
-	after := start
-	if latest != nil {
-		after = *latest
-	}
-
-	// Read 1Min bars after that point.
-	bars1Min, err := s.db.GetBars1Min(ctx, tickerID, after)
-	if err != nil {
-		return 0, fmt.Errorf("reading 1Min bars: %w", err)
-	}
-
-	if len(bars1Min) == 0 {
-		s.logger.Debug("No 1Min bars to aggregate",
-			"symbol", symbol, "target", targetTF, "after", after,
-		)
-		return 0, nil
-	}
-
-	// Aggregate.
-	aggBars, err := aggregator.Aggregate(bars1Min, targetTF)
-	if err != nil {
-		return 0, fmt.Errorf("aggregating to %s: %w", targetTF, err)
-	}
-
-	if len(aggBars) == 0 {
-		return 0, nil
-	}
-
-	// Insert aggregated bars.
-	inserted, err := s.db.BulkInsertBars(ctx, tickerID, targetTF, "aggregated", aggBars)
-	if err != nil {
-		return 0, fmt.Errorf("inserting aggregated bars: %w", err)
-	}
-
-	// Update sync log.
-	lastTS := aggBars[len(aggBars)-1].Timestamp
-	firstTS := aggBars[0].Timestamp
-	if err := s.db.UpdateSyncLog(ctx, db.SyncLogEntry{
-		TickerID:            tickerID,
-		Timeframe:           targetTF,
-		LastSyncedTimestamp:  &lastTS,
-		FirstSyncedTimestamp: &firstTS,
-		BarsFetched:         inserted,
-		Status:              "success",
-	}); err != nil {
-		s.logger.Warn("Failed to update sync log",
-			"symbol", symbol, "timeframe", targetTF, "error", err,
-		)
-	}
-
-	s.logger.Info("Aggregation complete",
-		"symbol", symbol,
-		"target", targetTF,
-		"source_bars", len(bars1Min),
-		"aggregated", len(aggBars),
 		"inserted", inserted,
 	)
 	return inserted, nil

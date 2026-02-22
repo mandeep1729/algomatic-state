@@ -63,9 +63,7 @@ func runScan(ctx context.Context, svc *Service, backendURL string, logger *slog.
 		return
 	}
 
-	totalBars := 0
 	processed := 0
-	errCount := 0
 
 	scanStart := time.Now().UTC().AddDate(0, 0, -30)
 	scanEnd := time.Now().UTC()
@@ -93,38 +91,15 @@ func runScan(ctx context.Context, svc *Service, backendURL string, logger *slog.
 			)
 		}
 
-		tickerID, err := svc.db.GetOrCreateTicker(ctx, symbol)
-		if err != nil {
-			logger.Error("Failed to get ticker", "symbol", symbol, "error", err)
-			errCount++
-			continue
-		}
-
-		// Aggregate all timeframes from existing 1Min data.
-		aggStart := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
-
-		for _, tf := range []string{"15Min", "1Hour"} {
-			n, err := svc.aggregateTimeframe(ctx, tickerID, symbol, tf, aggStart, scanEnd)
-			if err != nil {
-				logger.Error("Aggregation failed in periodic scan",
-					"symbol", symbol,
-					"timeframe", tf,
-					"error", err,
-				)
-				errCount++
-				continue
-			}
-			totalBars += n
-		}
+		// 5Min, 15Min, 1Hour are now handled by TimescaleDB continuous aggregates.
+		// Periodic scan only ensures 1Min source data is fetched.
 		processed++
 	}
 
 	elapsed := time.Since(startTime)
-	logger.Info("Periodic aggregation scan complete",
+	logger.Info("Periodic scan complete",
 		"tickers_processed", processed,
 		"total_tickers", len(symbols),
-		"total_bars_aggregated", totalBars,
-		"errors", errCount,
 		"elapsed", elapsed.Round(time.Millisecond),
 	)
 }
