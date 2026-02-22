@@ -100,6 +100,22 @@ func (c *Client) GetLatestTimestamp(ctx context.Context, tickerID int, timeframe
 	return &ts, nil
 }
 
+// GetEarliestTimestamp returns the earliest bar timestamp for a ticker/timeframe.
+func (c *Client) GetEarliestTimestamp(ctx context.Context, tickerID int, timeframe string) (*time.Time, error) {
+	resp, err := c.market.GetEarliestTimestamp(ctx, &pb.GetEarliestTimestampRequest{
+		TickerId:  int32(tickerID),
+		Timeframe: timeframe,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("getting earliest timestamp: %w", err)
+	}
+	if resp.Timestamp == nil {
+		return nil, nil
+	}
+	ts := resp.Timestamp.AsTime()
+	return &ts, nil
+}
+
 // GetBars1Min returns 1Min bars for a ticker after the given timestamp, ordered ascending.
 func (c *Client) GetBars1Min(ctx context.Context, tickerID int, after time.Time) ([]db.OHLCVBar, error) {
 	// Use GetBars with start = after + 1 nanosecond (to match "timestamp > after").

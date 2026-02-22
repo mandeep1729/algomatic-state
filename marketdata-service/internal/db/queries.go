@@ -99,6 +99,19 @@ func (c *Client) GetLatestTimestamp(ctx context.Context, tickerID int, timeframe
 	return ts, nil
 }
 
+// GetEarliestTimestamp returns the earliest bar timestamp for a ticker/timeframe.
+func (c *Client) GetEarliestTimestamp(ctx context.Context, tickerID int, timeframe string) (*time.Time, error) {
+	var ts *time.Time
+	err := c.pool.QueryRow(ctx,
+		`SELECT MIN(timestamp) FROM ohlcv_bars WHERE ticker_id = $1 AND timeframe = $2`,
+		tickerID, timeframe,
+	).Scan(&ts)
+	if err != nil {
+		return nil, fmt.Errorf("getting earliest timestamp: %w", err)
+	}
+	return ts, nil
+}
+
 // GetBars1Min returns 1Min bars for a ticker after the given timestamp, ordered ascending.
 func (c *Client) GetBars1Min(ctx context.Context, tickerID int, after time.Time) ([]OHLCVBar, error) {
 	rows, err := c.pool.Query(ctx,
