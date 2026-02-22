@@ -68,6 +68,7 @@ class MarketDataGrpcClient:
         name: Optional[str] = None,
         exchange: Optional[str] = None,
         asset_type: str = "stock",
+        asset_class: str = "stock",
     ) -> object:
         """Get existing ticker or create a new one."""
         resp = self.stub.GetOrCreateTicker(ticker_pb2.GetOrCreateTickerRequest(
@@ -75,6 +76,7 @@ class MarketDataGrpcClient:
             name=name or "",
             exchange=exchange or "",
             asset_type=asset_type,
+            asset_class=asset_class,
         ))
         return _TickerProxy(resp.ticker)
 
@@ -94,6 +96,7 @@ class MarketDataGrpcClient:
                 name=t.get("name", ""),
                 exchange=t.get("exchange", ""),
                 asset_type=t.get("asset_type", "stock"),
+                asset_class=t.get("asset_class", "stock"),
                 is_active=t.get("is_active", True),
             ))
         resp = self.stub.BulkUpsertTickers(ticker_pb2.BulkUpsertTickersRequest(tickers=pb_tickers))
@@ -682,6 +685,7 @@ class _TickerProxy:
         self.name = pb_ticker.name
         self.exchange = pb_ticker.exchange
         self.asset_type = pb_ticker.asset_type
+        self.asset_class = pb_ticker.asset_class
         self.is_active = pb_ticker.is_active
         self.created_at = _pb_to_dt(pb_ticker.created_at)
         self.updated_at = _pb_to_dt(pb_ticker.updated_at)

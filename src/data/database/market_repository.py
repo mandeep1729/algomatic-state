@@ -139,13 +139,17 @@ class OHLCVRepository:
         Sets is_active=True on conflict so re-seeding reactivates symbols.
 
         Args:
-            tickers: List of dicts with keys: symbol, name, exchange, asset_type
+            tickers: List of dicts with keys: symbol, name, exchange, asset_type, asset_class
 
         Returns:
             Number of rows affected
         """
         if not tickers:
             return 0
+
+        # Ensure asset_class has a default for rows that don't specify it.
+        for t in tickers:
+            t.setdefault("asset_class", "stock")
 
         stmt = pg_insert(Ticker).values(tickers)
         stmt = stmt.on_conflict_do_update(
@@ -154,6 +158,7 @@ class OHLCVRepository:
                 "name": stmt.excluded.name,
                 "exchange": stmt.excluded.exchange,
                 "asset_type": stmt.excluded.asset_type,
+                "asset_class": stmt.excluded.asset_class,
                 "is_active": True,
             },
         )

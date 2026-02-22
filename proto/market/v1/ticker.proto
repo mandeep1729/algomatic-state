@@ -16,6 +16,7 @@ message Ticker {
   bool is_active = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
+  string asset_class = 9;
 }
 
 message GetTickerRequest {
@@ -39,6 +40,7 @@ message GetOrCreateTickerRequest {
   string name = 2;
   string exchange = 3;
   string asset_type = 4;
+  string asset_class = 5;
 }
 
 message GetOrCreateTickerResponse {

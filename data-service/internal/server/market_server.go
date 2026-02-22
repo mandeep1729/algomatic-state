@@ -129,7 +129,7 @@ func (s *MarketServer) GetOrCreateTicker(ctx context.Context, req *pb.GetOrCreat
 		return nil, status.Error(codes.InvalidArgument, "symbol is required")
 	}
 
-	t, created, err := s.tickers.GetOrCreateTicker(ctx, req.Symbol, req.Name, req.Exchange, req.AssetType)
+	t, created, err := s.tickers.GetOrCreateTicker(ctx, req.Symbol, req.Name, req.Exchange, req.AssetType, req.AssetClass)
 	if err != nil {
 		s.logger.Error("GetOrCreateTicker failed", "symbol", req.Symbol, "error", err)
 		return nil, mapError(err, "GetOrCreateTicker")
@@ -145,11 +145,12 @@ func (s *MarketServer) BulkUpsertTickers(ctx context.Context, req *pb.BulkUpsert
 	tickers := make([]repository.Ticker, len(req.Tickers))
 	for i, t := range req.Tickers {
 		tickers[i] = repository.Ticker{
-			Symbol:    t.Symbol,
-			Name:      t.Name,
-			Exchange:  t.Exchange,
-			AssetType: t.AssetType,
-			IsActive:  t.IsActive,
+			Symbol:     t.Symbol,
+			Name:       t.Name,
+			Exchange:   t.Exchange,
+			AssetType:  t.AssetType,
+			AssetClass: t.AssetClass,
+			IsActive:   t.IsActive,
 		}
 	}
 
@@ -474,14 +475,15 @@ func (s *MarketServer) ListSyncLogs(ctx context.Context, req *pb.ListSyncLogsReq
 
 func tickerToProto(t *repository.Ticker) *pb.Ticker {
 	return &pb.Ticker{
-		Id:        t.ID,
-		Symbol:    t.Symbol,
-		Name:      t.Name,
-		Exchange:  t.Exchange,
-		AssetType: t.AssetType,
-		IsActive:  t.IsActive,
-		CreatedAt: timestamppb.New(t.CreatedAt),
-		UpdatedAt: timestamppb.New(t.UpdatedAt),
+		Id:         t.ID,
+		Symbol:     t.Symbol,
+		Name:       t.Name,
+		Exchange:   t.Exchange,
+		AssetType:  t.AssetType,
+		AssetClass: t.AssetClass,
+		IsActive:   t.IsActive,
+		CreatedAt:  timestamppb.New(t.CreatedAt),
+		UpdatedAt:  timestamppb.New(t.UpdatedAt),
 	}
 }
 

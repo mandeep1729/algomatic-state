@@ -32,9 +32,27 @@ def upgrade() -> None:
 
     # 2. Drop the old UNIQUE constraint on bar_id.
     #    (Created in migration 002 as "uq_features_bar_id")
-    op.drop_constraint("uq_features_bar_id", "computed_features", type_="unique")
+    op.drop_constraint("computed_features_bar_id_key", "computed_features", type_="unique")
 
-    # 3. Drop the existing non-unique index on (ticker_id, timeframe, timestamp)
+    # 3. Remove duplicate rows that would violate the new unique constraint.
+    #    Keep only the row with the highest id for each (ticker_id, timeframe, timestamp).
+    #    Uses a CTE with window function for efficiency on large tables.
+    op.execute("""
+        DELETE FROM computed_features
+        WHERE id IN (
+            SELECT id FROM (
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY ticker_id, timeframe, timestamp
+                           ORDER BY id DESC
+                       ) AS rn
+                FROM computed_features
+            ) ranked
+            WHERE rn > 1
+        )
+    """)
+
+    # 4. Drop the existing non-unique index on (ticker_id, timeframe, timestamp)
     #    and recreate it as a UNIQUE constraint.
     op.drop_index("ix_features_ticker_timeframe_ts", "computed_features")
     op.create_unique_constraint(
@@ -77,7 +95,7 @@ def downgrade() -> None:
 
     # Restore the UNIQUE constraint on bar_id.
     op.create_unique_constraint(
-        "uq_features_bar_id", "computed_features", ["bar_id"]
+        "computed_features_bar_id_key", "computed_features", ["bar_id"]
     )
 
     # Restore NOT NULL on bar_id.

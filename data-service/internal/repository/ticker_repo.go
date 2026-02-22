@@ -12,14 +12,15 @@ import (
 
 // Ticker represents a row from the tickers table.
 type Ticker struct {
-	ID        int32
-	Symbol    string
-	Name      string
-	Exchange  string
-	AssetType string
-	IsActive  bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID         int32
+	Symbol     string
+	Name       string
+	Exchange   string
+	AssetType  string
+	AssetClass string
+	IsActive   bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // TickerRepo handles ticker table operations.
@@ -37,9 +38,9 @@ func NewTickerRepo(pool *pgxpool.Pool, logger *slog.Logger) *TickerRepo {
 func (r *TickerRepo) GetTicker(ctx context.Context, symbol string) (*Ticker, error) {
 	var t Ticker
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, symbol, COALESCE(name, ''), COALESCE(exchange, ''), COALESCE(asset_type, 'stock'), is_active, created_at, updated_at
+		`SELECT id, symbol, COALESCE(name, ''), COALESCE(exchange, ''), COALESCE(asset_type, 'stock'), COALESCE(asset_class, 'stock'), is_active, created_at, updated_at
 		 FROM tickers WHERE symbol = $1`, symbol,
-	).Scan(&t.ID, &t.Symbol, &t.Name, &t.Exchange, &t.AssetType, &t.IsActive, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Symbol, &t.Name, &t.Exchange, &t.AssetType, &t.AssetClass, &t.IsActive, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
@@ -51,7 +52,7 @@ func (r *TickerRepo) GetTicker(ctx context.Context, symbol string) (*Ticker, err
 
 // ListTickers returns tickers, optionally filtered by active status.
 func (r *TickerRepo) ListTickers(ctx context.Context, activeOnly bool) ([]Ticker, error) {
-	query := `SELECT id, symbol, COALESCE(name, ''), COALESCE(exchange, ''), COALESCE(asset_type, 'stock'), is_active, created_at, updated_at FROM tickers`
+	query := `SELECT id, symbol, COALESCE(name, ''), COALESCE(exchange, ''), COALESCE(asset_type, 'stock'), COALESCE(asset_class, 'stock'), is_active, created_at, updated_at FROM tickers`
 	if activeOnly {
 		query += ` WHERE is_active = true`
 	}
@@ -66,7 +67,7 @@ func (r *TickerRepo) ListTickers(ctx context.Context, activeOnly bool) ([]Ticker
 	var tickers []Ticker
 	for rows.Next() {
 		var t Ticker
-		if err := rows.Scan(&t.ID, &t.Symbol, &t.Name, &t.Exchange, &t.AssetType, &t.IsActive, &t.CreatedAt, &t.UpdatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Symbol, &t.Name, &t.Exchange, &t.AssetType, &t.AssetClass, &t.IsActive, &t.CreatedAt, &t.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning ticker row: %w", err)
 		}
 		tickers = append(tickers, t)
@@ -75,18 +76,21 @@ func (r *TickerRepo) ListTickers(ctx context.Context, activeOnly bool) ([]Ticker
 }
 
 // GetOrCreateTicker returns the ticker for the given symbol, creating it if needed.
-func (r *TickerRepo) GetOrCreateTicker(ctx context.Context, symbol, name, exchange, assetType string) (*Ticker, bool, error) {
+func (r *TickerRepo) GetOrCreateTicker(ctx context.Context, symbol, name, exchange, assetType, assetClass string) (*Ticker, bool, error) {
 	if assetType == "" {
 		assetType = "stock"
+	}
+	if assetClass == "" {
+		assetClass = "stock"
 	}
 
 	// Insert or re-activate on conflict (ensures previously deactivated tickers
 	// become active again when explicitly requested).
 	tag, err := r.pool.Exec(ctx,
-		`INSERT INTO tickers (symbol, name, exchange, asset_type, is_active, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, true, NOW(), NOW())
+		`INSERT INTO tickers (symbol, name, exchange, asset_type, asset_class, is_active, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, true, NOW(), NOW())
 		 ON CONFLICT (symbol) DO UPDATE SET is_active = true, updated_at = NOW()`,
-		symbol, nilIfEmpty(name), nilIfEmpty(exchange), assetType,
+		symbol, nilIfEmpty(name), nilIfEmpty(exchange), assetType, assetClass,
 	)
 	if err != nil {
 		return nil, false, fmt.Errorf("inserting ticker %q: %w", symbol, err)
@@ -121,16 +125,21 @@ func (r *TickerRepo) BulkUpsertTickers(ctx context.Context, tickers []Ticker) (i
 		if assetType == "" {
 			assetType = "stock"
 		}
+		assetClass := t.AssetClass
+		if assetClass == "" {
+			assetClass = "stock"
+		}
 		batch.Queue(
-			`INSERT INTO tickers (symbol, name, exchange, asset_type, is_active, created_at, updated_at)
-			 VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+			`INSERT INTO tickers (symbol, name, exchange, asset_type, asset_class, is_active, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
 			 ON CONFLICT (symbol) DO UPDATE SET
 			   name = COALESCE(EXCLUDED.name, tickers.name),
 			   exchange = COALESCE(EXCLUDED.exchange, tickers.exchange),
 			   asset_type = EXCLUDED.asset_type,
+			   asset_class = EXCLUDED.asset_class,
 			   is_active = EXCLUDED.is_active,
 			   updated_at = NOW()`,
-			t.Symbol, nilIfEmpty(t.Name), nilIfEmpty(t.Exchange), assetType, t.IsActive,
+			t.Symbol, nilIfEmpty(t.Name), nilIfEmpty(t.Exchange), assetType, assetClass, t.IsActive,
 		)
 	}
 
