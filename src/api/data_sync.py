@@ -35,7 +35,7 @@ class SyncStatusResponse(BaseModel):
     error_message: Optional[str] = None
 
 
-@router.get("/api/sync-status/{symbol}", response_model=list[SyncStatusResponse])
+@router.get("/api/sync-status/{symbol:path}", response_model=list[SyncStatusResponse])
 async def get_sync_status(symbol: str, _user_id: int = Depends(get_current_user)):
     """Get synchronization status for a symbol."""
     try:
@@ -54,7 +54,7 @@ async def get_sync_status(symbol: str, _user_id: int = Depends(get_current_user)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/api/sync/{symbol}")
+@router.post("/api/sync/{symbol:path}")
 async def trigger_sync(
     symbol: str,
     timeframe: str = Query("1Min", description="Timeframe to sync"),
