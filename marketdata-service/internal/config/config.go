@@ -10,10 +10,16 @@ import (
 
 // Config holds all configuration for the marketdata service.
 type Config struct {
-	Database DatabaseConfig `json:"database"`
-	Redis    RedisConfig    `json:"redis"`
-	Alpaca   AlpacaConfig   `json:"alpaca"`
-	Service  ServiceConfig  `json:"service"`
+	Database   DatabaseConfig   `json:"database"`
+	Redis      RedisConfig      `json:"redis"`
+	Alpaca     AlpacaConfig     `json:"alpaca"`
+	TwelveData TwelveDataConfig `json:"twelvedata"`
+	Service    ServiceConfig    `json:"service"`
+}
+
+// TwelveDataConfig holds TwelveData API credentials.
+type TwelveDataConfig struct {
+	APIKey string `json:"api_key"`
 }
 
 // DatabaseConfig holds PostgreSQL connection parameters.
@@ -150,6 +156,10 @@ func overrideFromEnv(cfg *Config) {
 	}
 	if v := os.Getenv("ALPACA_SECRET_KEY"); v != "" {
 		cfg.Alpaca.SecretKey = v
+	}
+
+	if v := os.Getenv("TWELVEDATA_API_KEY"); v != "" {
+		cfg.TwelveData.APIKey = v
 	}
 
 	if v := os.Getenv("SERVICE_MODE"); v != "" {

@@ -18,6 +18,7 @@ import (
 	"github.com/algomatic/marketdata-service/internal/dataclient"
 	"github.com/algomatic/marketdata-service/internal/redisbus"
 	"github.com/algomatic/marketdata-service/internal/service"
+	"github.com/algomatic/marketdata-service/internal/twelvedata"
 )
 
 func main() {
@@ -71,6 +72,15 @@ func main() {
 		logger,
 	)
 
+	// Initialize TwelveData client (optional — only for commodity/forex data).
+	var twelveDataClient *twelvedata.Client
+	if cfg.TwelveData.APIKey != "" {
+		twelveDataClient = twelvedata.NewClient(cfg.TwelveData.APIKey, logger)
+		logger.Info("TwelveData client initialized")
+	} else {
+		logger.Warn("TWELVEDATA_API_KEY not set — commodity/forex data will not be fetched")
+	}
+
 	// Initialize Redis bus.
 	bus := redisbus.NewBus(
 		cfg.Redis.Addr(),
@@ -93,7 +103,7 @@ func main() {
 	logger.Info("Health checks passed")
 
 	// Create the service.
-	svc := service.NewService(dbClient, alpacaClient, logger)
+	svc := service.NewService(dbClient, alpacaClient, twelveDataClient, logger)
 
 	// Launch goroutines based on mode.
 	var wg sync.WaitGroup

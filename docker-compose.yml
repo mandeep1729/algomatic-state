@@ -120,6 +120,7 @@ services:
       - SERVICE_INTERVAL_MINUTES=${MARKETDATA_INTERVAL_MINUTES:-720}
       - SERVICE_LOG_FILE=/var/log/marketdata-service/service.log
       - BACKEND_URL=http://host.docker.internal:${SERVER_PORT:-8729}
+      - TWELVEDATA_API_KEY=${TWELVE_API_KEY}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

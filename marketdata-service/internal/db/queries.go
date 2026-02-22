@@ -8,6 +8,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// TickerInfo holds the result of a ticker lookup.
+type TickerInfo struct {
+	ID         int
+	AssetClass string
+}
+
 // OHLCVBar represents a single OHLCV bar row.
 type OHLCVBar struct {
 	Timestamp  time.Time
@@ -32,8 +38,8 @@ type SyncLogEntry struct {
 	ErrorMessage        *string
 }
 
-// GetOrCreateTicker returns the ticker ID for the given symbol, creating it if needed.
-func (c *Client) GetOrCreateTicker(ctx context.Context, symbol string) (int, error) {
+// GetOrCreateTicker returns the ticker ID and asset class for the given symbol, creating it if needed.
+func (c *Client) GetOrCreateTicker(ctx context.Context, symbol string) (TickerInfo, error) {
 	// Insert or re-activate on conflict (ensures previously deactivated tickers
 	// become active again when explicitly requested).
 	_, err := c.pool.Exec(ctx,
@@ -43,19 +49,19 @@ func (c *Client) GetOrCreateTicker(ctx context.Context, symbol string) (int, err
 		symbol,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("inserting ticker %q: %w", symbol, err)
+		return TickerInfo{}, fmt.Errorf("inserting ticker %q: %w", symbol, err)
 	}
 
-	// Select the id.
-	var id int
+	// Select the id and asset_class.
+	var info TickerInfo
 	err = c.pool.QueryRow(ctx,
-		`SELECT id FROM tickers WHERE symbol = $1`, symbol,
-	).Scan(&id)
+		`SELECT id, COALESCE(asset_class, 'stock') FROM tickers WHERE symbol = $1`, symbol,
+	).Scan(&info.ID, &info.AssetClass)
 	if err != nil {
-		return 0, fmt.Errorf("selecting ticker %q: %w", symbol, err)
+		return TickerInfo{}, fmt.Errorf("selecting ticker %q: %w", symbol, err)
 	}
 
-	return id, nil
+	return info, nil
 }
 
 // GetActiveTickers returns all active ticker symbols ordered alphabetically.

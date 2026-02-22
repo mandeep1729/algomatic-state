@@ -55,13 +55,20 @@ func (c *Client) HealthCheck(ctx context.Context) error {
 	return err
 }
 
-// GetOrCreateTicker returns the ticker ID for the given symbol, creating if needed.
-func (c *Client) GetOrCreateTicker(ctx context.Context, symbol string) (int, error) {
+// GetOrCreateTicker returns the ticker ID and asset class for the given symbol, creating if needed.
+func (c *Client) GetOrCreateTicker(ctx context.Context, symbol string) (db.TickerInfo, error) {
 	resp, err := c.market.GetOrCreateTicker(ctx, &pb.GetOrCreateTickerRequest{Symbol: symbol})
 	if err != nil {
-		return 0, fmt.Errorf("get_or_create_ticker %q: %w", symbol, err)
+		return db.TickerInfo{}, fmt.Errorf("get_or_create_ticker %q: %w", symbol, err)
 	}
-	return int(resp.Ticker.Id), nil
+	assetClass := resp.Ticker.AssetClass
+	if assetClass == "" {
+		assetClass = "stock"
+	}
+	return db.TickerInfo{
+		ID:         int(resp.Ticker.Id),
+		AssetClass: assetClass,
+	}, nil
 }
 
 // GetActiveTickers returns all active ticker symbols ordered alphabetically.
