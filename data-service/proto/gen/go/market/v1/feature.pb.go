@@ -26,7 +26,7 @@ const (
 type ComputedFeature struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	Id             int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	BarId          int64                  `protobuf:"varint,2,opt,name=bar_id,json=barId,proto3" json:"bar_id,omitempty"`
+	BarId          *int64                 `protobuf:"varint,2,opt,name=bar_id,json=barId,proto3,oneof" json:"bar_id,omitempty"` // Nullable — aggregate timeframes have no real bar row
 	TickerId       int32                  `protobuf:"varint,3,opt,name=ticker_id,json=tickerId,proto3" json:"ticker_id,omitempty"`
 	Timeframe      string                 `protobuf:"bytes,4,opt,name=timeframe,proto3" json:"timeframe,omitempty"`
 	Timestamp      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
@@ -79,8 +79,8 @@ func (x *ComputedFeature) GetId() int64 {
 }
 
 func (x *ComputedFeature) GetBarId() int64 {
-	if x != nil {
-		return x.BarId
+	if x != nil && x.BarId != nil {
+		return *x.BarId
 	}
 	return 0
 }
@@ -411,6 +411,118 @@ func (x *GetExistingFeatureBarIdsResponse) GetBarIds() []int64 {
 	return nil
 }
 
+type GetExistingFeatureTimestampsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	TickerId      int32                  `protobuf:"varint,1,opt,name=ticker_id,json=tickerId,proto3" json:"ticker_id,omitempty"`
+	Timeframe     string                 `protobuf:"bytes,2,opt,name=timeframe,proto3" json:"timeframe,omitempty"`
+	Start         *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=start,proto3,oneof" json:"start,omitempty"`
+	End           *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=end,proto3,oneof" json:"end,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetExistingFeatureTimestampsRequest) Reset() {
+	*x = GetExistingFeatureTimestampsRequest{}
+	mi := &file_market_v1_feature_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetExistingFeatureTimestampsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetExistingFeatureTimestampsRequest) ProtoMessage() {}
+
+func (x *GetExistingFeatureTimestampsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_market_v1_feature_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetExistingFeatureTimestampsRequest.ProtoReflect.Descriptor instead.
+func (*GetExistingFeatureTimestampsRequest) Descriptor() ([]byte, []int) {
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *GetExistingFeatureTimestampsRequest) GetTickerId() int32 {
+	if x != nil {
+		return x.TickerId
+	}
+	return 0
+}
+
+func (x *GetExistingFeatureTimestampsRequest) GetTimeframe() string {
+	if x != nil {
+		return x.Timeframe
+	}
+	return ""
+}
+
+func (x *GetExistingFeatureTimestampsRequest) GetStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.Start
+	}
+	return nil
+}
+
+func (x *GetExistingFeatureTimestampsRequest) GetEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.End
+	}
+	return nil
+}
+
+type GetExistingFeatureTimestampsResponse struct {
+	state         protoimpl.MessageState   `protogen:"open.v1"`
+	Timestamps    []*timestamppb.Timestamp `protobuf:"bytes,1,rep,name=timestamps,proto3" json:"timestamps,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetExistingFeatureTimestampsResponse) Reset() {
+	*x = GetExistingFeatureTimestampsResponse{}
+	mi := &file_market_v1_feature_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetExistingFeatureTimestampsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetExistingFeatureTimestampsResponse) ProtoMessage() {}
+
+func (x *GetExistingFeatureTimestampsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_market_v1_feature_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetExistingFeatureTimestampsResponse.ProtoReflect.Descriptor instead.
+func (*GetExistingFeatureTimestampsResponse) Descriptor() ([]byte, []int) {
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetExistingFeatureTimestampsResponse) GetTimestamps() []*timestamppb.Timestamp {
+	if x != nil {
+		return x.Timestamps
+	}
+	return nil
+}
+
 type BulkUpsertFeaturesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Features      []*ComputedFeature     `protobuf:"bytes,1,rep,name=features,proto3" json:"features,omitempty"` // max 5000 per call
@@ -420,7 +532,7 @@ type BulkUpsertFeaturesRequest struct {
 
 func (x *BulkUpsertFeaturesRequest) Reset() {
 	*x = BulkUpsertFeaturesRequest{}
-	mi := &file_market_v1_feature_proto_msgTypes[5]
+	mi := &file_market_v1_feature_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -432,7 +544,7 @@ func (x *BulkUpsertFeaturesRequest) String() string {
 func (*BulkUpsertFeaturesRequest) ProtoMessage() {}
 
 func (x *BulkUpsertFeaturesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_market_v1_feature_proto_msgTypes[5]
+	mi := &file_market_v1_feature_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -445,7 +557,7 @@ func (x *BulkUpsertFeaturesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BulkUpsertFeaturesRequest.ProtoReflect.Descriptor instead.
 func (*BulkUpsertFeaturesRequest) Descriptor() ([]byte, []int) {
-	return file_market_v1_feature_proto_rawDescGZIP(), []int{5}
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BulkUpsertFeaturesRequest) GetFeatures() []*ComputedFeature {
@@ -464,7 +576,7 @@ type BulkUpsertFeaturesResponse struct {
 
 func (x *BulkUpsertFeaturesResponse) Reset() {
 	*x = BulkUpsertFeaturesResponse{}
-	mi := &file_market_v1_feature_proto_msgTypes[6]
+	mi := &file_market_v1_feature_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -476,7 +588,7 @@ func (x *BulkUpsertFeaturesResponse) String() string {
 func (*BulkUpsertFeaturesResponse) ProtoMessage() {}
 
 func (x *BulkUpsertFeaturesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_market_v1_feature_proto_msgTypes[6]
+	mi := &file_market_v1_feature_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -489,7 +601,7 @@ func (x *BulkUpsertFeaturesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BulkUpsertFeaturesResponse.ProtoReflect.Descriptor instead.
 func (*BulkUpsertFeaturesResponse) Descriptor() ([]byte, []int) {
-	return file_market_v1_feature_proto_rawDescGZIP(), []int{6}
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *BulkUpsertFeaturesResponse) GetRowsUpserted() int32 {
@@ -510,7 +622,7 @@ type StoreStatesRequest struct {
 
 func (x *StoreStatesRequest) Reset() {
 	*x = StoreStatesRequest{}
-	mi := &file_market_v1_feature_proto_msgTypes[7]
+	mi := &file_market_v1_feature_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -522,7 +634,7 @@ func (x *StoreStatesRequest) String() string {
 func (*StoreStatesRequest) ProtoMessage() {}
 
 func (x *StoreStatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_market_v1_feature_proto_msgTypes[7]
+	mi := &file_market_v1_feature_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -535,7 +647,7 @@ func (x *StoreStatesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StoreStatesRequest.ProtoReflect.Descriptor instead.
 func (*StoreStatesRequest) Descriptor() ([]byte, []int) {
-	return file_market_v1_feature_proto_rawDescGZIP(), []int{7}
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *StoreStatesRequest) GetStates() []*ComputedFeature {
@@ -561,7 +673,7 @@ type StoreStatesResponse struct {
 
 func (x *StoreStatesResponse) Reset() {
 	*x = StoreStatesResponse{}
-	mi := &file_market_v1_feature_proto_msgTypes[8]
+	mi := &file_market_v1_feature_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -573,7 +685,7 @@ func (x *StoreStatesResponse) String() string {
 func (*StoreStatesResponse) ProtoMessage() {}
 
 func (x *StoreStatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_market_v1_feature_proto_msgTypes[8]
+	mi := &file_market_v1_feature_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -586,7 +698,7 @@ func (x *StoreStatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StoreStatesResponse.ProtoReflect.Descriptor instead.
 func (*StoreStatesResponse) Descriptor() ([]byte, []int) {
-	return file_market_v1_feature_proto_rawDescGZIP(), []int{8}
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StoreStatesResponse) GetRowsStored() int32 {
@@ -609,7 +721,7 @@ type GetStatesRequest struct {
 
 func (x *GetStatesRequest) Reset() {
 	*x = GetStatesRequest{}
-	mi := &file_market_v1_feature_proto_msgTypes[9]
+	mi := &file_market_v1_feature_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -621,7 +733,7 @@ func (x *GetStatesRequest) String() string {
 func (*GetStatesRequest) ProtoMessage() {}
 
 func (x *GetStatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_market_v1_feature_proto_msgTypes[9]
+	mi := &file_market_v1_feature_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -634,7 +746,7 @@ func (x *GetStatesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatesRequest.ProtoReflect.Descriptor instead.
 func (*GetStatesRequest) Descriptor() ([]byte, []int) {
-	return file_market_v1_feature_proto_rawDescGZIP(), []int{9}
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetStatesRequest) GetTickerId() int32 {
@@ -681,7 +793,7 @@ type GetStatesResponse struct {
 
 func (x *GetStatesResponse) Reset() {
 	*x = GetStatesResponse{}
-	mi := &file_market_v1_feature_proto_msgTypes[10]
+	mi := &file_market_v1_feature_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -693,7 +805,7 @@ func (x *GetStatesResponse) String() string {
 func (*GetStatesResponse) ProtoMessage() {}
 
 func (x *GetStatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_market_v1_feature_proto_msgTypes[10]
+	mi := &file_market_v1_feature_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -706,7 +818,7 @@ func (x *GetStatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetStatesResponse.ProtoReflect.Descriptor instead.
 func (*GetStatesResponse) Descriptor() ([]byte, []int) {
-	return file_market_v1_feature_proto_rawDescGZIP(), []int{10}
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetStatesResponse) GetStates() []*ComputedFeature {
@@ -726,7 +838,7 @@ type GetLatestStatesRequest struct {
 
 func (x *GetLatestStatesRequest) Reset() {
 	*x = GetLatestStatesRequest{}
-	mi := &file_market_v1_feature_proto_msgTypes[11]
+	mi := &file_market_v1_feature_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -738,7 +850,7 @@ func (x *GetLatestStatesRequest) String() string {
 func (*GetLatestStatesRequest) ProtoMessage() {}
 
 func (x *GetLatestStatesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_market_v1_feature_proto_msgTypes[11]
+	mi := &file_market_v1_feature_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -751,7 +863,7 @@ func (x *GetLatestStatesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLatestStatesRequest.ProtoReflect.Descriptor instead.
 func (*GetLatestStatesRequest) Descriptor() ([]byte, []int) {
-	return file_market_v1_feature_proto_rawDescGZIP(), []int{11}
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetLatestStatesRequest) GetTickerId() int32 {
@@ -777,7 +889,7 @@ type GetLatestStatesResponse struct {
 
 func (x *GetLatestStatesResponse) Reset() {
 	*x = GetLatestStatesResponse{}
-	mi := &file_market_v1_feature_proto_msgTypes[12]
+	mi := &file_market_v1_feature_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -789,7 +901,7 @@ func (x *GetLatestStatesResponse) String() string {
 func (*GetLatestStatesResponse) ProtoMessage() {}
 
 func (x *GetLatestStatesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_market_v1_feature_proto_msgTypes[12]
+	mi := &file_market_v1_feature_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -802,7 +914,7 @@ func (x *GetLatestStatesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLatestStatesResponse.ProtoReflect.Descriptor instead.
 func (*GetLatestStatesResponse) Descriptor() ([]byte, []int) {
-	return file_market_v1_feature_proto_rawDescGZIP(), []int{12}
+	return file_market_v1_feature_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *GetLatestStatesResponse) GetStates() []*ComputedFeature {
@@ -816,26 +928,27 @@ var File_market_v1_feature_proto protoreflect.FileDescriptor
 
 const file_market_v1_feature_proto_rawDesc = "" +
 	"\n" +
-	"\x17market/v1/feature.proto\x12\tmarket.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe0\x04\n" +
+	"\x17market/v1/feature.proto\x12\tmarket.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf0\x04\n" +
 	"\x0fComputedFeature\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x15\n" +
-	"\x06bar_id\x18\x02 \x01(\x03R\x05barId\x12\x1b\n" +
+	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x1a\n" +
+	"\x06bar_id\x18\x02 \x01(\x03H\x00R\x05barId\x88\x01\x01\x12\x1b\n" +
 	"\tticker_id\x18\x03 \x01(\x05R\btickerId\x12\x1c\n" +
 	"\ttimeframe\x18\x04 \x01(\tR\ttimeframe\x128\n" +
 	"\ttimestamp\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\ttimestamp\x12D\n" +
 	"\bfeatures\x18\x06 \x03(\v2(.market.v1.ComputedFeature.FeaturesEntryR\bfeatures\x12'\n" +
 	"\x0ffeature_version\x18\a \x01(\tR\x0efeatureVersion\x12\x1e\n" +
-	"\bmodel_id\x18\b \x01(\tH\x00R\amodelId\x88\x01\x01\x12\x1e\n" +
-	"\bstate_id\x18\t \x01(\x05H\x01R\astateId\x88\x01\x01\x12\"\n" +
+	"\bmodel_id\x18\b \x01(\tH\x01R\amodelId\x88\x01\x01\x12\x1e\n" +
+	"\bstate_id\x18\t \x01(\x05H\x02R\astateId\x88\x01\x01\x12\"\n" +
 	"\n" +
 	"state_prob\x18\n" +
-	" \x01(\x01H\x02R\tstateProb\x88\x01\x01\x12*\n" +
-	"\x0elog_likelihood\x18\v \x01(\x01H\x03R\rlogLikelihood\x88\x01\x01\x129\n" +
+	" \x01(\x01H\x03R\tstateProb\x88\x01\x01\x12*\n" +
+	"\x0elog_likelihood\x18\v \x01(\x01H\x04R\rlogLikelihood\x88\x01\x01\x129\n" +
 	"\n" +
 	"created_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x1a;\n" +
 	"\rFeaturesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01B\v\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value:\x028\x01B\t\n" +
+	"\a_bar_idB\v\n" +
 	"\t_model_idB\v\n" +
 	"\t_state_idB\r\n" +
 	"\v_state_probB\x11\n" +
@@ -863,7 +976,18 @@ const file_market_v1_feature_proto_rawDesc = "" +
 	"\x06_startB\x06\n" +
 	"\x04_end\";\n" +
 	" GetExistingFeatureBarIdsResponse\x12\x17\n" +
-	"\abar_ids\x18\x01 \x03(\x03R\x06barIds\"S\n" +
+	"\abar_ids\x18\x01 \x03(\x03R\x06barIds\"\xdc\x01\n" +
+	"#GetExistingFeatureTimestampsRequest\x12\x1b\n" +
+	"\tticker_id\x18\x01 \x01(\x05R\btickerId\x12\x1c\n" +
+	"\ttimeframe\x18\x02 \x01(\tR\ttimeframe\x125\n" +
+	"\x05start\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\x05start\x88\x01\x01\x121\n" +
+	"\x03end\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\x03end\x88\x01\x01B\b\n" +
+	"\x06_startB\x06\n" +
+	"\x04_end\"b\n" +
+	"$GetExistingFeatureTimestampsResponse\x12:\n" +
+	"\n" +
+	"timestamps\x18\x01 \x03(\v2\x1a.google.protobuf.TimestampR\n" +
+	"timestamps\"S\n" +
 	"\x19BulkUpsertFeaturesRequest\x126\n" +
 	"\bfeatures\x18\x01 \x03(\v2\x1a.market.v1.ComputedFeatureR\bfeatures\"A\n" +
 	"\x1aBulkUpsertFeaturesResponse\x12#\n" +
@@ -902,44 +1026,49 @@ func file_market_v1_feature_proto_rawDescGZIP() []byte {
 	return file_market_v1_feature_proto_rawDescData
 }
 
-var file_market_v1_feature_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_market_v1_feature_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_market_v1_feature_proto_goTypes = []any{
-	(*ComputedFeature)(nil),                  // 0: market.v1.ComputedFeature
-	(*GetFeaturesRequest)(nil),               // 1: market.v1.GetFeaturesRequest
-	(*GetFeaturesResponse)(nil),              // 2: market.v1.GetFeaturesResponse
-	(*GetExistingFeatureBarIdsRequest)(nil),  // 3: market.v1.GetExistingFeatureBarIdsRequest
-	(*GetExistingFeatureBarIdsResponse)(nil), // 4: market.v1.GetExistingFeatureBarIdsResponse
-	(*BulkUpsertFeaturesRequest)(nil),        // 5: market.v1.BulkUpsertFeaturesRequest
-	(*BulkUpsertFeaturesResponse)(nil),       // 6: market.v1.BulkUpsertFeaturesResponse
-	(*StoreStatesRequest)(nil),               // 7: market.v1.StoreStatesRequest
-	(*StoreStatesResponse)(nil),              // 8: market.v1.StoreStatesResponse
-	(*GetStatesRequest)(nil),                 // 9: market.v1.GetStatesRequest
-	(*GetStatesResponse)(nil),                // 10: market.v1.GetStatesResponse
-	(*GetLatestStatesRequest)(nil),           // 11: market.v1.GetLatestStatesRequest
-	(*GetLatestStatesResponse)(nil),          // 12: market.v1.GetLatestStatesResponse
-	nil,                                      // 13: market.v1.ComputedFeature.FeaturesEntry
-	(*timestamppb.Timestamp)(nil),            // 14: google.protobuf.Timestamp
+	(*ComputedFeature)(nil),                      // 0: market.v1.ComputedFeature
+	(*GetFeaturesRequest)(nil),                   // 1: market.v1.GetFeaturesRequest
+	(*GetFeaturesResponse)(nil),                  // 2: market.v1.GetFeaturesResponse
+	(*GetExistingFeatureBarIdsRequest)(nil),      // 3: market.v1.GetExistingFeatureBarIdsRequest
+	(*GetExistingFeatureBarIdsResponse)(nil),     // 4: market.v1.GetExistingFeatureBarIdsResponse
+	(*GetExistingFeatureTimestampsRequest)(nil),  // 5: market.v1.GetExistingFeatureTimestampsRequest
+	(*GetExistingFeatureTimestampsResponse)(nil), // 6: market.v1.GetExistingFeatureTimestampsResponse
+	(*BulkUpsertFeaturesRequest)(nil),            // 7: market.v1.BulkUpsertFeaturesRequest
+	(*BulkUpsertFeaturesResponse)(nil),           // 8: market.v1.BulkUpsertFeaturesResponse
+	(*StoreStatesRequest)(nil),                   // 9: market.v1.StoreStatesRequest
+	(*StoreStatesResponse)(nil),                  // 10: market.v1.StoreStatesResponse
+	(*GetStatesRequest)(nil),                     // 11: market.v1.GetStatesRequest
+	(*GetStatesResponse)(nil),                    // 12: market.v1.GetStatesResponse
+	(*GetLatestStatesRequest)(nil),               // 13: market.v1.GetLatestStatesRequest
+	(*GetLatestStatesResponse)(nil),              // 14: market.v1.GetLatestStatesResponse
+	nil,                                          // 15: market.v1.ComputedFeature.FeaturesEntry
+	(*timestamppb.Timestamp)(nil),                // 16: google.protobuf.Timestamp
 }
 var file_market_v1_feature_proto_depIdxs = []int32{
-	14, // 0: market.v1.ComputedFeature.timestamp:type_name -> google.protobuf.Timestamp
-	13, // 1: market.v1.ComputedFeature.features:type_name -> market.v1.ComputedFeature.FeaturesEntry
-	14, // 2: market.v1.ComputedFeature.created_at:type_name -> google.protobuf.Timestamp
-	14, // 3: market.v1.GetFeaturesRequest.start:type_name -> google.protobuf.Timestamp
-	14, // 4: market.v1.GetFeaturesRequest.end:type_name -> google.protobuf.Timestamp
+	16, // 0: market.v1.ComputedFeature.timestamp:type_name -> google.protobuf.Timestamp
+	15, // 1: market.v1.ComputedFeature.features:type_name -> market.v1.ComputedFeature.FeaturesEntry
+	16, // 2: market.v1.ComputedFeature.created_at:type_name -> google.protobuf.Timestamp
+	16, // 3: market.v1.GetFeaturesRequest.start:type_name -> google.protobuf.Timestamp
+	16, // 4: market.v1.GetFeaturesRequest.end:type_name -> google.protobuf.Timestamp
 	0,  // 5: market.v1.GetFeaturesResponse.features:type_name -> market.v1.ComputedFeature
-	14, // 6: market.v1.GetExistingFeatureBarIdsRequest.start:type_name -> google.protobuf.Timestamp
-	14, // 7: market.v1.GetExistingFeatureBarIdsRequest.end:type_name -> google.protobuf.Timestamp
-	0,  // 8: market.v1.BulkUpsertFeaturesRequest.features:type_name -> market.v1.ComputedFeature
-	0,  // 9: market.v1.StoreStatesRequest.states:type_name -> market.v1.ComputedFeature
-	14, // 10: market.v1.GetStatesRequest.start:type_name -> google.protobuf.Timestamp
-	14, // 11: market.v1.GetStatesRequest.end:type_name -> google.protobuf.Timestamp
-	0,  // 12: market.v1.GetStatesResponse.states:type_name -> market.v1.ComputedFeature
-	0,  // 13: market.v1.GetLatestStatesResponse.states:type_name -> market.v1.ComputedFeature
-	14, // [14:14] is the sub-list for method output_type
-	14, // [14:14] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	16, // 6: market.v1.GetExistingFeatureBarIdsRequest.start:type_name -> google.protobuf.Timestamp
+	16, // 7: market.v1.GetExistingFeatureBarIdsRequest.end:type_name -> google.protobuf.Timestamp
+	16, // 8: market.v1.GetExistingFeatureTimestampsRequest.start:type_name -> google.protobuf.Timestamp
+	16, // 9: market.v1.GetExistingFeatureTimestampsRequest.end:type_name -> google.protobuf.Timestamp
+	16, // 10: market.v1.GetExistingFeatureTimestampsResponse.timestamps:type_name -> google.protobuf.Timestamp
+	0,  // 11: market.v1.BulkUpsertFeaturesRequest.features:type_name -> market.v1.ComputedFeature
+	0,  // 12: market.v1.StoreStatesRequest.states:type_name -> market.v1.ComputedFeature
+	16, // 13: market.v1.GetStatesRequest.start:type_name -> google.protobuf.Timestamp
+	16, // 14: market.v1.GetStatesRequest.end:type_name -> google.protobuf.Timestamp
+	0,  // 15: market.v1.GetStatesResponse.states:type_name -> market.v1.ComputedFeature
+	0,  // 16: market.v1.GetLatestStatesResponse.states:type_name -> market.v1.ComputedFeature
+	17, // [17:17] is the sub-list for method output_type
+	17, // [17:17] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_market_v1_feature_proto_init() }
@@ -950,14 +1079,15 @@ func file_market_v1_feature_proto_init() {
 	file_market_v1_feature_proto_msgTypes[0].OneofWrappers = []any{}
 	file_market_v1_feature_proto_msgTypes[1].OneofWrappers = []any{}
 	file_market_v1_feature_proto_msgTypes[3].OneofWrappers = []any{}
-	file_market_v1_feature_proto_msgTypes[9].OneofWrappers = []any{}
+	file_market_v1_feature_proto_msgTypes[5].OneofWrappers = []any{}
+	file_market_v1_feature_proto_msgTypes[11].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_market_v1_feature_proto_rawDesc), len(file_market_v1_feature_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   14,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

@@ -109,6 +109,11 @@ class MarketDataServiceStub(object):
                 request_serializer=market_dot_v1_dot_feature__pb2.GetExistingFeatureBarIdsRequest.SerializeToString,
                 response_deserializer=market_dot_v1_dot_feature__pb2.GetExistingFeatureBarIdsResponse.FromString,
                 _registered_method=True)
+        self.GetExistingFeatureTimestamps = channel.unary_unary(
+                '/market.v1.MarketDataService/GetExistingFeatureTimestamps',
+                request_serializer=market_dot_v1_dot_feature__pb2.GetExistingFeatureTimestampsRequest.SerializeToString,
+                response_deserializer=market_dot_v1_dot_feature__pb2.GetExistingFeatureTimestampsResponse.FromString,
+                _registered_method=True)
         self.BulkUpsertFeatures = channel.unary_unary(
                 '/market.v1.MarketDataService/BulkUpsertFeatures',
                 request_serializer=market_dot_v1_dot_feature__pb2.BulkUpsertFeaturesRequest.SerializeToString,
@@ -238,6 +243,12 @@ class MarketDataServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetExistingFeatureTimestamps(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def BulkUpsertFeatures(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -353,6 +364,11 @@ def add_MarketDataServiceServicer_to_server(servicer, server):
                     servicer.GetExistingFeatureBarIds,
                     request_deserializer=market_dot_v1_dot_feature__pb2.GetExistingFeatureBarIdsRequest.FromString,
                     response_serializer=market_dot_v1_dot_feature__pb2.GetExistingFeatureBarIdsResponse.SerializeToString,
+            ),
+            'GetExistingFeatureTimestamps': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetExistingFeatureTimestamps,
+                    request_deserializer=market_dot_v1_dot_feature__pb2.GetExistingFeatureTimestampsRequest.FromString,
+                    response_serializer=market_dot_v1_dot_feature__pb2.GetExistingFeatureTimestampsResponse.SerializeToString,
             ),
             'BulkUpsertFeatures': grpc.unary_unary_rpc_method_handler(
                     servicer.BulkUpsertFeatures,
@@ -770,6 +786,33 @@ class MarketDataService(object):
             '/market.v1.MarketDataService/GetExistingFeatureBarIds',
             market_dot_v1_dot_feature__pb2.GetExistingFeatureBarIdsRequest.SerializeToString,
             market_dot_v1_dot_feature__pb2.GetExistingFeatureBarIdsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetExistingFeatureTimestamps(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/market.v1.MarketDataService/GetExistingFeatureTimestamps',
+            market_dot_v1_dot_feature__pb2.GetExistingFeatureTimestampsRequest.SerializeToString,
+            market_dot_v1_dot_feature__pb2.GetExistingFeatureTimestampsResponse.FromString,
             options,
             channel_credentials,
             insecure,

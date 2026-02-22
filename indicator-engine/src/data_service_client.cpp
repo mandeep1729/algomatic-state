@@ -115,6 +115,35 @@ std::set<int64_t> DataServiceClient::get_existing_feature_bar_ids(
     return ids;
 }
 
+std::set<time_t> DataServiceClient::get_existing_feature_timestamps(
+    int64_t ticker_id,
+    const std::string& timeframe,
+    time_t start,
+    time_t end) const
+{
+    market::v1::GetExistingFeatureTimestampsRequest req;
+    req.set_ticker_id(static_cast<int32_t>(ticker_id));
+    req.set_timeframe(timeframe);
+
+    if (start > 0) {
+        req.set_allocated_start(make_timestamp(start));
+    }
+    if (end > 0) {
+        req.set_allocated_end(make_timestamp(end));
+    }
+
+    grpc::ClientContext ctx;
+    market::v1::GetExistingFeatureTimestampsResponse resp;
+    auto status = impl_->stub->GetExistingFeatureTimestamps(&ctx, req, &resp);
+    check_status(status, "GetExistingFeatureTimestamps");
+
+    std::set<time_t> timestamps;
+    for (const auto& ts : resp.timestamps()) {
+        timestamps.insert(ts.seconds());
+    }
+    return timestamps;
+}
+
 std::vector<Ticker> DataServiceClient::get_active_tickers() const {
     market::v1::ListTickersRequest req;
     req.set_active_only(true);
@@ -167,10 +196,16 @@ int DataServiceClient::batch_upsert_features(
         for (size_t j = i; j < chunk_end; j++) {
             const auto& r = results[j];
             auto* f = req.add_features();
-            f->set_bar_id(r.bar_id);
+            if (r.bar_id != 0) {
+                f->set_bar_id(r.bar_id);
+            }
             f->set_ticker_id(static_cast<int32_t>(ticker_id));
             f->set_timeframe(timeframe);
             f->set_feature_version(feature_version);
+            if (r.timestamp > 0) {
+                f->mutable_timestamp()->set_seconds(r.timestamp);
+                f->mutable_timestamp()->set_nanos(0);
+            }
 
             // Set features map, filtering NaN/Inf.
             auto* feat_map = f->mutable_features();

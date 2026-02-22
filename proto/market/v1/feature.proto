@@ -9,7 +9,7 @@ import "google/protobuf/timestamp.proto";
 // ComputedFeature represents computed indicators/features for a bar.
 message ComputedFeature {
   int64 id = 1;
-  int64 bar_id = 2;
+  optional int64 bar_id = 2;  // Nullable — aggregate timeframes have no real bar row
   int32 ticker_id = 3;
   string timeframe = 4;
   google.protobuf.Timestamp timestamp = 5;
@@ -46,6 +46,17 @@ message GetExistingFeatureBarIdsRequest {
 
 message GetExistingFeatureBarIdsResponse {
   repeated int64 bar_ids = 1;
+}
+
+message GetExistingFeatureTimestampsRequest {
+  int32 ticker_id = 1;
+  string timeframe = 2;
+  optional google.protobuf.Timestamp start = 3;
+  optional google.protobuf.Timestamp end = 4;
+}
+
+message GetExistingFeatureTimestampsResponse {
+  repeated google.protobuf.Timestamp timestamps = 1;
 }
 
 message BulkUpsertFeaturesRequest {

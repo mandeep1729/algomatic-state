@@ -134,12 +134,7 @@ async def get_regimes(
                 )
 
         ticker = repo.get_ticker(symbol.upper())
-        if ticker:
-            bar_id_map = repo.get_bar_ids_for_timestamps(
-                ticker.id, timeframe, list(features_df.index)
-            )
-        else:
-            bar_id_map = {}
+        ticker_id = ticker.id if ticker else 0
 
         timestamps = []
         state_ids = []
@@ -152,10 +147,11 @@ async def get_regimes(
             timestamps.append(ts.strftime("%Y-%m-%dT%H:%M:%SZ"))
             state_ids.append(output.state_id)
 
-            bar_id = bar_id_map.get(ts)
-            if bar_id:
+            if ticker_id:
                 state_records.append({
-                    "bar_id": bar_id,
+                    "ticker_id": ticker_id,
+                    "timeframe": timeframe,
+                    "timestamp": ts,
                     "state_id": output.state_id,
                     "state_prob": float(output.state_prob),
                     "log_likelihood": float(output.log_likelihood) if not np.isinf(output.log_likelihood) else None,

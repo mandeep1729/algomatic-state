@@ -23,6 +23,7 @@ struct OHLCVBar {
 
 struct IndicatorResult {
     int64_t bar_id;
+    time_t timestamp = 0;  // UTC epoch — needed for natural-key conflict resolution
     std::unordered_map<std::string, double> features;
 };
 

@@ -397,6 +397,9 @@ class MarketDataGrpcClient:
     # Feature Operations
     # -------------------------------------------------------------------------
 
+    # Aggregate timeframes backed by continuous aggregates (no real bar rows).
+    _AGGREGATE_TIMEFRAMES = {"5Min", "15Min", "1Hour"}
+
     def store_features(
         self,
         features_df: pd.DataFrame,
@@ -408,15 +411,19 @@ class MarketDataGrpcClient:
         if features_df.empty:
             return 0
 
-        # Get bar_id mapping for timestamps.
-        timestamps = list(features_df.index)
-        bar_id_map = self.get_bar_ids_for_timestamps(ticker_id, timeframe, timestamps)
+        is_aggregate = timeframe in self._AGGREGATE_TIMEFRAMES
+
+        # Only look up bar_ids for non-aggregate timeframes.
+        bar_id_map: dict = {}
+        if not is_aggregate:
+            timestamps = list(features_df.index)
+            bar_id_map = self.get_bar_ids_for_timestamps(ticker_id, timeframe, timestamps)
 
         # Build feature records.
         pb_features = []
         skipped = 0
         for timestamp, row in features_df.iterrows():
-            if timestamp not in bar_id_map:
+            if not is_aggregate and timestamp not in bar_id_map:
                 skipped += 1
                 continue
 
@@ -427,12 +434,13 @@ class MarketDataGrpcClient:
                 feature_data[k] = float(v) if isinstance(v, (np.floating, np.integer)) else v
 
             f = feature_pb2.ComputedFeature(
-                bar_id=bar_id_map[timestamp],
                 ticker_id=ticker_id,
                 timeframe=timeframe,
                 feature_version=version or "",
                 features=feature_data,
             )
+            if not is_aggregate and timestamp in bar_id_map:
+                f.bar_id = bar_id_map[timestamp]
             f.timestamp.CopyFrom(_dt_to_pb(timestamp))
             pb_features.append(f)
 
@@ -465,24 +473,15 @@ class MarketDataGrpcClient:
         end: Optional[datetime] = None,
     ) -> set[datetime]:
         """Get timestamps that already have computed features."""
-        req = feature_pb2.GetExistingFeatureBarIdsRequest(
+        req = feature_pb2.GetExistingFeatureTimestampsRequest(
             ticker_id=ticker_id, timeframe=timeframe,
         )
         if start:
             req.start.CopyFrom(_dt_to_pb(start))
         if end:
             req.end.CopyFrom(_dt_to_pb(end))
-        # NOTE: This returns bar_ids, not timestamps.
-        # For backward compatibility, we do a GetFeatures call to get timestamps instead.
-        feat_req = feature_pb2.GetFeaturesRequest(
-            ticker_id=ticker_id, timeframe=timeframe, page_size=100000,
-        )
-        if start:
-            feat_req.start.CopyFrom(_dt_to_pb(start))
-        if end:
-            feat_req.end.CopyFrom(_dt_to_pb(end))
-        resp = self.stub.GetFeatures(feat_req)
-        return {_pb_to_dt(f.timestamp) for f in resp.features}
+        resp = self.stub.GetExistingFeatureTimestamps(req)
+        return {_pb_to_dt(ts) for ts in resp.timestamps}
 
     def get_features(
         self,
@@ -537,16 +536,22 @@ class MarketDataGrpcClient:
     # -------------------------------------------------------------------------
 
     def store_states(self, states: list[dict], model_id: str) -> int:
-        """Store HMM state assignments."""
+        """Store HMM state assignments.
+
+        Each state dict must contain: ticker_id, timeframe, timestamp, state_id, state_prob.
+        Optional: log_likelihood, bar_id.
+        """
         if not states:
             return 0
         pb_states = []
         for s in states:
             f = feature_pb2.ComputedFeature(
-                bar_id=int(s["bar_id"]),
+                ticker_id=int(s["ticker_id"]),
+                timeframe=s["timeframe"],
                 state_id=int(s["state_id"]),
                 state_prob=float(s["state_prob"]),
             )
+            f.timestamp.CopyFrom(_dt_to_pb(s["timestamp"]))
             if s.get("log_likelihood") is not None:
                 f.log_likelihood = float(s["log_likelihood"])
             pb_states.append(f)

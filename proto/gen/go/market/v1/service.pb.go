@@ -24,7 +24,7 @@ var File_market_v1_service_proto protoreflect.FileDescriptor
 
 const file_market_v1_service_proto_rawDesc = "" +
 	"\n" +
-	"\x17market/v1/service.proto\x12\tmarket.v1\x1a\x16market/v1/ticker.proto\x1a\x13market/v1/bar.proto\x1a\x17market/v1/feature.proto\x1a\x18market/v1/sync_log.proto2\x9f\x0e\n" +
+	"\x17market/v1/service.proto\x12\tmarket.v1\x1a\x16market/v1/ticker.proto\x1a\x13market/v1/bar.proto\x1a\x17market/v1/feature.proto\x1a\x18market/v1/sync_log.proto2\xa0\x0f\n" +
 	"\x11MarketDataService\x12F\n" +
 	"\tGetTicker\x12\x1b.market.v1.GetTickerRequest\x1a\x1c.market.v1.GetTickerResponse\x12L\n" +
 	"\vListTickers\x12\x1d.market.v1.ListTickersRequest\x1a\x1e.market.v1.ListTickersResponse\x12^\n" +
@@ -41,7 +41,8 @@ const file_market_v1_service_proto_rawDesc = "" +
 	"\vGetBarCount\x12\x1d.market.v1.GetBarCountRequest\x1a\x1e.market.v1.GetBarCountResponse\x12m\n" +
 	"\x16GetBarIdsForTimestamps\x12(.market.v1.GetBarIdsForTimestampsRequest\x1a).market.v1.GetBarIdsForTimestampsResponse\x12L\n" +
 	"\vGetFeatures\x12\x1d.market.v1.GetFeaturesRequest\x1a\x1e.market.v1.GetFeaturesResponse\x12s\n" +
-	"\x18GetExistingFeatureBarIds\x12*.market.v1.GetExistingFeatureBarIdsRequest\x1a+.market.v1.GetExistingFeatureBarIdsResponse\x12a\n" +
+	"\x18GetExistingFeatureBarIds\x12*.market.v1.GetExistingFeatureBarIdsRequest\x1a+.market.v1.GetExistingFeatureBarIdsResponse\x12\x7f\n" +
+	"\x1cGetExistingFeatureTimestamps\x12..market.v1.GetExistingFeatureTimestampsRequest\x1a/.market.v1.GetExistingFeatureTimestampsResponse\x12a\n" +
 	"\x12BulkUpsertFeatures\x12$.market.v1.BulkUpsertFeaturesRequest\x1a%.market.v1.BulkUpsertFeaturesResponse\x12L\n" +
 	"\vStoreStates\x12\x1d.market.v1.StoreStatesRequest\x1a\x1e.market.v1.StoreStatesResponse\x12F\n" +
 	"\tGetStates\x12\x1b.market.v1.GetStatesRequest\x1a\x1c.market.v1.GetStatesResponse\x12X\n" +
@@ -52,48 +53,50 @@ const file_market_v1_service_proto_rawDesc = "" +
 	"\fListSyncLogs\x12\x1e.market.v1.ListSyncLogsRequest\x1a\x1f.market.v1.ListSyncLogsResponseBCZAgithub.com/algomatic/data-service/proto/gen/go/market/v1;marketv1b\x06proto3"
 
 var file_market_v1_service_proto_goTypes = []any{
-	(*GetTickerRequest)(nil),                 // 0: market.v1.GetTickerRequest
-	(*ListTickersRequest)(nil),               // 1: market.v1.ListTickersRequest
-	(*GetOrCreateTickerRequest)(nil),         // 2: market.v1.GetOrCreateTickerRequest
-	(*BulkUpsertTickersRequest)(nil),         // 3: market.v1.BulkUpsertTickersRequest
-	(*GetBarsRequest)(nil),                   // 4: market.v1.GetBarsRequest
-	(*StreamBarsRequest)(nil),                // 5: market.v1.StreamBarsRequest
-	(*BulkInsertBarsRequest)(nil),            // 6: market.v1.BulkInsertBarsRequest
-	(*DeleteBarsRequest)(nil),                // 7: market.v1.DeleteBarsRequest
-	(*GetLatestTimestampRequest)(nil),        // 8: market.v1.GetLatestTimestampRequest
-	(*GetEarliestTimestampRequest)(nil),      // 9: market.v1.GetEarliestTimestampRequest
-	(*GetBarCountRequest)(nil),               // 10: market.v1.GetBarCountRequest
-	(*GetBarIdsForTimestampsRequest)(nil),    // 11: market.v1.GetBarIdsForTimestampsRequest
-	(*GetFeaturesRequest)(nil),               // 12: market.v1.GetFeaturesRequest
-	(*GetExistingFeatureBarIdsRequest)(nil),  // 13: market.v1.GetExistingFeatureBarIdsRequest
-	(*BulkUpsertFeaturesRequest)(nil),        // 14: market.v1.BulkUpsertFeaturesRequest
-	(*StoreStatesRequest)(nil),               // 15: market.v1.StoreStatesRequest
-	(*GetStatesRequest)(nil),                 // 16: market.v1.GetStatesRequest
-	(*GetLatestStatesRequest)(nil),           // 17: market.v1.GetLatestStatesRequest
-	(*GetSyncLogRequest)(nil),                // 18: market.v1.GetSyncLogRequest
-	(*UpdateSyncLogRequest)(nil),             // 19: market.v1.UpdateSyncLogRequest
-	(*ListSyncLogsRequest)(nil),              // 20: market.v1.ListSyncLogsRequest
-	(*GetTickerResponse)(nil),                // 21: market.v1.GetTickerResponse
-	(*ListTickersResponse)(nil),              // 22: market.v1.ListTickersResponse
-	(*GetOrCreateTickerResponse)(nil),        // 23: market.v1.GetOrCreateTickerResponse
-	(*BulkUpsertTickersResponse)(nil),        // 24: market.v1.BulkUpsertTickersResponse
-	(*GetBarsResponse)(nil),                  // 25: market.v1.GetBarsResponse
-	(*OHLCVBar)(nil),                         // 26: market.v1.OHLCVBar
-	(*BulkInsertBarsResponse)(nil),           // 27: market.v1.BulkInsertBarsResponse
-	(*DeleteBarsResponse)(nil),               // 28: market.v1.DeleteBarsResponse
-	(*GetLatestTimestampResponse)(nil),       // 29: market.v1.GetLatestTimestampResponse
-	(*GetEarliestTimestampResponse)(nil),     // 30: market.v1.GetEarliestTimestampResponse
-	(*GetBarCountResponse)(nil),              // 31: market.v1.GetBarCountResponse
-	(*GetBarIdsForTimestampsResponse)(nil),   // 32: market.v1.GetBarIdsForTimestampsResponse
-	(*GetFeaturesResponse)(nil),              // 33: market.v1.GetFeaturesResponse
-	(*GetExistingFeatureBarIdsResponse)(nil), // 34: market.v1.GetExistingFeatureBarIdsResponse
-	(*BulkUpsertFeaturesResponse)(nil),       // 35: market.v1.BulkUpsertFeaturesResponse
-	(*StoreStatesResponse)(nil),              // 36: market.v1.StoreStatesResponse
-	(*GetStatesResponse)(nil),                // 37: market.v1.GetStatesResponse
-	(*GetLatestStatesResponse)(nil),          // 38: market.v1.GetLatestStatesResponse
-	(*GetSyncLogResponse)(nil),               // 39: market.v1.GetSyncLogResponse
-	(*UpdateSyncLogResponse)(nil),            // 40: market.v1.UpdateSyncLogResponse
-	(*ListSyncLogsResponse)(nil),             // 41: market.v1.ListSyncLogsResponse
+	(*GetTickerRequest)(nil),                     // 0: market.v1.GetTickerRequest
+	(*ListTickersRequest)(nil),                   // 1: market.v1.ListTickersRequest
+	(*GetOrCreateTickerRequest)(nil),             // 2: market.v1.GetOrCreateTickerRequest
+	(*BulkUpsertTickersRequest)(nil),             // 3: market.v1.BulkUpsertTickersRequest
+	(*GetBarsRequest)(nil),                       // 4: market.v1.GetBarsRequest
+	(*StreamBarsRequest)(nil),                    // 5: market.v1.StreamBarsRequest
+	(*BulkInsertBarsRequest)(nil),                // 6: market.v1.BulkInsertBarsRequest
+	(*DeleteBarsRequest)(nil),                    // 7: market.v1.DeleteBarsRequest
+	(*GetLatestTimestampRequest)(nil),            // 8: market.v1.GetLatestTimestampRequest
+	(*GetEarliestTimestampRequest)(nil),          // 9: market.v1.GetEarliestTimestampRequest
+	(*GetBarCountRequest)(nil),                   // 10: market.v1.GetBarCountRequest
+	(*GetBarIdsForTimestampsRequest)(nil),        // 11: market.v1.GetBarIdsForTimestampsRequest
+	(*GetFeaturesRequest)(nil),                   // 12: market.v1.GetFeaturesRequest
+	(*GetExistingFeatureBarIdsRequest)(nil),      // 13: market.v1.GetExistingFeatureBarIdsRequest
+	(*GetExistingFeatureTimestampsRequest)(nil),  // 14: market.v1.GetExistingFeatureTimestampsRequest
+	(*BulkUpsertFeaturesRequest)(nil),            // 15: market.v1.BulkUpsertFeaturesRequest
+	(*StoreStatesRequest)(nil),                   // 16: market.v1.StoreStatesRequest
+	(*GetStatesRequest)(nil),                     // 17: market.v1.GetStatesRequest
+	(*GetLatestStatesRequest)(nil),               // 18: market.v1.GetLatestStatesRequest
+	(*GetSyncLogRequest)(nil),                    // 19: market.v1.GetSyncLogRequest
+	(*UpdateSyncLogRequest)(nil),                 // 20: market.v1.UpdateSyncLogRequest
+	(*ListSyncLogsRequest)(nil),                  // 21: market.v1.ListSyncLogsRequest
+	(*GetTickerResponse)(nil),                    // 22: market.v1.GetTickerResponse
+	(*ListTickersResponse)(nil),                  // 23: market.v1.ListTickersResponse
+	(*GetOrCreateTickerResponse)(nil),            // 24: market.v1.GetOrCreateTickerResponse
+	(*BulkUpsertTickersResponse)(nil),            // 25: market.v1.BulkUpsertTickersResponse
+	(*GetBarsResponse)(nil),                      // 26: market.v1.GetBarsResponse
+	(*OHLCVBar)(nil),                             // 27: market.v1.OHLCVBar
+	(*BulkInsertBarsResponse)(nil),               // 28: market.v1.BulkInsertBarsResponse
+	(*DeleteBarsResponse)(nil),                   // 29: market.v1.DeleteBarsResponse
+	(*GetLatestTimestampResponse)(nil),           // 30: market.v1.GetLatestTimestampResponse
+	(*GetEarliestTimestampResponse)(nil),         // 31: market.v1.GetEarliestTimestampResponse
+	(*GetBarCountResponse)(nil),                  // 32: market.v1.GetBarCountResponse
+	(*GetBarIdsForTimestampsResponse)(nil),       // 33: market.v1.GetBarIdsForTimestampsResponse
+	(*GetFeaturesResponse)(nil),                  // 34: market.v1.GetFeaturesResponse
+	(*GetExistingFeatureBarIdsResponse)(nil),     // 35: market.v1.GetExistingFeatureBarIdsResponse
+	(*GetExistingFeatureTimestampsResponse)(nil), // 36: market.v1.GetExistingFeatureTimestampsResponse
+	(*BulkUpsertFeaturesResponse)(nil),           // 37: market.v1.BulkUpsertFeaturesResponse
+	(*StoreStatesResponse)(nil),                  // 38: market.v1.StoreStatesResponse
+	(*GetStatesResponse)(nil),                    // 39: market.v1.GetStatesResponse
+	(*GetLatestStatesResponse)(nil),              // 40: market.v1.GetLatestStatesResponse
+	(*GetSyncLogResponse)(nil),                   // 41: market.v1.GetSyncLogResponse
+	(*UpdateSyncLogResponse)(nil),                // 42: market.v1.UpdateSyncLogResponse
+	(*ListSyncLogsResponse)(nil),                 // 43: market.v1.ListSyncLogsResponse
 }
 var file_market_v1_service_proto_depIdxs = []int32{
 	0,  // 0: market.v1.MarketDataService.GetTicker:input_type -> market.v1.GetTickerRequest
@@ -110,36 +113,38 @@ var file_market_v1_service_proto_depIdxs = []int32{
 	11, // 11: market.v1.MarketDataService.GetBarIdsForTimestamps:input_type -> market.v1.GetBarIdsForTimestampsRequest
 	12, // 12: market.v1.MarketDataService.GetFeatures:input_type -> market.v1.GetFeaturesRequest
 	13, // 13: market.v1.MarketDataService.GetExistingFeatureBarIds:input_type -> market.v1.GetExistingFeatureBarIdsRequest
-	14, // 14: market.v1.MarketDataService.BulkUpsertFeatures:input_type -> market.v1.BulkUpsertFeaturesRequest
-	15, // 15: market.v1.MarketDataService.StoreStates:input_type -> market.v1.StoreStatesRequest
-	16, // 16: market.v1.MarketDataService.GetStates:input_type -> market.v1.GetStatesRequest
-	17, // 17: market.v1.MarketDataService.GetLatestStates:input_type -> market.v1.GetLatestStatesRequest
-	18, // 18: market.v1.MarketDataService.GetSyncLog:input_type -> market.v1.GetSyncLogRequest
-	19, // 19: market.v1.MarketDataService.UpdateSyncLog:input_type -> market.v1.UpdateSyncLogRequest
-	20, // 20: market.v1.MarketDataService.ListSyncLogs:input_type -> market.v1.ListSyncLogsRequest
-	21, // 21: market.v1.MarketDataService.GetTicker:output_type -> market.v1.GetTickerResponse
-	22, // 22: market.v1.MarketDataService.ListTickers:output_type -> market.v1.ListTickersResponse
-	23, // 23: market.v1.MarketDataService.GetOrCreateTicker:output_type -> market.v1.GetOrCreateTickerResponse
-	24, // 24: market.v1.MarketDataService.BulkUpsertTickers:output_type -> market.v1.BulkUpsertTickersResponse
-	25, // 25: market.v1.MarketDataService.GetBars:output_type -> market.v1.GetBarsResponse
-	26, // 26: market.v1.MarketDataService.StreamBars:output_type -> market.v1.OHLCVBar
-	27, // 27: market.v1.MarketDataService.BulkInsertBars:output_type -> market.v1.BulkInsertBarsResponse
-	28, // 28: market.v1.MarketDataService.DeleteBars:output_type -> market.v1.DeleteBarsResponse
-	29, // 29: market.v1.MarketDataService.GetLatestTimestamp:output_type -> market.v1.GetLatestTimestampResponse
-	30, // 30: market.v1.MarketDataService.GetEarliestTimestamp:output_type -> market.v1.GetEarliestTimestampResponse
-	31, // 31: market.v1.MarketDataService.GetBarCount:output_type -> market.v1.GetBarCountResponse
-	32, // 32: market.v1.MarketDataService.GetBarIdsForTimestamps:output_type -> market.v1.GetBarIdsForTimestampsResponse
-	33, // 33: market.v1.MarketDataService.GetFeatures:output_type -> market.v1.GetFeaturesResponse
-	34, // 34: market.v1.MarketDataService.GetExistingFeatureBarIds:output_type -> market.v1.GetExistingFeatureBarIdsResponse
-	35, // 35: market.v1.MarketDataService.BulkUpsertFeatures:output_type -> market.v1.BulkUpsertFeaturesResponse
-	36, // 36: market.v1.MarketDataService.StoreStates:output_type -> market.v1.StoreStatesResponse
-	37, // 37: market.v1.MarketDataService.GetStates:output_type -> market.v1.GetStatesResponse
-	38, // 38: market.v1.MarketDataService.GetLatestStates:output_type -> market.v1.GetLatestStatesResponse
-	39, // 39: market.v1.MarketDataService.GetSyncLog:output_type -> market.v1.GetSyncLogResponse
-	40, // 40: market.v1.MarketDataService.UpdateSyncLog:output_type -> market.v1.UpdateSyncLogResponse
-	41, // 41: market.v1.MarketDataService.ListSyncLogs:output_type -> market.v1.ListSyncLogsResponse
-	21, // [21:42] is the sub-list for method output_type
-	0,  // [0:21] is the sub-list for method input_type
+	14, // 14: market.v1.MarketDataService.GetExistingFeatureTimestamps:input_type -> market.v1.GetExistingFeatureTimestampsRequest
+	15, // 15: market.v1.MarketDataService.BulkUpsertFeatures:input_type -> market.v1.BulkUpsertFeaturesRequest
+	16, // 16: market.v1.MarketDataService.StoreStates:input_type -> market.v1.StoreStatesRequest
+	17, // 17: market.v1.MarketDataService.GetStates:input_type -> market.v1.GetStatesRequest
+	18, // 18: market.v1.MarketDataService.GetLatestStates:input_type -> market.v1.GetLatestStatesRequest
+	19, // 19: market.v1.MarketDataService.GetSyncLog:input_type -> market.v1.GetSyncLogRequest
+	20, // 20: market.v1.MarketDataService.UpdateSyncLog:input_type -> market.v1.UpdateSyncLogRequest
+	21, // 21: market.v1.MarketDataService.ListSyncLogs:input_type -> market.v1.ListSyncLogsRequest
+	22, // 22: market.v1.MarketDataService.GetTicker:output_type -> market.v1.GetTickerResponse
+	23, // 23: market.v1.MarketDataService.ListTickers:output_type -> market.v1.ListTickersResponse
+	24, // 24: market.v1.MarketDataService.GetOrCreateTicker:output_type -> market.v1.GetOrCreateTickerResponse
+	25, // 25: market.v1.MarketDataService.BulkUpsertTickers:output_type -> market.v1.BulkUpsertTickersResponse
+	26, // 26: market.v1.MarketDataService.GetBars:output_type -> market.v1.GetBarsResponse
+	27, // 27: market.v1.MarketDataService.StreamBars:output_type -> market.v1.OHLCVBar
+	28, // 28: market.v1.MarketDataService.BulkInsertBars:output_type -> market.v1.BulkInsertBarsResponse
+	29, // 29: market.v1.MarketDataService.DeleteBars:output_type -> market.v1.DeleteBarsResponse
+	30, // 30: market.v1.MarketDataService.GetLatestTimestamp:output_type -> market.v1.GetLatestTimestampResponse
+	31, // 31: market.v1.MarketDataService.GetEarliestTimestamp:output_type -> market.v1.GetEarliestTimestampResponse
+	32, // 32: market.v1.MarketDataService.GetBarCount:output_type -> market.v1.GetBarCountResponse
+	33, // 33: market.v1.MarketDataService.GetBarIdsForTimestamps:output_type -> market.v1.GetBarIdsForTimestampsResponse
+	34, // 34: market.v1.MarketDataService.GetFeatures:output_type -> market.v1.GetFeaturesResponse
+	35, // 35: market.v1.MarketDataService.GetExistingFeatureBarIds:output_type -> market.v1.GetExistingFeatureBarIdsResponse
+	36, // 36: market.v1.MarketDataService.GetExistingFeatureTimestamps:output_type -> market.v1.GetExistingFeatureTimestampsResponse
+	37, // 37: market.v1.MarketDataService.BulkUpsertFeatures:output_type -> market.v1.BulkUpsertFeaturesResponse
+	38, // 38: market.v1.MarketDataService.StoreStates:output_type -> market.v1.StoreStatesResponse
+	39, // 39: market.v1.MarketDataService.GetStates:output_type -> market.v1.GetStatesResponse
+	40, // 40: market.v1.MarketDataService.GetLatestStates:output_type -> market.v1.GetLatestStatesResponse
+	41, // 41: market.v1.MarketDataService.GetSyncLog:output_type -> market.v1.GetSyncLogResponse
+	42, // 42: market.v1.MarketDataService.UpdateSyncLog:output_type -> market.v1.UpdateSyncLogResponse
+	43, // 43: market.v1.MarketDataService.ListSyncLogs:output_type -> market.v1.ListSyncLogsResponse
+	22, // [22:44] is the sub-list for method output_type
+	0,  // [0:22] is the sub-list for method input_type
 	0,  // [0:0] is the sub-list for extension type_name
 	0,  // [0:0] is the sub-list for extension extendee
 	0,  // [0:0] is the sub-list for field type_name

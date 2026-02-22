@@ -340,6 +340,21 @@ func (s *MarketServer) GetExistingFeatureBarIds(ctx context.Context, req *pb.Get
 	return &pb.GetExistingFeatureBarIdsResponse{BarIds: ids}, nil
 }
 
+func (s *MarketServer) GetExistingFeatureTimestamps(ctx context.Context, req *pb.GetExistingFeatureTimestampsRequest) (*pb.GetExistingFeatureTimestampsResponse, error) {
+	timestamps, err := s.features.GetExistingFeatureTimestamps(ctx, req.TickerId, req.Timeframe, tsPtr(req.Start), tsPtr(req.End))
+	if err != nil {
+		s.logger.Error("GetExistingFeatureTimestamps failed", "ticker_id", req.TickerId, "error", err)
+		return nil, mapError(err, "GetExistingFeatureTimestamps")
+	}
+
+	pbTimestamps := make([]*timestamppb.Timestamp, len(timestamps))
+	for i, ts := range timestamps {
+		pbTimestamps[i] = timestamppb.New(ts)
+	}
+
+	return &pb.GetExistingFeatureTimestampsResponse{Timestamps: pbTimestamps}, nil
+}
+
 func (s *MarketServer) BulkUpsertFeatures(ctx context.Context, req *pb.BulkUpsertFeaturesRequest) (*pb.BulkUpsertFeaturesResponse, error) {
 	if len(req.Features) > 5000 {
 		return nil, status.Errorf(codes.InvalidArgument, "max 5000 features per call, got %d", len(req.Features))
@@ -493,13 +508,15 @@ func barToProto(b *repository.OHLCVBar) *pb.OHLCVBar {
 func featureToProto(f *repository.ComputedFeature) *pb.ComputedFeature {
 	pf := &pb.ComputedFeature{
 		Id:             f.ID,
-		BarId:          f.BarID,
 		TickerId:       f.TickerID,
 		Timeframe:      f.Timeframe,
 		Timestamp:      timestamppb.New(f.Timestamp),
 		Features:       f.Features,
 		FeatureVersion: f.FeatureVersion,
 		CreatedAt:      timestamppb.New(f.CreatedAt),
+	}
+	if f.BarID != nil {
+		pf.BarId = f.BarID
 	}
 	if f.ModelID != nil {
 		pf.ModelId = f.ModelID
@@ -519,11 +536,13 @@ func featureToProto(f *repository.ComputedFeature) *pb.ComputedFeature {
 func protoToFeature(f *pb.ComputedFeature) repository.ComputedFeature {
 	cf := repository.ComputedFeature{
 		ID:             f.Id,
-		BarID:          f.BarId,
 		TickerID:       f.TickerId,
 		Timeframe:      f.Timeframe,
 		Features:       f.Features,
 		FeatureVersion: f.FeatureVersion,
+	}
+	if f.BarId != nil {
+		cf.BarID = f.BarId
 	}
 	if f.Timestamp != nil {
 		cf.Timestamp = f.Timestamp.AsTime()

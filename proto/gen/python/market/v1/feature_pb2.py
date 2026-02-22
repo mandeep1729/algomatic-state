@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17market/v1/feature.proto\x12\tmarket.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd8\x03\n\x0f\x43omputedFeature\x12\n\n\x02id\x18\x01 \x01(\x03\x12\x0e\n\x06\x62\x61r_id\x18\x02 \x01(\x03\x12\x11\n\tticker_id\x18\x03 \x01(\x05\x12\x11\n\ttimeframe\x18\x04 \x01(\t\x12-\n\ttimestamp\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12:\n\x08\x66\x65\x61tures\x18\x06 \x03(\x0b\x32(.market.v1.ComputedFeature.FeaturesEntry\x12\x17\n\x0f\x66\x65\x61ture_version\x18\x07 \x01(\t\x12\x15\n\x08model_id\x18\x08 \x01(\tH\x00\x88\x01\x01\x12\x15\n\x08state_id\x18\t \x01(\x05H\x01\x88\x01\x01\x12\x17\n\nstate_prob\x18\n \x01(\x01H\x02\x88\x01\x01\x12\x1b\n\x0elog_likelihood\x18\x0b \x01(\x01H\x03\x88\x01\x01\x12.\n\ncreated_at\x18\x0c \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x1a/\n\rFeaturesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x42\x0b\n\t_model_idB\x0b\n\t_state_idB\r\n\x0b_state_probB\x11\n\x0f_log_likelihood\"\xd1\x01\n\x12GetFeaturesRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\x12.\n\x05start\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12,\n\x03\x65nd\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x12\x11\n\tpage_size\x18\x05 \x01(\x05\x12\x12\n\npage_token\x18\x06 \x01(\tB\x08\n\x06_startB\x06\n\x04_end\"q\n\x13GetFeaturesResponse\x12,\n\x08\x66\x65\x61tures\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeature\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\x12\x13\n\x0btotal_count\x18\x03 \x01(\x05\"\xb7\x01\n\x1fGetExistingFeatureBarIdsRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\x12.\n\x05start\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12,\n\x03\x65nd\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x42\x08\n\x06_startB\x06\n\x04_end\"3\n GetExistingFeatureBarIdsResponse\x12\x0f\n\x07\x62\x61r_ids\x18\x01 \x03(\x03\"I\n\x19\x42ulkUpsertFeaturesRequest\x12,\n\x08\x66\x65\x61tures\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeature\"3\n\x1a\x42ulkUpsertFeaturesResponse\x12\x15\n\rrows_upserted\x18\x01 \x01(\x05\"R\n\x12StoreStatesRequest\x12*\n\x06states\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeature\x12\x10\n\x08model_id\x18\x02 \x01(\t\"*\n\x13StoreStatesResponse\x12\x13\n\x0brows_stored\x18\x01 \x01(\x05\"\xba\x01\n\x10GetStatesRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12.\n\x05start\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12,\n\x03\x65nd\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x42\x08\n\x06_startB\x06\n\x04_end\"?\n\x11GetStatesResponse\x12*\n\x06states\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeature\">\n\x16GetLatestStatesRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\"E\n\x17GetLatestStatesResponse\x12*\n\x06states\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeatureBCZAgithub.com/algomatic/data-service/proto/gen/go/market/v1;marketv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x17market/v1/feature.proto\x12\tmarket.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe8\x03\n\x0f\x43omputedFeature\x12\n\n\x02id\x18\x01 \x01(\x03\x12\x13\n\x06\x62\x61r_id\x18\x02 \x01(\x03H\x00\x88\x01\x01\x12\x11\n\tticker_id\x18\x03 \x01(\x05\x12\x11\n\ttimeframe\x18\x04 \x01(\t\x12-\n\ttimestamp\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12:\n\x08\x66\x65\x61tures\x18\x06 \x03(\x0b\x32(.market.v1.ComputedFeature.FeaturesEntry\x12\x17\n\x0f\x66\x65\x61ture_version\x18\x07 \x01(\t\x12\x15\n\x08model_id\x18\x08 \x01(\tH\x01\x88\x01\x01\x12\x15\n\x08state_id\x18\t \x01(\x05H\x02\x88\x01\x01\x12\x17\n\nstate_prob\x18\n \x01(\x01H\x03\x88\x01\x01\x12\x1b\n\x0elog_likelihood\x18\x0b \x01(\x01H\x04\x88\x01\x01\x12.\n\ncreated_at\x18\x0c \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x1a/\n\rFeaturesEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\x42\t\n\x07_bar_idB\x0b\n\t_model_idB\x0b\n\t_state_idB\r\n\x0b_state_probB\x11\n\x0f_log_likelihood\"\xd1\x01\n\x12GetFeaturesRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\x12.\n\x05start\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12,\n\x03\x65nd\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x12\x11\n\tpage_size\x18\x05 \x01(\x05\x12\x12\n\npage_token\x18\x06 \x01(\tB\x08\n\x06_startB\x06\n\x04_end\"q\n\x13GetFeaturesResponse\x12,\n\x08\x66\x65\x61tures\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeature\x12\x17\n\x0fnext_page_token\x18\x02 \x01(\t\x12\x13\n\x0btotal_count\x18\x03 \x01(\x05\"\xb7\x01\n\x1fGetExistingFeatureBarIdsRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\x12.\n\x05start\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12,\n\x03\x65nd\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x42\x08\n\x06_startB\x06\n\x04_end\"3\n GetExistingFeatureBarIdsResponse\x12\x0f\n\x07\x62\x61r_ids\x18\x01 \x03(\x03\"\xbb\x01\n#GetExistingFeatureTimestampsRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\x12.\n\x05start\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12,\n\x03\x65nd\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x42\x08\n\x06_startB\x06\n\x04_end\"V\n$GetExistingFeatureTimestampsResponse\x12.\n\ntimestamps\x18\x01 \x03(\x0b\x32\x1a.google.protobuf.Timestamp\"I\n\x19\x42ulkUpsertFeaturesRequest\x12,\n\x08\x66\x65\x61tures\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeature\"3\n\x1a\x42ulkUpsertFeaturesResponse\x12\x15\n\rrows_upserted\x18\x01 \x01(\x05\"R\n\x12StoreStatesRequest\x12*\n\x06states\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeature\x12\x10\n\x08model_id\x18\x02 \x01(\t\"*\n\x13StoreStatesResponse\x12\x13\n\x0brows_stored\x18\x01 \x01(\x05\"\xba\x01\n\x10GetStatesRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\x12\x10\n\x08model_id\x18\x03 \x01(\t\x12.\n\x05start\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x00\x88\x01\x01\x12,\n\x03\x65nd\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.TimestampH\x01\x88\x01\x01\x42\x08\n\x06_startB\x06\n\x04_end\"?\n\x11GetStatesResponse\x12*\n\x06states\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeature\">\n\x16GetLatestStatesRequest\x12\x11\n\tticker_id\x18\x01 \x01(\x05\x12\x11\n\ttimeframe\x18\x02 \x01(\t\"E\n\x17GetLatestStatesResponse\x12*\n\x06states\x18\x01 \x03(\x0b\x32\x1a.market.v1.ComputedFeatureBCZAgithub.com/algomatic/data-service/proto/gen/go/market/v1;marketv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -36,31 +36,35 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_COMPUTEDFEATURE_FEATURESENTRY']._loaded_options = None
   _globals['_COMPUTEDFEATURE_FEATURESENTRY']._serialized_options = b'8\001'
   _globals['_COMPUTEDFEATURE']._serialized_start=72
-  _globals['_COMPUTEDFEATURE']._serialized_end=544
-  _globals['_COMPUTEDFEATURE_FEATURESENTRY']._serialized_start=437
-  _globals['_COMPUTEDFEATURE_FEATURESENTRY']._serialized_end=484
-  _globals['_GETFEATURESREQUEST']._serialized_start=547
-  _globals['_GETFEATURESREQUEST']._serialized_end=756
-  _globals['_GETFEATURESRESPONSE']._serialized_start=758
-  _globals['_GETFEATURESRESPONSE']._serialized_end=871
-  _globals['_GETEXISTINGFEATUREBARIDSREQUEST']._serialized_start=874
-  _globals['_GETEXISTINGFEATUREBARIDSREQUEST']._serialized_end=1057
-  _globals['_GETEXISTINGFEATUREBARIDSRESPONSE']._serialized_start=1059
-  _globals['_GETEXISTINGFEATUREBARIDSRESPONSE']._serialized_end=1110
-  _globals['_BULKUPSERTFEATURESREQUEST']._serialized_start=1112
-  _globals['_BULKUPSERTFEATURESREQUEST']._serialized_end=1185
-  _globals['_BULKUPSERTFEATURESRESPONSE']._serialized_start=1187
-  _globals['_BULKUPSERTFEATURESRESPONSE']._serialized_end=1238
-  _globals['_STORESTATESREQUEST']._serialized_start=1240
-  _globals['_STORESTATESREQUEST']._serialized_end=1322
-  _globals['_STORESTATESRESPONSE']._serialized_start=1324
-  _globals['_STORESTATESRESPONSE']._serialized_end=1366
-  _globals['_GETSTATESREQUEST']._serialized_start=1369
-  _globals['_GETSTATESREQUEST']._serialized_end=1555
-  _globals['_GETSTATESRESPONSE']._serialized_start=1557
-  _globals['_GETSTATESRESPONSE']._serialized_end=1620
-  _globals['_GETLATESTSTATESREQUEST']._serialized_start=1622
-  _globals['_GETLATESTSTATESREQUEST']._serialized_end=1684
-  _globals['_GETLATESTSTATESRESPONSE']._serialized_start=1686
-  _globals['_GETLATESTSTATESRESPONSE']._serialized_end=1755
+  _globals['_COMPUTEDFEATURE']._serialized_end=560
+  _globals['_COMPUTEDFEATURE_FEATURESENTRY']._serialized_start=442
+  _globals['_COMPUTEDFEATURE_FEATURESENTRY']._serialized_end=489
+  _globals['_GETFEATURESREQUEST']._serialized_start=563
+  _globals['_GETFEATURESREQUEST']._serialized_end=772
+  _globals['_GETFEATURESRESPONSE']._serialized_start=774
+  _globals['_GETFEATURESRESPONSE']._serialized_end=887
+  _globals['_GETEXISTINGFEATUREBARIDSREQUEST']._serialized_start=890
+  _globals['_GETEXISTINGFEATUREBARIDSREQUEST']._serialized_end=1073
+  _globals['_GETEXISTINGFEATUREBARIDSRESPONSE']._serialized_start=1075
+  _globals['_GETEXISTINGFEATUREBARIDSRESPONSE']._serialized_end=1126
+  _globals['_GETEXISTINGFEATURETIMESTAMPSREQUEST']._serialized_start=1129
+  _globals['_GETEXISTINGFEATURETIMESTAMPSREQUEST']._serialized_end=1316
+  _globals['_GETEXISTINGFEATURETIMESTAMPSRESPONSE']._serialized_start=1318
+  _globals['_GETEXISTINGFEATURETIMESTAMPSRESPONSE']._serialized_end=1404
+  _globals['_BULKUPSERTFEATURESREQUEST']._serialized_start=1406
+  _globals['_BULKUPSERTFEATURESREQUEST']._serialized_end=1479
+  _globals['_BULKUPSERTFEATURESRESPONSE']._serialized_start=1481
+  _globals['_BULKUPSERTFEATURESRESPONSE']._serialized_end=1532
+  _globals['_STORESTATESREQUEST']._serialized_start=1534
+  _globals['_STORESTATESREQUEST']._serialized_end=1616
+  _globals['_STORESTATESRESPONSE']._serialized_start=1618
+  _globals['_STORESTATESRESPONSE']._serialized_end=1660
+  _globals['_GETSTATESREQUEST']._serialized_start=1663
+  _globals['_GETSTATESREQUEST']._serialized_end=1849
+  _globals['_GETSTATESRESPONSE']._serialized_start=1851
+  _globals['_GETSTATESRESPONSE']._serialized_end=1914
+  _globals['_GETLATESTSTATESREQUEST']._serialized_start=1916
+  _globals['_GETLATESTSTATESREQUEST']._serialized_end=1978
+  _globals['_GETLATESTSTATESRESPONSE']._serialized_start=1980
+  _globals['_GETLATESTSTATESRESPONSE']._serialized_end=2049
 # @@protoc_insertion_point(module_scope)

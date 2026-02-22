@@ -88,6 +88,24 @@ class GetExistingFeatureBarIdsResponse(_message.Message):
     bar_ids: _containers.RepeatedScalarFieldContainer[int]
     def __init__(self, bar_ids: _Optional[_Iterable[int]] = ...) -> None: ...
 
+class GetExistingFeatureTimestampsRequest(_message.Message):
+    __slots__ = ("ticker_id", "timeframe", "start", "end")
+    TICKER_ID_FIELD_NUMBER: _ClassVar[int]
+    TIMEFRAME_FIELD_NUMBER: _ClassVar[int]
+    START_FIELD_NUMBER: _ClassVar[int]
+    END_FIELD_NUMBER: _ClassVar[int]
+    ticker_id: int
+    timeframe: str
+    start: _timestamp_pb2.Timestamp
+    end: _timestamp_pb2.Timestamp
+    def __init__(self, ticker_id: _Optional[int] = ..., timeframe: _Optional[str] = ..., start: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., end: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class GetExistingFeatureTimestampsResponse(_message.Message):
+    __slots__ = ("timestamps",)
+    TIMESTAMPS_FIELD_NUMBER: _ClassVar[int]
+    timestamps: _containers.RepeatedCompositeFieldContainer[_timestamp_pb2.Timestamp]
+    def __init__(self, timestamps: _Optional[_Iterable[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]]] = ...) -> None: ...
+
 class BulkUpsertFeaturesRequest(_message.Message):
     __slots__ = ("features",)
     FEATURES_FIELD_NUMBER: _ClassVar[int]

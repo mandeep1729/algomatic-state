@@ -19,27 +19,28 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	MarketDataService_GetTicker_FullMethodName                = "/market.v1.MarketDataService/GetTicker"
-	MarketDataService_ListTickers_FullMethodName              = "/market.v1.MarketDataService/ListTickers"
-	MarketDataService_GetOrCreateTicker_FullMethodName        = "/market.v1.MarketDataService/GetOrCreateTicker"
-	MarketDataService_BulkUpsertTickers_FullMethodName        = "/market.v1.MarketDataService/BulkUpsertTickers"
-	MarketDataService_GetBars_FullMethodName                  = "/market.v1.MarketDataService/GetBars"
-	MarketDataService_StreamBars_FullMethodName               = "/market.v1.MarketDataService/StreamBars"
-	MarketDataService_BulkInsertBars_FullMethodName           = "/market.v1.MarketDataService/BulkInsertBars"
-	MarketDataService_DeleteBars_FullMethodName               = "/market.v1.MarketDataService/DeleteBars"
-	MarketDataService_GetLatestTimestamp_FullMethodName       = "/market.v1.MarketDataService/GetLatestTimestamp"
-	MarketDataService_GetEarliestTimestamp_FullMethodName     = "/market.v1.MarketDataService/GetEarliestTimestamp"
-	MarketDataService_GetBarCount_FullMethodName              = "/market.v1.MarketDataService/GetBarCount"
-	MarketDataService_GetBarIdsForTimestamps_FullMethodName   = "/market.v1.MarketDataService/GetBarIdsForTimestamps"
-	MarketDataService_GetFeatures_FullMethodName              = "/market.v1.MarketDataService/GetFeatures"
-	MarketDataService_GetExistingFeatureBarIds_FullMethodName = "/market.v1.MarketDataService/GetExistingFeatureBarIds"
-	MarketDataService_BulkUpsertFeatures_FullMethodName       = "/market.v1.MarketDataService/BulkUpsertFeatures"
-	MarketDataService_StoreStates_FullMethodName              = "/market.v1.MarketDataService/StoreStates"
-	MarketDataService_GetStates_FullMethodName                = "/market.v1.MarketDataService/GetStates"
-	MarketDataService_GetLatestStates_FullMethodName          = "/market.v1.MarketDataService/GetLatestStates"
-	MarketDataService_GetSyncLog_FullMethodName               = "/market.v1.MarketDataService/GetSyncLog"
-	MarketDataService_UpdateSyncLog_FullMethodName            = "/market.v1.MarketDataService/UpdateSyncLog"
-	MarketDataService_ListSyncLogs_FullMethodName             = "/market.v1.MarketDataService/ListSyncLogs"
+	MarketDataService_GetTicker_FullMethodName                    = "/market.v1.MarketDataService/GetTicker"
+	MarketDataService_ListTickers_FullMethodName                  = "/market.v1.MarketDataService/ListTickers"
+	MarketDataService_GetOrCreateTicker_FullMethodName            = "/market.v1.MarketDataService/GetOrCreateTicker"
+	MarketDataService_BulkUpsertTickers_FullMethodName            = "/market.v1.MarketDataService/BulkUpsertTickers"
+	MarketDataService_GetBars_FullMethodName                      = "/market.v1.MarketDataService/GetBars"
+	MarketDataService_StreamBars_FullMethodName                   = "/market.v1.MarketDataService/StreamBars"
+	MarketDataService_BulkInsertBars_FullMethodName               = "/market.v1.MarketDataService/BulkInsertBars"
+	MarketDataService_DeleteBars_FullMethodName                   = "/market.v1.MarketDataService/DeleteBars"
+	MarketDataService_GetLatestTimestamp_FullMethodName           = "/market.v1.MarketDataService/GetLatestTimestamp"
+	MarketDataService_GetEarliestTimestamp_FullMethodName         = "/market.v1.MarketDataService/GetEarliestTimestamp"
+	MarketDataService_GetBarCount_FullMethodName                  = "/market.v1.MarketDataService/GetBarCount"
+	MarketDataService_GetBarIdsForTimestamps_FullMethodName       = "/market.v1.MarketDataService/GetBarIdsForTimestamps"
+	MarketDataService_GetFeatures_FullMethodName                  = "/market.v1.MarketDataService/GetFeatures"
+	MarketDataService_GetExistingFeatureBarIds_FullMethodName     = "/market.v1.MarketDataService/GetExistingFeatureBarIds"
+	MarketDataService_GetExistingFeatureTimestamps_FullMethodName = "/market.v1.MarketDataService/GetExistingFeatureTimestamps"
+	MarketDataService_BulkUpsertFeatures_FullMethodName           = "/market.v1.MarketDataService/BulkUpsertFeatures"
+	MarketDataService_StoreStates_FullMethodName                  = "/market.v1.MarketDataService/StoreStates"
+	MarketDataService_GetStates_FullMethodName                    = "/market.v1.MarketDataService/GetStates"
+	MarketDataService_GetLatestStates_FullMethodName              = "/market.v1.MarketDataService/GetLatestStates"
+	MarketDataService_GetSyncLog_FullMethodName                   = "/market.v1.MarketDataService/GetSyncLog"
+	MarketDataService_UpdateSyncLog_FullMethodName                = "/market.v1.MarketDataService/UpdateSyncLog"
+	MarketDataService_ListSyncLogs_FullMethodName                 = "/market.v1.MarketDataService/ListSyncLogs"
 )
 
 // MarketDataServiceClient is the client API for MarketDataService service.
@@ -66,6 +67,7 @@ type MarketDataServiceClient interface {
 	// Feature operations
 	GetFeatures(ctx context.Context, in *GetFeaturesRequest, opts ...grpc.CallOption) (*GetFeaturesResponse, error)
 	GetExistingFeatureBarIds(ctx context.Context, in *GetExistingFeatureBarIdsRequest, opts ...grpc.CallOption) (*GetExistingFeatureBarIdsResponse, error)
+	GetExistingFeatureTimestamps(ctx context.Context, in *GetExistingFeatureTimestampsRequest, opts ...grpc.CallOption) (*GetExistingFeatureTimestampsResponse, error)
 	BulkUpsertFeatures(ctx context.Context, in *BulkUpsertFeaturesRequest, opts ...grpc.CallOption) (*BulkUpsertFeaturesResponse, error)
 	StoreStates(ctx context.Context, in *StoreStatesRequest, opts ...grpc.CallOption) (*StoreStatesResponse, error)
 	GetStates(ctx context.Context, in *GetStatesRequest, opts ...grpc.CallOption) (*GetStatesResponse, error)
@@ -233,6 +235,16 @@ func (c *marketDataServiceClient) GetExistingFeatureBarIds(ctx context.Context, 
 	return out, nil
 }
 
+func (c *marketDataServiceClient) GetExistingFeatureTimestamps(ctx context.Context, in *GetExistingFeatureTimestampsRequest, opts ...grpc.CallOption) (*GetExistingFeatureTimestampsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetExistingFeatureTimestampsResponse)
+	err := c.cc.Invoke(ctx, MarketDataService_GetExistingFeatureTimestamps_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *marketDataServiceClient) BulkUpsertFeatures(ctx context.Context, in *BulkUpsertFeaturesRequest, opts ...grpc.CallOption) (*BulkUpsertFeaturesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BulkUpsertFeaturesResponse)
@@ -327,6 +339,7 @@ type MarketDataServiceServer interface {
 	// Feature operations
 	GetFeatures(context.Context, *GetFeaturesRequest) (*GetFeaturesResponse, error)
 	GetExistingFeatureBarIds(context.Context, *GetExistingFeatureBarIdsRequest) (*GetExistingFeatureBarIdsResponse, error)
+	GetExistingFeatureTimestamps(context.Context, *GetExistingFeatureTimestampsRequest) (*GetExistingFeatureTimestampsResponse, error)
 	BulkUpsertFeatures(context.Context, *BulkUpsertFeaturesRequest) (*BulkUpsertFeaturesResponse, error)
 	StoreStates(context.Context, *StoreStatesRequest) (*StoreStatesResponse, error)
 	GetStates(context.Context, *GetStatesRequest) (*GetStatesResponse, error)
@@ -386,6 +399,9 @@ func (UnimplementedMarketDataServiceServer) GetFeatures(context.Context, *GetFea
 }
 func (UnimplementedMarketDataServiceServer) GetExistingFeatureBarIds(context.Context, *GetExistingFeatureBarIdsRequest) (*GetExistingFeatureBarIdsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetExistingFeatureBarIds not implemented")
+}
+func (UnimplementedMarketDataServiceServer) GetExistingFeatureTimestamps(context.Context, *GetExistingFeatureTimestampsRequest) (*GetExistingFeatureTimestampsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetExistingFeatureTimestamps not implemented")
 }
 func (UnimplementedMarketDataServiceServer) BulkUpsertFeatures(context.Context, *BulkUpsertFeaturesRequest) (*BulkUpsertFeaturesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BulkUpsertFeatures not implemented")
@@ -674,6 +690,24 @@ func _MarketDataService_GetExistingFeatureBarIds_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MarketDataService_GetExistingFeatureTimestamps_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetExistingFeatureTimestampsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MarketDataServiceServer).GetExistingFeatureTimestamps(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MarketDataService_GetExistingFeatureTimestamps_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MarketDataServiceServer).GetExistingFeatureTimestamps(ctx, req.(*GetExistingFeatureTimestampsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _MarketDataService_BulkUpsertFeatures_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BulkUpsertFeaturesRequest)
 	if err := dec(in); err != nil {
@@ -858,6 +892,10 @@ var MarketDataService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetExistingFeatureBarIds",
 			Handler:    _MarketDataService_GetExistingFeatureBarIds_Handler,
+		},
+		{
+			MethodName: "GetExistingFeatureTimestamps",
+			Handler:    _MarketDataService_GetExistingFeatureTimestamps_Handler,
 		},
 		{
 			MethodName: "BulkUpsertFeatures",

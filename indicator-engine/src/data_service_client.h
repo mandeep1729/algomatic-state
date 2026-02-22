@@ -30,8 +30,15 @@ public:
         time_t start = 0,
         time_t end = 0) const;
 
-    /// Get bar_ids that already have computed features.
+    /// Get bar_ids that already have computed features (non-aggregate timeframes only).
     std::set<int64_t> get_existing_feature_bar_ids(
+        int64_t ticker_id,
+        const std::string& timeframe,
+        time_t start = 0,
+        time_t end = 0) const;
+
+    /// Get timestamps that already have computed features (works for all timeframes).
+    std::set<time_t> get_existing_feature_timestamps(
         int64_t ticker_id,
         const std::string& timeframe,
         time_t start = 0,

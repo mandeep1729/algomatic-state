@@ -15,10 +15,11 @@ std::vector<IndicatorResult> Pipeline::compute(const std::vector<OHLCVBar>& bars
     const int n = static_cast<int>(bars.size());
     if (n == 0) return {};
 
-    // Initialize results with bar_ids
+    // Initialize results with bar_ids and timestamps
     std::vector<IndicatorResult> results(n);
     for (int i = 0; i < n; i++) {
         results[i].bar_id = bars[i].id;
+        results[i].timestamp = bars[i].timestamp;
     }
 
     spdlog::info("Pipeline: computing indicators for {} bars", n);

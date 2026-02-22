@@ -232,10 +232,6 @@ async def analyze_symbol(
                         metadata = paths.load_metadata()
                         model_features = metadata.feature_names
 
-                        bar_id_map = repo.get_bar_ids_for_timestamps(
-                            ticker.id, timeframe, list(features_to_process.index)
-                        )
-
                         state_records = []
                         engine.reset()
 
@@ -243,15 +239,15 @@ async def analyze_symbol(
                             features = {name: row.get(name, np.nan) for name in model_features}
                             output = engine.process(features, symbol, ts)
 
-                            bar_id = bar_id_map.get(ts)
-                            if bar_id:
-                                state_records.append({
-                                    "bar_id": bar_id,
-                                    "state_id": output.state_id,
-                                    "state_prob": float(output.state_prob),
-                                    "log_likelihood": float(output.log_likelihood)
-                                    if not np.isinf(output.log_likelihood) else None,
-                                })
+                            state_records.append({
+                                "ticker_id": ticker.id,
+                                "timeframe": timeframe,
+                                "timestamp": ts,
+                                "state_id": output.state_id,
+                                "state_prob": float(output.state_prob),
+                                "log_likelihood": float(output.log_likelihood)
+                                if not np.isinf(output.log_likelihood) else None,
+                            })
 
                         if state_records:
                             stored = repo.store_states(state_records, current_model_id)
@@ -424,20 +420,16 @@ async def analyze_symbol_pca(
         trainer.metadata.state_mapping = labels_to_dict(labels)
         trainer.save(model_path)
 
-        bar_id_map = repo.get_bar_ids_for_timestamps(
-            ticker.id, timeframe, list(features_df.index)
-        )
-
         state_records = []
         for ts, row in state_df.iterrows():
-            bar_id = bar_id_map.get(ts)
-            if bar_id:
-                state_records.append({
-                    "bar_id": bar_id,
-                    "state_id": int(row["state_id"]),
-                    "state_prob": 1.0 - min(row["distance"] / trainer.metadata.ood_threshold, 1.0),
-                    "log_likelihood": -float(row["distance"]),
-                })
+            state_records.append({
+                "ticker_id": ticker.id,
+                "timeframe": timeframe,
+                "timestamp": ts,
+                "state_id": int(row["state_id"]),
+                "state_prob": 1.0 - min(row["distance"] / trainer.metadata.ood_threshold, 1.0),
+                "log_likelihood": -float(row["distance"]),
+            })
 
         if state_records:
             stored_count = repo.store_states(state_records, f"pca_{model_id}")

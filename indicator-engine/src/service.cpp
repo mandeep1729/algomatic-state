@@ -87,37 +87,37 @@ Service::ComputeStats Service::compute_for_ticker(int64_t ticker_id, const std::
     auto bars = db_.read_ohlcv_bars(ticker_id, timeframe);
     if (bars.empty()) return stats;
 
-    // Get existing feature bar_ids
-    auto existing = db_.get_existing_feature_bar_ids(ticker_id, timeframe);
+    // Get existing feature timestamps (works for all timeframes including aggregates)
+    auto existing_ts = db_.get_existing_feature_timestamps(ticker_id, timeframe);
 
-    // Identify missing bar_ids
-    std::set<int64_t> all_ids;
-    for (const auto& bar : bars) all_ids.insert(bar.id);
+    // Identify bars with missing timestamps
+    std::set<time_t> all_timestamps;
+    for (const auto& bar : bars) all_timestamps.insert(bar.timestamp);
 
-    std::set<int64_t> missing;
-    for (auto id : all_ids) {
-        if (existing.find(id) == existing.end()) missing.insert(id);
+    std::set<time_t> missing_ts;
+    for (auto ts : all_timestamps) {
+        if (existing_ts.find(ts) == existing_ts.end()) missing_ts.insert(ts);
     }
 
-    stats.bars_skipped = static_cast<int>(existing.size());
+    stats.bars_skipped = static_cast<int>(existing_ts.size());
 
-    if (missing.empty()) {
+    if (missing_ts.empty()) {
         spdlog::debug("ticker_id={} {}: all {} bars have features", ticker_id, timeframe, bars.size());
         return stats;
     }
 
     spdlog::info("ticker_id={} {}: computing for {} missing bars (out of {} total)",
-                 ticker_id, timeframe, missing.size(), bars.size());
+                 ticker_id, timeframe, missing_ts.size(), bars.size());
 
     // Compute all indicators (need full range for lookback)
     auto results = pipeline_.compute(bars);
 
-    // Filter to only missing bar_ids
+    // Filter to only bars with missing timestamps
     std::vector<IndicatorResult> to_write;
-    to_write.reserve(missing.size());
-    for (auto& r : results) {
-        if (missing.count(r.bar_id)) {
-            to_write.push_back(std::move(r));
+    to_write.reserve(missing_ts.size());
+    for (size_t i = 0; i < results.size() && i < bars.size(); i++) {
+        if (missing_ts.count(bars[i].timestamp)) {
+            to_write.push_back(std::move(results[i]));
         }
     }
 

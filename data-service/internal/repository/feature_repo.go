@@ -15,7 +15,7 @@ import (
 // ComputedFeature represents a row from the computed_features table.
 type ComputedFeature struct {
 	ID             int64
-	BarID          int64
+	BarID          *int64 // Nullable — aggregate timeframes have no real bar row
 	TickerID       int32
 	Timeframe      string
 	Timestamp      time.Time
@@ -101,12 +101,13 @@ func scanFeatures(rows pgx.Rows) ([]ComputedFeature, error) {
 }
 
 // GetExistingFeatureBarIds returns bar IDs that already have computed features.
+// Only returns non-NULL bar_ids (aggregate timeframes have NULL bar_id).
 func (r *FeatureRepo) GetExistingFeatureBarIds(ctx context.Context, tickerID int32, timeframe string, start, end *time.Time) ([]int64, error) {
 	if !ValidTimeframes[timeframe] {
 		return nil, fmt.Errorf("invalid timeframe %q", timeframe)
 	}
 
-	query := `SELECT bar_id FROM computed_features WHERE ticker_id = $1 AND timeframe = $2`
+	query := `SELECT bar_id FROM computed_features WHERE ticker_id = $1 AND timeframe = $2 AND bar_id IS NOT NULL`
 	args := []any{tickerID, timeframe}
 	argIdx := 3
 
@@ -135,6 +136,44 @@ func (r *FeatureRepo) GetExistingFeatureBarIds(ctx context.Context, tickerID int
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// GetExistingFeatureTimestamps returns timestamps that already have computed features.
+// Works for all timeframes, including aggregates with NULL bar_id.
+func (r *FeatureRepo) GetExistingFeatureTimestamps(ctx context.Context, tickerID int32, timeframe string, start, end *time.Time) ([]time.Time, error) {
+	if !ValidTimeframes[timeframe] {
+		return nil, fmt.Errorf("invalid timeframe %q", timeframe)
+	}
+
+	query := `SELECT timestamp FROM computed_features WHERE ticker_id = $1 AND timeframe = $2`
+	args := []any{tickerID, timeframe}
+	argIdx := 3
+
+	if start != nil {
+		query += fmt.Sprintf(` AND timestamp >= $%d`, argIdx)
+		args = append(args, *start)
+		argIdx++
+	}
+	if end != nil {
+		query += fmt.Sprintf(` AND timestamp <= $%d`, argIdx)
+		args = append(args, *end)
+	}
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying existing feature timestamps: %w", err)
+	}
+	defer rows.Close()
+
+	var timestamps []time.Time
+	for rows.Next() {
+		var ts time.Time
+		if err := rows.Scan(&ts); err != nil {
+			return nil, fmt.Errorf("scanning timestamp: %w", err)
+		}
+		timestamps = append(timestamps, ts)
+	}
+	return timestamps, rows.Err()
 }
 
 // filterFeatures removes NaN/Inf values from a feature map before storing.
@@ -175,9 +214,10 @@ func (r *FeatureRepo) BulkUpsertFeatures(ctx context.Context, features []Compute
 			batch.Queue(
 				`INSERT INTO computed_features (bar_id, ticker_id, timeframe, timestamp, features, feature_version, model_id, state_id, state_prob, log_likelihood, created_at)
 				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-				 ON CONFLICT (bar_id) DO UPDATE SET
+				 ON CONFLICT (ticker_id, timeframe, timestamp) DO UPDATE SET
 				   features = EXCLUDED.features,
 				   feature_version = EXCLUDED.feature_version,
+				   bar_id = COALESCE(EXCLUDED.bar_id, computed_features.bar_id),
 				   model_id = COALESCE(EXCLUDED.model_id, computed_features.model_id),
 				   state_id = COALESCE(EXCLUDED.state_id, computed_features.state_id),
 				   state_prob = COALESCE(EXCLUDED.state_prob, computed_features.state_prob),
@@ -223,8 +263,9 @@ func (r *FeatureRepo) StoreStates(ctx context.Context, states []ComputedFeature,
 			   state_id = $2,
 			   state_prob = $3,
 			   log_likelihood = $4
-			 WHERE bar_id = $5`,
-			modelID, s.StateID, s.StateProb, s.LogLikelihood, s.BarID,
+			 WHERE ticker_id = $5 AND timeframe = $6 AND timestamp = $7`,
+			modelID, s.StateID, s.StateProb, s.LogLikelihood,
+			s.TickerID, s.Timeframe, s.Timestamp,
 		)
 	}
 
