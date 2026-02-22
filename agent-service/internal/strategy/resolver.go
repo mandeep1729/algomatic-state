@@ -172,54 +172,6 @@ func compileCustomStrategy(row *repository.AgentStrategyRow) (*types.StrategyDef
 	}, nil
 }
 
-// cloneDefWithDBParams creates a new StrategyDef using conditions from the
-// go-strats base definition and parameters from the DB row. This handles
-// cloned strategies where the user may have customised direction or risk
-// parameters but the entry/exit logic is inherited from the source.
-func cloneDefWithDBParams(base *types.StrategyDef, row *repository.AgentStrategyRow) *types.StrategyDef {
-	def := &types.StrategyDef{
-		ID:                 row.ID,
-		Name:               row.Name,
-		DisplayName:        row.DisplayName,
-		Category:           row.Category,
-		EntryLong:          base.EntryLong,
-		EntryShort:         base.EntryShort,
-		ExitLong:           base.ExitLong,
-		ExitShort:          base.ExitShort,
-		RequiredIndicators: base.RequiredIndicators,
-		// Defaults from base; overridden below if DB has values.
-		ATRStopMult:     base.ATRStopMult,
-		ATRTargetMult:   base.ATRTargetMult,
-		TrailingATRMult: base.TrailingATRMult,
-		TimeStopBars:    base.TimeStopBars,
-	}
-
-	// Override parameters from DB row when present.
-	if row.ATRStopMult != nil {
-		def.ATRStopMult = *row.ATRStopMult
-	}
-	if row.ATRTargetMult != nil {
-		def.ATRTargetMult = *row.ATRTargetMult
-	}
-	if row.TrailingATRMult != nil {
-		def.TrailingATRMult = *row.TrailingATRMult
-	}
-	if row.TimeStopBars != nil {
-		def.TimeStopBars = *row.TimeStopBars
-	}
-
-	// Direction from DB row (user may change on clone).
-	def.Direction = types.LongShort
-	switch row.Direction {
-	case "long_only":
-		def.Direction = types.LongOnly
-	case "short_only":
-		def.Direction = types.ShortOnly
-	}
-
-	return def
-}
-
 // ClearCache removes all cached strategy definitions.
 func (r *Resolver) ClearCache() {
 	r.mu.Lock()
