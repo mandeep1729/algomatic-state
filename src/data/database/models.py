@@ -101,12 +101,6 @@ class OHLCVBar(Base):
 
     # Relationships
     ticker: Mapped["Ticker"] = relationship("Ticker", back_populates="bars")
-    features: Mapped["ComputedFeature"] = relationship(
-        "ComputedFeature",
-        uselist=False,
-        back_populates="bar",
-        cascade="all, delete-orphan",
-    )
 
     # Table constraints
     __table_args__ = (
@@ -146,7 +140,6 @@ class ComputedFeature(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     bar_id: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("ohlcv_bars.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
     )
@@ -176,7 +169,6 @@ class ComputedFeature(Base):
     )
 
     # Relationships
-    bar: Mapped["OHLCVBar"] = relationship("OHLCVBar", back_populates="features")
     ticker: Mapped["Ticker"] = relationship("Ticker")
 
     # Constraints

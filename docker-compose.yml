@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: timescale/timescaledb:latest-pg16
     container_name: algomatic-postgres
     command: postgres -c jit=off  # Disable JIT - not beneficial for bulk inserts, saves memory
     environment:
