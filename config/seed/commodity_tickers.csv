@@ -1,0 +1,29 @@
+symbol,name,exchange,asset_type,asset_class
+XAU/USD,Gold Spot,TWELVEDATA,commodity,commodity
+XAG/USD,Silver Spot,TWELVEDATA,commodity,commodity
+XPT/USD,Platinum Spot,TWELVEDATA,commodity,commodity
+XPD/USD,Palladium Spot,TWELVEDATA,commodity,commodity
+WTI/USD,Crude Oil WTI Spot,TWELVEDATA,commodity,commodity
+XBR/USD,Brent Crude Oil Spot,TWELVEDATA,commodity,commodity
+NG/USD,Natural Gas,TWELVEDATA,commodity,commodity
+CL1,Crude Oil Futures,TWELVEDATA,commodity,commodity
+CO1,Brent Futures,TWELVEDATA,commodity,commodity
+XB1,Gasoline Futures,TWELVEDATA,commodity,commodity
+DL1,Ethanol Futures,TWELVEDATA,commodity,commodity
+HG1,Copper Futures,TWELVEDATA,commodity,commodity
+NI1,Nickel Futures,TWELVEDATA,commodity,commodity
+LMAHDS03,Aluminum Futures,TWELVEDATA,commodity,commodity
+UXA,Uranium Futures,TWELVEDATA,commodity,commodity
+C_1,Corn Futures,TWELVEDATA,commodity,commodity
+S_1,Soybeans Futures,TWELVEDATA,commodity,commodity
+W_1,Wheat Futures,TWELVEDATA,commodity,commodity
+KC1,Coffee Futures,TWELVEDATA,commodity,commodity
+CC1,Cocoa Futures,TWELVEDATA,commodity,commodity
+CT1,Cotton Futures,TWELVEDATA,commodity,commodity
+SB1,Sugar Futures,TWELVEDATA,commodity,commodity
+LB1,Lumber Futures,TWELVEDATA,commodity,commodity
+O_1,Oat Futures,TWELVEDATA,commodity,commodity
+RR1,Rice Futures,TWELVEDATA,commodity,commodity
+LC1,Live Cattle Futures,TWELVEDATA,commodity,commodity
+LH1,Lean Hogs Futures,TWELVEDATA,commodity,commodity
+FC1,Feeder Cattle Futures,TWELVEDATA,commodity,commodity

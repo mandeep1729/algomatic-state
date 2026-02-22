@@ -1,0 +1,24 @@
+symbol,name,exchange,asset_type,asset_class
+EUR/USD,Euro / US Dollar,TWELVEDATA,forex,fx
+GBP/USD,British Pound / US Dollar,TWELVEDATA,forex,fx
+USD/JPY,US Dollar / Japanese Yen,TWELVEDATA,forex,fx
+USD/CHF,US Dollar / Swiss Franc,TWELVEDATA,forex,fx
+AUD/USD,Australian Dollar / US Dollar,TWELVEDATA,forex,fx
+USD/CAD,US Dollar / Canadian Dollar,TWELVEDATA,forex,fx
+NZD/USD,New Zealand Dollar / US Dollar,TWELVEDATA,forex,fx
+EUR/GBP,Euro / British Pound,TWELVEDATA,forex,fx
+EUR/JPY,Euro / Japanese Yen,TWELVEDATA,forex,fx
+EUR/AUD,Euro / Australian Dollar,TWELVEDATA,forex,fx
+EUR/CAD,Euro / Canadian Dollar,TWELVEDATA,forex,fx
+EUR/CHF,Euro / Swiss Franc,TWELVEDATA,forex,fx
+EUR/NZD,Euro / New Zealand Dollar,TWELVEDATA,forex,fx
+GBP/JPY,British Pound / Japanese Yen,TWELVEDATA,forex,fx
+GBP/AUD,British Pound / Australian Dollar,TWELVEDATA,forex,fx
+GBP/CAD,British Pound / Canadian Dollar,TWELVEDATA,forex,fx
+GBP/CHF,British Pound / Swiss Franc,TWELVEDATA,forex,fx
+AUD/JPY,Australian Dollar / Japanese Yen,TWELVEDATA,forex,fx
+AUD/NZD,Australian Dollar / New Zealand Dollar,TWELVEDATA,forex,fx
+AUD/CAD,Australian Dollar / Canadian Dollar,TWELVEDATA,forex,fx
+NZD/JPY,New Zealand Dollar / Japanese Yen,TWELVEDATA,forex,fx
+CAD/JPY,Canadian Dollar / Japanese Yen,TWELVEDATA,forex,fx
+CHF/JPY,Swiss Franc / Japanese Yen,TWELVEDATA,forex,fx
