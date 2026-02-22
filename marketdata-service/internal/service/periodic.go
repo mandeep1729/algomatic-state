@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// RunPeriodicLoop runs aggregation scans at the given interval.
+// RunPeriodicLoop runs periodic data scans at the given interval.
 // If backendURL is set, scans only symbols with open positions.
 // If backendURL is empty, falls back to all active tickers.
 // Blocks until ctx is cancelled.
@@ -16,7 +16,7 @@ func RunPeriodicLoop(ctx context.Context, svc *Service, interval time.Duration, 
 		logger = slog.Default()
 	}
 
-	logger.Info("Starting periodic aggregation loop",
+	logger.Info("Starting periodic data loop",
 		"interval", interval,
 		"backend_url_configured", backendURL != "",
 	)
@@ -38,12 +38,12 @@ func RunPeriodicLoop(ctx context.Context, svc *Service, interval time.Duration, 
 	}
 }
 
-// runScan performs one aggregation scan.
+// runScan performs one periodic data scan.
 // Merges position symbols and agent symbols from the backend, deduplicates.
-// Calls EnsureData to fetch missing 1Min data before aggregation.
+// Calls EnsureData to fetch 1Min (source for continuous aggregates) and 1Day data.
 func runScan(ctx context.Context, svc *Service, backendURL string, logger *slog.Logger) {
 	startTime := time.Now()
-	logger.Info("Starting periodic aggregation scan")
+	logger.Info("Starting periodic data scan")
 
 	var symbols []string
 
@@ -76,23 +76,22 @@ func runScan(ctx context.Context, svc *Service, backendURL string, logger *slog.
 		default:
 		}
 
-		// Ensure 1Min data exists before aggregating.
-		result, err := svc.EnsureData(ctx, symbol, []string{"1Min"}, scanStart, scanEnd)
+		// Fetch 1Min (source for continuous aggregates) and 1Day (separate Alpaca query).
+		// 5Min, 15Min, 1Hour are auto-computed by TimescaleDB continuous aggregates from 1Min.
+		result, err := svc.EnsureData(ctx, symbol, []string{"1Min", "1Day"}, scanStart, scanEnd)
 		if err != nil {
 			logger.Warn("EnsureData failed in periodic scan",
 				"symbol", symbol,
 				"error", err,
 			)
-			// Continue — we can still try to aggregate whatever 1Min data already exists.
-		} else if n, ok := result["1Min"]; ok && n > 0 {
-			logger.Info("Fetched new 1Min data in periodic scan",
-				"symbol", symbol,
-				"bars", n,
-			)
+		} else {
+			if n, ok := result["1Min"]; ok && n > 0 {
+				logger.Info("Fetched new 1Min data", "symbol", symbol, "bars", n)
+			}
+			if n, ok := result["1Day"]; ok && n > 0 {
+				logger.Info("Fetched new 1Day data", "symbol", symbol, "bars", n)
+			}
 		}
-
-		// 5Min, 15Min, 1Hour are now handled by TimescaleDB continuous aggregates.
-		// Periodic scan only ensures 1Min source data is fetched.
 		processed++
 	}
 
