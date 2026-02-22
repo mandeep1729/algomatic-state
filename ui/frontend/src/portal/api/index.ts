@@ -104,6 +104,9 @@ const api = USE_MOCKS
       fetchAgentOrders: realApi.fetchAgentOrders,
       fetchAgentActivity: realApi.fetchAgentActivity,
 
+      // Tickers -- real backend
+      fetchTickers: realApi.fetchTickers,
+
       // Mock fallbacks -- no backend endpoints yet
       fetchCurrentUser: mockApi.fetchCurrentUser,
       fetchTradeDetail: mockApi.fetchTradeDetail,
@@ -181,6 +184,10 @@ export type { DailyPnlPoint } from './client';
 // Re-export strategy probe function from client
 export { fetchStrategyProbe, fetchThemeStrategies, fetchAllProbeStrategies, fetchTopStrategies } from './client';
 export type { StrategyProbeResponse, WeekPerformance, ThemeRanking, OHLCVData, ThemeStrategiesResponse, ThemeStrategyDetail, TopStrategiesResponse, TopStrategyDetail } from './client';
+
+// Re-export tickers function from client
+export { fetchTickers } from './client';
+export type { TickerInfo } from './client';
 
 // Re-export trading agent functions from client
 export {

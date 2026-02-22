@@ -22,6 +22,7 @@
  *   POST /api/sync/{symbol}            → triggerSync
  *   GET  /api/ohlcv/{symbol}           → fetchOHLCVData
  *   GET  /api/features/{symbol}        → fetchFeatures
+ *   GET  /api/tickers                   → fetchTickers
  *
  * All other functions are served by the mock layer (see api/index.ts).
  */
@@ -163,6 +164,22 @@ function put<T>(path: string, body?: unknown): Promise<T> {
 
 function del<T>(path: string): Promise<T> {
   return request<T>(apiUrl(path), { method: 'DELETE' });
+}
+
+// =============================================================================
+// Tickers — GET /api/tickers
+// =============================================================================
+
+export interface TickerInfo {
+  symbol: string;
+  name: string | null;
+  exchange: string | null;
+  is_active: boolean;
+  timeframes: string[];
+}
+
+export async function fetchTickers(): Promise<TickerInfo[]> {
+  return get<TickerInfo[]>('/api/tickers');
 }
 
 // =============================================================================
