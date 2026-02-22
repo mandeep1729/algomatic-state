@@ -179,7 +179,17 @@ func dataSourceName(useTwelveData bool) string {
 
 // handleFetchError checks if a fetch error is a client error (4xx)
 // and deactivates the ticker to prevent future polling for invalid symbols.
+// "No data available" errors (weekends, holidays) are NOT treated as invalid
+// symbols and do not trigger deactivation.
 func (s *Service) handleFetchError(ctx context.Context, symbol string, err error) {
+	// "No data available" is expected on weekends/holidays — not an invalid symbol.
+	if twelvedata.IsTwelveDataNoDataError(err) {
+		s.logger.Info("No data available for date range (weekend/holiday), skipping deactivation",
+			"symbol", symbol,
+		)
+		return
+	}
+
 	isClientError := alpaca.IsAlpacaAPIError(err) || twelvedata.IsTwelveDataAPIError(err)
 	if !isClientError {
 		return

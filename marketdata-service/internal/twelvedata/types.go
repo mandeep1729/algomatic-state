@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/algomatic/marketdata-service/internal/db"
@@ -24,6 +25,18 @@ func (e *TwelveDataAPIError) Error() string {
 func IsTwelveDataAPIError(err error) bool {
 	var apiErr *TwelveDataAPIError
 	return errors.As(err, &apiErr)
+}
+
+// IsTwelveDataNoDataError returns true if the error is a TwelveData "no data
+// available" response. This happens for valid symbols when the requested date
+// range falls on weekends, holidays, or outside trading hours — it should NOT
+// be treated as an invalid-symbol error.
+func IsTwelveDataNoDataError(err error) bool {
+	var apiErr *TwelveDataAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return strings.Contains(strings.ToLower(apiErr.Message), "no data is available")
 }
 
 // timeSeriesResponse is the TwelveData time_series API response.
