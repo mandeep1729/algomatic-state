@@ -74,18 +74,21 @@ class OHLCVBar(Base):
 
     Stores price and volume data for a specific symbol and timeframe.
     Supports multiple timeframes: 1Min, 5Min, 15Min, 1Hour, 1Day.
+
+    Note: composite PK (id, timestamp) is required by TimescaleDB hypertable
+    partitioning — the partition column must be part of the primary key.
     """
 
     __tablename__ = "ohlcv_bars"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     ticker_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("tickers.id", ondelete="CASCADE"),
         nullable=False,
     )
     timeframe: Mapped[str] = mapped_column(String(10), nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
     open: Mapped[float] = mapped_column(Float, nullable=False)
     high: Mapped[float] = mapped_column(Float, nullable=False)
     low: Mapped[float] = mapped_column(Float, nullable=False)
