@@ -43,7 +43,7 @@ func NewClient(apiKey string, logger *slog.Logger) *Client {
 	return &Client{
 		apiKey: apiKey,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 120 * time.Second,
 		},
 		logger: logger,
 	}
@@ -95,9 +95,9 @@ func (c *Client) FetchBars(ctx context.Context, symbol, timeframe string, start,
 			break
 		}
 
-		// Move the window back: the oldest bar in this batch is the new end.
-		// Subtract 1 second to avoid overlap.
-		oldest := bars[len(bars)-1].Timestamp
+		// Move the window back: bars are sorted oldest-first after reversal,
+		// so bars[0] is the oldest bar in this batch.
+		oldest := bars[0].Timestamp
 		if !oldest.After(start) {
 			break
 		}
@@ -189,24 +189,34 @@ func (c *Client) doRequest(ctx context.Context, reqURL string) ([]byte, error) {
 			}
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+		// Per-request timeout to prevent hanging on slow responses.
+		reqCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, reqURL, nil)
 		if err != nil {
+			cancel()
 			return nil, fmt.Errorf("creating request: %w", err)
 		}
 
+		c.logger.Info("Sending TwelveData HTTP request", "attempt", attempt)
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
+			cancel()
 			lastErr = fmt.Errorf("HTTP request failed: %w", err)
 			c.logger.Warn("TwelveData request failed", "attempt", attempt, "error", err)
 			continue
 		}
 
+		c.logger.Info("Reading TwelveData response body", "status", resp.StatusCode)
 		body, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
+		cancel()
 		if readErr != nil {
 			lastErr = fmt.Errorf("reading response body: %w", readErr)
+			c.logger.Warn("TwelveData body read failed", "attempt", attempt, "error", readErr)
 			continue
 		}
+		c.logger.Info("TwelveData response received", "body_bytes", len(body))
 
 		switch {
 		case resp.StatusCode >= 200 && resp.StatusCode < 300:
