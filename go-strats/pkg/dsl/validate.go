@@ -11,7 +11,7 @@ var knownOps = map[string]bool{
 	"above": true, "below": true,
 	"rising": true, "falling": true,
 	"all_of": true, "any_of": true,
-	"pullback_to": true,
+	"pullback_to": true, "pullback_below": true,
 	"bullish_divergence": true, "bearish_divergence": true,
 	"candle_bullish": true, "candle_bearish": true,
 	"breaks_above_level": true, "breaks_below_level": true,
@@ -21,6 +21,19 @@ var knownOps = map[string]bool{
 	"was_below_then_crosses_above": true, "was_above_then_crosses_below": true,
 	"adx_in_range": true,
 	"deviation_below": true, "deviation_above": true,
+	"consecutive_higher_closes": true, "consecutive_lower_closes": true,
+	"narrowest_range": true,
+	"in_top_pct_of_range": true, "in_bottom_pct_of_range": true,
+	"close_above_upper_channel": true, "close_below_lower_channel": true,
+	"ribbon_break_long": true, "ribbon_break_short": true,
+	"ribbon_exit_long": true, "ribbon_exit_short": true,
+	"trix_crosses_above_sma": true, "trix_crosses_below_sma": true,
+	"breaks_above_sma_envelope": true, "breaks_below_sma_envelope": true,
+	"double_tap_below_bb": true, "double_tap_above_bb": true,
+	"atr_not_bottom_pct": true, "atr_below_contracted_sma": true,
+	"flat_slope": true,
+	"mean_rev_long": true, "mean_rev_short": true,
+	"majority_bull": true, "majority_bear": true,
 }
 
 // ValidateJSON parses raw JSON into condition nodes and validates them
@@ -129,6 +142,57 @@ func validateNode(node ConditionNode, path string) []string {
 		if node.Col == "" {
 			errs = append(errs, fmt.Sprintf("%s: %s requires col", path, node.Op))
 		}
+		if node.RefCol == "" {
+			errs = append(errs, fmt.Sprintf("%s: %s requires ref_col", path, node.Op))
+		}
+	case "pullback_below":
+		if node.LevelCol == "" {
+			errs = append(errs, fmt.Sprintf("%s: pullback_below requires level_col", path))
+		}
+	case "consecutive_higher_closes", "consecutive_lower_closes":
+		if node.N <= 0 {
+			errs = append(errs, fmt.Sprintf("%s: %s requires n > 0", path, node.Op))
+		}
+	case "narrowest_range":
+		if node.Lookback <= 0 {
+			errs = append(errs, fmt.Sprintf("%s: narrowest_range requires lookback > 0", path))
+		}
+	case "in_top_pct_of_range", "in_bottom_pct_of_range":
+		if node.Pct <= 0 {
+			errs = append(errs, fmt.Sprintf("%s: %s requires pct > 0", path, node.Op))
+		}
+	case "close_above_upper_channel", "close_below_lower_channel":
+		if node.Col == "" {
+			errs = append(errs, fmt.Sprintf("%s: %s requires col", path, node.Op))
+		}
+	case "ribbon_break_long", "ribbon_break_short":
+		if node.Lookback <= 0 {
+			errs = append(errs, fmt.Sprintf("%s: %s requires lookback > 0", path, node.Op))
+		}
+	case "breaks_above_sma_envelope", "breaks_below_sma_envelope":
+		if node.Col == "" {
+			errs = append(errs, fmt.Sprintf("%s: %s requires col", path, node.Op))
+		}
+	case "double_tap_below_bb", "double_tap_above_bb":
+		if node.Lookback <= 0 {
+			errs = append(errs, fmt.Sprintf("%s: %s requires lookback > 0", path, node.Op))
+		}
+	case "atr_not_bottom_pct":
+		if node.Pct <= 0 {
+			errs = append(errs, fmt.Sprintf("%s: atr_not_bottom_pct requires pct > 0", path))
+		}
+		if node.Lookback <= 0 {
+			errs = append(errs, fmt.Sprintf("%s: atr_not_bottom_pct requires lookback > 0", path))
+		}
+	case "atr_below_contracted_sma":
+		if node.Factor <= 0 {
+			errs = append(errs, fmt.Sprintf("%s: atr_below_contracted_sma requires factor > 0", path))
+		}
+	case "flat_slope":
+		if node.Col == "" {
+			errs = append(errs, fmt.Sprintf("%s: flat_slope requires col", path))
+		}
+	case "mean_rev_long", "mean_rev_short":
 		if node.RefCol == "" {
 			errs = append(errs, fmt.Sprintf("%s: %s requires ref_col", path, node.Op))
 		}

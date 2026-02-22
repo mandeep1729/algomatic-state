@@ -46,8 +46,17 @@ type ConditionNode struct {
 	// Gap
 	ATRMult float64 `json:"atr_mult,omitempty"`
 
-	// Deviation
+	// Deviation / mean reversion
 	RefCol string `json:"ref_col,omitempty"`
+
+	// Percentage-based operators (e.g. InTopPctOfRange, ATRNotBottomPct)
+	Pct float64 `json:"pct,omitempty"`
+
+	// Slope/epsilon operators (e.g. FlatSlope)
+	Epsilon float64 `json:"epsilon,omitempty"`
+
+	// Factor-based operators (e.g. ATRBelowContractedSMA)
+	Factor float64 `json:"factor,omitempty"`
 
 	// ADX range
 	Low  float64 `json:"low,omitempty"`

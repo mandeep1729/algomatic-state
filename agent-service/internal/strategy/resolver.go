@@ -57,8 +57,8 @@ func (r *Resolver) Resolve(ctx context.Context, strategyID int) (*types.Strategy
 	}
 	r.mu.RUnlock()
 
-	// Predefined or cloned strategy: resolve conditions from go-strats registry.
-	if row.SourceStrategyID != nil {
+	// Predefined strategy: resolve conditions from go-strats registry.
+	if row.IsPredefined && row.SourceStrategyID != nil {
 		sourceID := *row.SourceStrategyID
 		baseDef := strategy.Get(sourceID)
 		if baseDef == nil {
@@ -68,36 +68,27 @@ func (r *Resolver) Resolve(ctx context.Context, strategyID int) (*types.Strategy
 			)
 		}
 
-		var def *types.StrategyDef
-		if row.IsPredefined {
-			// Pure predefined: use go-strats def directly.
-			def = baseDef
-			r.logger.Debug("Resolved predefined strategy",
-				"db_id", strategyID, "source_id", sourceID, "name", def.Name,
-			)
-		} else {
-			// Cloned: go-strats conditions + DB row parameters.
-			def = cloneDefWithDBParams(baseDef, row)
-			r.logger.Info("Resolved cloned strategy",
-				"db_id", strategyID, "source_id", sourceID, "name", def.Name,
-			)
-		}
+		r.logger.Debug("Resolved predefined strategy",
+			"db_id", strategyID, "source_id", sourceID, "name", baseDef.Name,
+		)
 
 		r.mu.Lock()
-		r.cache[strategyID] = &cachedEntry{def: def, version: row.Version}
+		r.cache[strategyID] = &cachedEntry{def: baseDef, version: row.Version}
 		r.mu.Unlock()
 
-		return def, nil
+		return baseDef, nil
 	}
 
-	// Custom strategy: compile from JSONB DSL conditions.
+	// Cloned or custom strategy: compile from JSONB DSL conditions.
+	// source_strategy_id is lineage metadata only — never a fallback.
 	def, err := compileCustomStrategy(row)
 	if err != nil {
-		return nil, fmt.Errorf("compiling custom strategy %d (%s): %w", strategyID, row.Name, err)
+		return nil, fmt.Errorf("compiling strategy %d (%s): %w", strategyID, row.Name, err)
 	}
 
-	r.logger.Info("Compiled custom strategy from DSL",
+	r.logger.Info("Compiled strategy from DSL",
 		"db_id", strategyID, "name", row.Name, "version", row.Version,
+		"cloned_from", row.SourceStrategyID,
 	)
 
 	r.mu.Lock()
